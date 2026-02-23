@@ -199,38 +199,38 @@ def validate_model(model_data, model_name="Model"):
     
     # Check thicknesses
     if np.any(H <= 0):
-        print(f"   ❌ FAIL: Non-positive thicknesses")
+        print(f"FAIL: Non-positive thicknesses")
         return False
     else:
-        print(f"   ✓ PASS: All thicknesses positive")
+        print(f"PASS: All thicknesses positive")
     
     # Check velocities
     if np.any(VP <= 0) or np.any(VS <= 0):
-        print(f"   ❌ FAIL: Non-positive velocities")
+        print(f"FAIL: Non-positive velocities")
         return False
     else:
-        print(f"   ✓ PASS: All velocities positive")
+        print(f"PASS: All velocities positive")
     
     # Check VP > VS
     vp_vs_ratio = VP / VS
     if np.any(vp_vs_ratio <= 1.0):
-        print(f"   ⚠ WARNING: Some layers have VP ≤ VS")
+        print(f"WARNING: Some layers have VP ≤ VS")
     else:
-        print(f"   ✓ PASS: VP > VS in all layers")
+        print(f"PASS: VP > VS in all layers")
     
     # Check density
     if np.any(RHO <= 0):
-        print(f"   ❌ FAIL: Non-positive density")
+        print(f"FAIL: Non-positive density")
         return False
     
     # Check for water (should be removed)
     if np.any(VS < 0.1) or np.any(RHO < 1.5):
-        print(f"   ❌ FAIL: Water layers still present")
+        print(f"FAIL: Water layers still present")
         return False
     else:
-        print(f"   ✓ PASS: No water layers")
+        print(f"PASS: No water layers")
     
-    print(f"   Total depth: {np.sum(H):.2f} km")
+    print(f"Total depth: {np.sum(H):.2f} km")
     
     # Estimate crustal thickness (VS < 4.2 km/s = crust)
     mantle_layers = VS >= 4.2
@@ -272,11 +272,11 @@ def generate_model_suite():
                 write_cps_model96(model, fname, env['desc'])
                 successful += 1
             else:
-                print(f"   ❌ Validation failed")
+                print(f"Validation failed")
                 failed += 1
                 
         except Exception as e:
-            print(f"   ❌ Error: {e}")
+            print(f"Error: {e}")
             import traceback
             traceback.print_exc()
             failed += 1
@@ -298,7 +298,7 @@ def main():
     try:
         generate_model_suite()
     except Exception as e:
-        print(f"\n❌ FATAL ERROR: {e}")
+        print(f"\nFATAL ERROR: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
