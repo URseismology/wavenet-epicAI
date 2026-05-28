@@ -1,0 +1,10 @@
+1,./experiments/experiment_1/configs/SIM_00001_ang_0_36_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_1/outputs
+2,./experiments/experiment_1/configs/SIM_00002_ang_36_72_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_1/outputs
+3,./experiments/experiment_1/configs/SIM_00003_ang_72_108_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_1/outputs
+4,./experiments/experiment_1/configs/SIM_00004_ang_108_144_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_1/outputs
+5,./experiments/experiment_1/configs/SIM_00005_ang_144_180_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_1/outputs
+6,./experiments/experiment_1/configs/SIM_00006_ang_180_216_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_1/outputs
+7,./experiments/experiment_1/configs/SIM_00007_ang_216_252_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_1/outputs
+8,./experiments/experiment_1/configs/SIM_00008_ang_252_288_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_1/outputs
+9,./experiments/experiment_1/configs/SIM_00009_ang_288_324_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_1/outputs
+10,./experiments/experiment_1/configs/SIM_00010_ang_324_360_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_1/outputs

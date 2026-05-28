@@ -1,0 +1,2 @@
+1,./experiments/experiment_2/configs/SIM_00001_ang_0_360_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_2/outputs
+1,./experiments/experiment_3/configs/SIM_00001_ang_0_360_dist_200_rad_150_1000.txt,./model_suite/tak135sph.mod,./experiments/experiment_3/outputs
