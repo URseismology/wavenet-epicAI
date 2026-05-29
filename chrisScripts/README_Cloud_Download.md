@@ -6,7 +6,6 @@ GeoLab is EarthScope's cloud JupyterLab environment, allowing you to process mas
 Go to the official EarthScope GeoLab homepage: [https://www.earthscope.org/data/geolab/](https://www.earthscope.org/data/geolab/) and click on the **Login** button.
 
 <img src="images/geolab_login.png" alt="GeoLab Login Screen" width="600"/>
-*(Save your screenshot as `geolab_login.png` in the `images` folder)*
 
 ### Step 2: Authenticate 
 Authenticate by entering your credentials into the following screen
@@ -63,7 +62,7 @@ s3_client = session.client("s3", config=Config(response_checksum_validation='whe
 ```
 
 ### Step 9: Download the Data
-The final cells of the notebook demonstrate how to stream the exact `.mseed` files you need directly into your GeoLab workspace using `s3_client.get_object()`. Because you are running this inside GeoLab, the download speeds are incredibly fast and completely bypass local network bottlenecks!
+The final cells of the notebook demonstrate how to stream the exact `.mseed` files you need directly into your GeoLab workspace using `s3_client.get_object()`. 
 
 ```python
 S3_ACCESS_POINT = "earthscope-mseed-res-na3mtd4fq5kz7pntcyr1uh46use2a--ol-s3"

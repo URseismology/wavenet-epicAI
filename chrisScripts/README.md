@@ -6,16 +6,16 @@ When dealing with ambient noise cross-correlation at a global scale, researchers
 
 ---
 
-## 🛠️ Core Architecture & Workflow
+## Core Architecture & Workflow
 
 ### 1. Secure Cloud Authentication
 The script uses the `earthscope-sdk` to authenticate via an interactive login. This dynamically generates temporary AWS S3 credentials scoped specifically to the `s3-miniseed` role. This allows direct, high-bandwidth read access to EarthScope’s massive `earthscope-mseed` bucket hosted on AWS without requiring a paid AWS account.
 
 ### 2. Network & Epoch Discovery
-Rather than relying on outdated static text files, the script scans the live S3 bucket to catalog all currently available seismic networks (over 500 networks). It then leverages `obspy.clients.fdsn` to query the FDSN web services, fetching the geographic coordinates (latitude/longitude) and the exact operational epochs (start and end dates) for over 62,000 individual seismic stations.
+Rather than relying on outdated static text files, the script scans the live S3 bucket to catalog all currently available seismic networks (over 500 networks). It then leverages `obspy.clients.fdsn` to query the FDSN web services, fetching the geographic coordinates (latitude/longitude) and the exact operational epochs (start and end dates) for over 61,000 individual seismic stations.
 
 ### 3. Spatial Indexing via Haversine BallTree
-**The Problem:** Calculating the distance between 62,000 stations using a naive O(N²) pairwise loop would require nearly **2 billion** individual distance calculations.
+**The Problem:** Calculating the distance between 61,000 stations using a naive O(N²) pairwise loop would require nearly **2 billion** individual distance calculations.
 **The Solution:** The pipeline utilizes a highly optimized `BallTree` from `scikit-learn`. 
 * **How it works:** A BallTree recursively partitions spatial data into a series of nested multi-dimensional spheres (balls). By converting our latitude and longitude coordinates into radians and using the `haversine` metric (which calculates the great-circle distance accounting for the Earth's spherical curvature), the BallTree allows us to query spatial relationships in **O(log N) time**. 
 * **The Result:** We can instantly "draw a circle" around each station and grab all neighbors that fall within our target cross-correlation window (e.g., between 60 km and 6000 km), bypassing billions of unnecessary calculations.
@@ -36,7 +36,7 @@ The script builds a secondary dataset (`keys_partitioned_year`) mapping every st
 
 ---
 
-## 🎧 Integration with NoisePy
+## Integration with NoisePy
 
 The ultimate goal of this metadata extraction is to facilitate large-scale ambient noise cross-correlation using frameworks like **NoisePy**.
 
@@ -49,7 +49,7 @@ Instead of downloading years of continuous waveforms blindly, you use the output
 
 ---
 
-## 🚀 Setup & Requirements
+## Setup & Requirements
 
 Before running the notebook locally or in Google Colab, ensure you have the required dependencies:
 
