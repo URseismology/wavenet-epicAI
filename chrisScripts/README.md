@@ -37,3 +37,13 @@ The `globalmeta.py` script attempts to map every possible combination of overlap
 * **O(1) Temporal Validation:** Constructs a unique temporal identifier for every active day and performs instantaneous Python Set Intersections to verify if two stations shared overlapping operational days.
 * **Why Parquet? (Data Export):** Instead of CSV, the output is streamed into an Apache Parquet file (`master_pairs_final.parquet`). Parquet's columnar storage, dictionary encoding, and snappy compression shrink the massive file size drastically and allow for batch streaming without crashing RAM.
 * **Partitioned Daily Key Index:** Builds a secondary dataset mapping every station's active days to its exact AWS S3 `dataacess_key`. It is saved as a directory of Parquet files partitioned by `year`, turning massive queries into instant, low-memory OS lookups.
+
+---
+
+## Why Only Station Pairs?
+
+You may notice that the GridMeta pipeline outputs only station pair metadata (network codes, station codes, coordinates, and distances) rather than the exact AWS S3 object keys for each day of data. This is intentional.
+
+**NoisePy handles all data fetching for us.** NoisePy's `DataStore` architecture can stream MiniSEED data directly from the EarthScope S3 bucket (`s3://earthscope-geophysical-data`) given just the station network and station codes. It automatically resolves the correct S3 paths, downloads the waveforms, and feeds them into the cross-correlation and stacking pipeline. 
+
+This means our job is purely to answer the question: *"Which stations should be correlated with which?"* — and that is exactly what `global_station_pairs10k.csv` provides. NoisePy takes care of the rest.
