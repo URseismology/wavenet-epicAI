@@ -52,7 +52,7 @@ def refresh_s3_client(es_client):
         aws_secret_access_key=_get_val(creds.aws_secret_access_key),
         aws_session_token=_get_val(creds.aws_session_token),
     )
-    return session.client("s3", config=Config(response_checksum_validation='when_required'))
+    return session.client("s3")
 
 
 def load_and_filter_pairs(pairs_file, start_date, end_date, 
