@@ -22,8 +22,9 @@ echo "GridMeta → NoisePy Cross-Correlation Pipeline"
 echo "================================================="
 echo "Start:     $(date)"
 
-# Make sure you have a conda env or modules loaded if required on BlueHive
-# source activate noisepy_env
+# Load the specific BlueHive modules required for the NoisePy environment
+module load bluehive/2.5
+module load instaseis_cloud
 
 DATA_DIR="raw_data"
 PAIRS_FILE="raw_data/pairs_to_process.csv"
