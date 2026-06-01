@@ -150,7 +150,9 @@ def download_station_data(s3_client, es_client, bucket, station_net, station_sta
                 continue
 
             try:
-                s3_client.download_file(bucket, s3_key, local_path)
+                resp = s3_client.get_object(Bucket=bucket, Key=s3_key)
+                with open(local_path, "wb") as f:
+                    f.write(resp['Body'].read())
                 downloaded.append({'station': f"{station_net}.{station_sta}", 
                                    'key': s3_key, 'local_path': local_path, 'status': 'ok'})
             except Exception as e:
@@ -159,7 +161,9 @@ def download_station_data(s3_client, es_client, bucket, station_net, station_sta
                     print("  -> Token expired. Refreshing credentials...")
                     s3_client = refresh_s3_client(es_client)
                     try:
-                        s3_client.download_file(bucket, s3_key, local_path)
+                        resp = s3_client.get_object(Bucket=bucket, Key=s3_key)
+                        with open(local_path, "wb") as f:
+                            f.write(resp['Body'].read())
                         downloaded.append({'station': f"{station_net}.{station_sta}",
                                            'key': s3_key, 'local_path': local_path, 'status': 'ok'})
                     except Exception as e2:
@@ -195,7 +199,9 @@ def download_station_data(s3_client, es_client, bucket, station_net, station_sta
                                                    'key': s3_key, 'local_path': local_path, 'status': 'skipped'})
                                 continue
 
-                            s3_client.download_file(bucket, s3_key, local_path)
+                            resp = s3_client.get_object(Bucket=bucket, Key=s3_key)
+                            with open(local_path, "wb") as f:
+                                f.write(resp['Body'].read())
                             downloaded.append({'station': f"{station_net}.{station_sta}",
                                                'key': s3_key, 'local_path': local_path, 'status': 'ok'})
             except Exception as e:
