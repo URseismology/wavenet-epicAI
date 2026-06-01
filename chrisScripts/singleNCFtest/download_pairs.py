@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
-download_pairs.py — GeoLab Download Script
-===========================================
+download_pairs.py — GeoLab Download Script (All-Time Overlaps)
+==============================================================
 Reads GridMeta's station pairs CSV, finds overlapping days of data in S3
 for each pair, and downloads ONLY the raw MiniSEED files that overlap.
 Saves them locally in a structured directory tree ready for transfer to BlueHive.
@@ -9,10 +9,11 @@ Saves them locally in a structured directory tree ready for transfer to BlueHive
 Run this on GeoLab (EarthScope cloud) where S3 access is fast and free.
 
 Usage:
-    python download_pairs.py --pairs global_station_pairs10k.csv \
-                             --start 2019-01-01 --end 2019-01-31 \
-                             --outdir raw_data \
-                             --max-pairs 10
+    # To download the ENTIRE history of overlaps for the top 5 pairs:
+    python download_pairs.py --pairs global_station_pairs10k.csv --outdir raw_data --max-pairs 5 --networks CI
+
+    # To download overlaps only within a specific time window:
+    python download_pairs.py --pairs global_station_pairs10k.csv --start 2019-01-01 --end 2019-01-31 --outdir raw_data --max-pairs 5
 """
 
 import os
@@ -45,8 +46,7 @@ def refresh_s3_client(es_client):
     return session.client("s3", config=s3_config)
 
 
-def load_and_filter_pairs(pairs_file, start_date, end_date, 
-                          networks=None, max_pairs=None,
+def load_and_filter_pairs(pairs_file, networks=None, max_pairs=None,
                           dist_min=None, dist_max=None):
     """Load GridMeta pairs and apply optional filters."""
     df = pd.read_csv(pairs_file)
@@ -82,31 +82,57 @@ def get_unique_stations(df_pairs):
     return sorted(stations)
 
 
-def get_available_keys(s3_client, bucket, station_net, station_sta, start_dt, end_dt):
-    """Scan S3 to find all available keys for a station within the date range."""
+def get_available_keys(s3_client, bucket, station_net, station_sta, start_dt=None, end_dt=None):
+    """Scan S3 to find all available keys for a station. If start_dt/end_dt are provided,
+    scans only that range. Otherwise, dynamically discovers all years and days in S3."""
     available = {}
-    current = start_dt
     
-    while current <= end_dt:
-        year = current.strftime("%Y")
-        jday = current.strftime("%j")
-        day_prefix = f"miniseed/{station_net}/{year}/{jday}/"
-        
-        try:
-            resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=day_prefix)
-            if 'Contents' in resp:
-                for obj in resp['Contents']:
-                    s3_key = obj['Key']
-                    filename = s3_key.split('/')[-1]
-                    if filename.startswith(f"{station_sta}."):
-                        # Record the date and the S3 key
-                        available[current.strftime("%Y-%m-%d")] = s3_key
-        except Exception as e:
-            # Handle token expiration implicitly or just ignore missing days
-            pass
+    if start_dt and end_dt:
+        # Fixed range scanning
+        current = start_dt
+        while current <= end_dt:
+            year = current.strftime("%Y")
+            jday = current.strftime("%j")
+            day_prefix = f"miniseed/{station_net}/{year}/{jday}/"
             
-        current += pd.Timedelta(days=1)
-        
+            try:
+                resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=day_prefix)
+                if 'Contents' in resp:
+                    for obj in resp['Contents']:
+                        s3_key = obj['Key']
+                        filename = s3_key.split('/')[-1]
+                        if filename.startswith(f"{station_sta}."):
+                            available[current.strftime("%Y-%m-%d")] = s3_key
+            except Exception:
+                pass
+                
+            current += pd.Timedelta(days=1)
+    else:
+        # All-time dynamic scanning using S3 Delimiter
+        try:
+            # 1. Discover all years for this network
+            resp_years = s3_client.list_objects_v2(Bucket=bucket, Prefix=f"miniseed/{station_net}/", Delimiter='/')
+            years = [p['Prefix'].split('/')[-2] for p in resp_years.get('CommonPrefixes', [])]
+            
+            for year in sorted(years):
+                # 2. Discover all days for this year
+                resp_days = s3_client.list_objects_v2(Bucket=bucket, Prefix=f"miniseed/{station_net}/{year}/", Delimiter='/')
+                days = [p['Prefix'].split('/')[-2] for p in resp_days.get('CommonPrefixes', [])]
+                
+                # 3. Check each day
+                for jday in sorted(days):
+                    day_prefix = f"miniseed/{station_net}/{year}/{jday}/"
+                    resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=day_prefix)
+                    if 'Contents' in resp:
+                        for obj in resp['Contents']:
+                            s3_key = obj['Key']
+                            filename = s3_key.split('/')[-1]
+                            if filename.startswith(f"{station_sta}."):
+                                dt_str = datetime.strptime(f"{year}{jday}", "%Y%j").strftime("%Y-%m-%d")
+                                available[dt_str] = s3_key
+        except Exception as e:
+            print(f"  -> Warning: Failed to scan full history for {station_net}: {e}")
+
     return available
 
 
@@ -116,8 +142,8 @@ def main():
     )
     parser.add_argument("--pairs", required=True, help="Path to GridMeta pairs CSV")
     parser.add_argument("--inventory", default=None, help="(Ignored) S3 Inventory")
-    parser.add_argument("--start", required=True, help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--end", required=True, help="End date (YYYY-MM-DD)")
+    parser.add_argument("--start", default=None, help="(Optional) Start date (YYYY-MM-DD)")
+    parser.add_argument("--end", default=None, help="(Optional) End date (YYYY-MM-DD)")
     parser.add_argument("--outdir", default="raw_data", help="Output directory")
     parser.add_argument("--max-pairs", type=int, default=None, help="Max pairs")
     parser.add_argument("--networks", nargs="+", default=None, help="Filter networks")
@@ -135,15 +161,18 @@ def main():
     print("Authenticated successfully.\n")
 
     t_start = time.time()
-    start_dt = datetime.strptime(args.start, "%Y-%m-%d")
-    end_dt = datetime.strptime(args.end, "%Y-%m-%d")
+    
+    start_dt = None
+    end_dt = None
+    if args.start and args.end:
+        start_dt = datetime.strptime(args.start, "%Y-%m-%d")
+        end_dt = datetime.strptime(args.end, "%Y-%m-%d")
 
     # ==========================================
     # 2. Load and filter pairs
     # ==========================================
     df_pairs = load_and_filter_pairs(
-        args.pairs, args.start, args.end,
-        networks=args.networks, max_pairs=args.max_pairs,
+        args.pairs, networks=args.networks, max_pairs=args.max_pairs,
         dist_min=args.dist_min, dist_max=args.dist_max
     )
     os.makedirs(args.outdir, exist_ok=True)
@@ -156,17 +185,24 @@ def main():
     # 3. Check Overlaps
     # ==========================================
     print(f"\n{'='*60}")
-    print(f"Scanning S3 for overlaps: {args.start} → {args.end}")
+    if start_dt and end_dt:
+        print(f"Scanning S3 for overlaps: {args.start} → {args.end}")
+    else:
+        print(f"Scanning S3 for ALL-TIME overlaps (this may take a few minutes...)")
     print(f"{'='*60}")
     
     # Pre-fetch available dates for all unique stations
     station_availability = {}
     for i, (net, sta) in enumerate(unique_stations):
+        print(f"  Scanning history for {net}.{sta}...")
         station_availability[f"{net}.{sta}"] = get_available_keys(
             s3_client, BUCKET, net, sta, start_dt, end_dt
         )
     
     # Calculate overlaps for pairs
+    print(f"\n{'='*60}")
+    print("Calculating exact pair overlaps...")
+    print(f"{'='*60}")
     to_download = set()  # Store exact S3 keys to download
     total_overlapping_days = 0
     
@@ -191,6 +227,10 @@ def main():
     # ==========================================
     # 4. Download exact matching files
     # ==========================================
+    if not to_download:
+        print("\nNo overlaps found. Nothing to download.")
+        sys.exit(0)
+
     print(f"\n{'='*60}")
     print(f"Downloading {len(to_download)} files (only overlapping days)")
     print(f"{'='*60}\n")
