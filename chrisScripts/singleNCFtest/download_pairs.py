@@ -31,6 +31,7 @@ Then scp/rsync the raw_data/ folder to BlueHive.
 import os
 import sys
 import gc
+import time
 import argparse
 import pandas as pd
 import numpy as np
@@ -52,7 +53,14 @@ def refresh_s3_client(es_client):
         aws_secret_access_key=_get_val(creds.aws_secret_access_key),
         aws_session_token=_get_val(creds.aws_session_token),
     )
-    return session.client("s3")
+    # EarthScope's S3 Access Point does not support newer boto3 checksum
+    # features (CRC32/CRC64). Explicitly disable both request and response
+    # checksum handling to avoid "NotImplemented" errors on GetObject.
+    s3_config = Config(
+        request_checksum_calculation="when_required",
+        response_checksum_validation="when_required",
+    )
+    return session.client("s3", config=s3_config)
 
 
 def load_and_filter_pairs(pairs_file, start_date, end_date, 
@@ -227,6 +235,8 @@ def main():
     BUCKET = "earthscope-mseed-res-na3mtd4fq5kz7pntcyr1uh46use2a--ol-s3"
     print("Authenticated successfully.\n")
 
+    t_start = time.time()
+
     # ==========================================
     # 2. Load and filter GridMeta pairs
     # ==========================================
@@ -293,16 +303,32 @@ def main():
     total_skip = sum(1 for d in all_downloads if d['status'] == 'skipped')
     total_err = sum(1 for d in all_downloads if d['status'].startswith('error'))
 
+    t_elapsed = time.time() - t_start
+    mins, secs = divmod(int(t_elapsed), 60)
+    hrs, mins = divmod(mins, 60)
+
+    # Calculate total size of downloaded files
+    total_bytes = 0
+    for d in all_downloads:
+        if d['status'] == 'ok' and d.get('local_path') and os.path.exists(d['local_path']):
+            total_bytes += os.path.getsize(d['local_path'])
+    size_mb = total_bytes / (1024 * 1024)
+
     print(f"\n{'='*60}")
     print(f"DOWNLOAD COMPLETE")
     print(f"{'='*60}")
-    print(f"  Downloaded: {total_ok:,} files")
+    print(f"  Stations:   {len(stations)}")
+    print(f"  Pairs:      {len(df_pairs)}")
+    print(f"  Date range: {args.start} → {args.end}")
+    print(f"  Downloaded: {total_ok:,} files ({size_mb:.1f} MB)")
     print(f"  Skipped:    {total_skip:,} files (already exist)")
     print(f"  Errors:     {total_err:,} files")
+    print(f"  Time:       {hrs}h {mins}m {secs}s")
+    if t_elapsed > 0 and total_ok > 0:
+        print(f"  Speed:      {total_ok / t_elapsed:.1f} files/sec, {size_mb / (t_elapsed / 60):.1f} MB/min")
     print(f"  Manifest:   {manifest_path}")
-    print(f"\nNext step: Transfer {args.outdir}/ to BlueHive:")
-    print(f"  rsync -avz {args.outdir}/ bluehive:<your_project_dir>/raw_data/")
-    print(f"  Then run: sbatch submit_xcorr.sh")
+    print(f"\nNext step:")
+    print(f"  python sync_and_submit.py <bluehive_user> /scratch/<user>/singleNCFtest")
 
 
 if __name__ == "__main__":
