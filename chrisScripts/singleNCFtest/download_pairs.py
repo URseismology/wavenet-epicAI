@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """
-download_pairs.py — GeoLab Download Script (Fast Inventory Overlaps)
-====================================================================
+download_pairs.py — GeoLab Download Script (Fast Inventory & Multithreading)
+===========================================================================
 Reads GridMeta's station pairs CSV, finds overlapping days of data for each pair
 using a local inventory file (s3_inventory.csv), and downloads ONLY the raw
-MiniSEED files that overlap.
+MiniSEED files that overlap. Uses multithreading to download concurrently.
 
 Saves them locally in a structured directory tree ready for transfer to BlueHive.
 
@@ -17,9 +17,6 @@ Usage:
                              --outdir raw_data \
                              --max-pairs 5 \
                              --networks CI
-
-    # Without inventory (Slow - scans S3 directly):
-    python download_pairs.py --pairs global_station_pairs10k.csv --outdir raw_data --max-pairs 1
 """
 
 import os
@@ -28,11 +25,20 @@ import time
 import argparse
 import pandas as pd
 from datetime import datetime
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import boto3
 from botocore.config import Config
 from earthscope_sdk import EarthScopeClient
 
+# Global lock for safely refreshing credentials across threads
+AUTH_LOCK = threading.Lock()
+# Global variables for the shared S3 client and EarthScope client
+global_s3_client = None
+global_es_client = None
+global_progress = 0
+global_total = 0
 
 def refresh_s3_client(es_client):
     """Get fresh AWS credentials and return a new S3 client."""
@@ -51,10 +57,23 @@ def refresh_s3_client(es_client):
     )
     return session.client("s3", config=s3_config)
 
+def get_thread_safe_client():
+    """Returns the current global S3 client."""
+    global global_s3_client
+    with AUTH_LOCK:
+        return global_s3_client
 
-def load_and_filter_pairs(pairs_file, networks=None, max_pairs=None,
-                          dist_min=None, dist_max=None):
-    """Load GridMeta pairs and apply optional filters."""
+def handle_expired_token():
+    """Safely refreshes the token. Only one thread can do this at a time."""
+    global global_s3_client, global_es_client
+    with AUTH_LOCK:
+        # Check if another thread already refreshed it by making a quick test call, 
+        # but the simplest way is to just force a refresh since we are holding the lock
+        print("  -> Thread caught expired token. Refreshing credentials...")
+        global_s3_client = refresh_s3_client(global_es_client)
+        return global_s3_client
+
+def load_and_filter_pairs(pairs_file, networks=None, max_pairs=None, dist_min=None, dist_max=None):
     df = pd.read_csv(pairs_file)
     print(f"Loaded {len(df):,} pairs from {pairs_file}")
 
@@ -78,27 +97,21 @@ def load_and_filter_pairs(pairs_file, networks=None, max_pairs=None,
 
     return df
 
-
 def get_unique_stations(df_pairs):
-    """Extract unique NET.STA identifiers from the pairs DataFrame."""
     stations = set()
     for _, row in df_pairs.iterrows():
         stations.add((row['net1'], row['sta1']))
         stations.add((row['net2'], row['sta2']))
     return sorted(stations)
 
-
 def get_available_keys(s3_client, bucket, station_net, station_sta, start_dt=None, end_dt=None):
-    """Scan S3 to find all available keys for a station. Slow fallback if no inventory."""
     available = {}
-    
     if start_dt and end_dt:
         current = start_dt
         while current <= end_dt:
             year = current.strftime("%Y")
             jday = current.strftime("%j")
             day_prefix = f"miniseed/{station_net}/{year}/{jday}/"
-            
             try:
                 resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=day_prefix)
                 if 'Contents' in resp:
@@ -114,11 +127,9 @@ def get_available_keys(s3_client, bucket, station_net, station_sta, start_dt=Non
         try:
             resp_years = s3_client.list_objects_v2(Bucket=bucket, Prefix=f"miniseed/{station_net}/", Delimiter='/')
             years = [p['Prefix'].split('/')[-2] for p in resp_years.get('CommonPrefixes', [])]
-            
             for year in sorted(years):
                 resp_days = s3_client.list_objects_v2(Bucket=bucket, Prefix=f"miniseed/{station_net}/{year}/", Delimiter='/')
                 days = [p['Prefix'].split('/')[-2] for p in resp_days.get('CommonPrefixes', [])]
-                
                 for jday in sorted(days):
                     day_prefix = f"miniseed/{station_net}/{year}/{jday}/"
                     resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=day_prefix)
@@ -131,23 +142,17 @@ def get_available_keys(s3_client, bucket, station_net, station_sta, start_dt=Non
                                 available[dt_str] = s3_key
         except Exception as e:
             print(f"  -> Warning: Failed to scan full history for {station_net}: {e}")
-
     return available
 
-
 def build_availability_from_inventory(inventory_file, unique_stations, start_dt=None, end_dt=None):
-    """Instantly build the availability dictionary from the local CSV inventory."""
     print(f"Loading inventory from {inventory_file}...")
     inv_df = pd.read_csv(inventory_file)
     
-    # We only care about the unique stations we need
-    # Convert unique_stations (list of tuples) to a format for filtering
     nets = [n for n, s in unique_stations]
     stas = [s for n, s in unique_stations]
     mask = inv_df['network'].isin(nets) & inv_df['station'].isin(stas)
     inv_df = inv_df[mask].copy()
 
-    # Apply date filter if provided
     if start_dt and end_dt:
         inv_df['date_ts'] = pd.to_datetime(
             inv_df['year'].astype(str) + inv_df['yearday'].astype(str).str.zfill(3), 
@@ -158,20 +163,70 @@ def build_availability_from_inventory(inventory_file, unique_stations, start_dt=
             (inv_df['date_ts'] <= pd.Timestamp(end_dt))
         ]
 
-    # Build dictionary: dict['NET.STA']['YYYY-MM-DD'] = 'dataacess_key'
     station_availability = {}
     for _, row in inv_df.iterrows():
         sta = f"{row['network']}.{row['station']}"
         date_str = pd.to_datetime(f"{row['year']}{str(row['yearday']).zfill(3)}", format='%Y%j').strftime("%Y-%m-%d")
-        
         if sta not in station_availability:
             station_availability[sta] = {}
         station_availability[sta][date_str] = row['dataacess_key']
-        
     return station_availability
 
+def download_worker(item):
+    """Worker function to download a single file."""
+    global global_progress, global_total
+    bucket, outdir, sta_label, s3_key = item
+    
+    sta_dir = os.path.join(outdir, sta_label)
+    local_path = os.path.join(sta_dir, s3_key)
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    
+    if os.path.exists(local_path):
+        with AUTH_LOCK:
+            global_progress += 1
+        return {'station': sta_label, 'key': s3_key, 'status': 'skipped'}
+        
+    s3_client = get_thread_safe_client()
+    
+    try:
+        resp = s3_client.get_object(Bucket=bucket, Key=s3_key)
+        with open(local_path, "wb") as f:
+            f.write(resp['Body'].read())
+        
+        with AUTH_LOCK:
+            global_progress += 1
+            if global_progress % 10 == 0 or global_progress == global_total:
+                sys.stdout.write(f"\r  -> Progress: [{global_progress}/{global_total}] files downloaded...")
+                sys.stdout.flush()
+                
+        return {'station': sta_label, 'key': s3_key, 'status': 'ok'}
+        
+    except Exception as e:
+        error_str = str(e)
+        if "ExpiredToken" in error_str or "Token expired" in error_str or "Forbidden" in error_str:
+            # Token expired. Let this thread trigger the refresh safely.
+            s3_client = handle_expired_token()
+            try:
+                # Retry once after refresh
+                resp = s3_client.get_object(Bucket=bucket, Key=s3_key)
+                with open(local_path, "wb") as f:
+                    f.write(resp['Body'].read())
+                
+                with AUTH_LOCK:
+                    global_progress += 1
+                return {'station': sta_label, 'key': s3_key, 'status': 'ok'}
+            except Exception as e2:
+                with AUTH_LOCK:
+                    global_progress += 1
+                return {'station': sta_label, 'key': s3_key, 'status': f'error: {e2}'}
+        else:
+            with AUTH_LOCK:
+                global_progress += 1
+            return {'station': sta_label, 'key': s3_key, 'status': f'error: {e}'}
 
 def main():
+    global global_s3_client, global_es_client, global_progress, global_total
+    
     parser = argparse.ArgumentParser(
         description="Download raw MiniSEED data for overlapping GridMeta station pairs."
     )
@@ -184,14 +239,15 @@ def main():
     parser.add_argument("--networks", nargs="+", default=None, help="Filter networks")
     parser.add_argument("--dist-min", type=float, default=None, help="Min distance (km)")
     parser.add_argument("--dist-max", type=float, default=None, help="Max distance (km)")
+    parser.add_argument("--workers", type=int, default=10, help="Number of parallel download threads")
     args = parser.parse_args()
 
     # ==========================================
     # 1. Authenticate with EarthScope
     # ==========================================
     print("Authenticating with EarthScope...")
-    es_client = EarthScopeClient()
-    s3_client = refresh_s3_client(es_client)
+    global_es_client = EarthScopeClient()
+    global_s3_client = refresh_s3_client(global_es_client)
     BUCKET = "earthscope-mseed-res-na3mtd4fq5kz7pntcyr1uh46use2a--ol-s3"
     print("Authenticated successfully.\n")
 
@@ -239,7 +295,7 @@ def main():
         for i, (net, sta) in enumerate(unique_stations):
             print(f"  Scanning history for {net}.{sta}...")
             station_availability[f"{net}.{sta}"] = get_available_keys(
-                s3_client, BUCKET, net, sta, start_dt, end_dt
+                global_s3_client, BUCKET, net, sta, start_dt, end_dt
             )
     
     # Calculate overlaps for pairs
@@ -268,52 +324,31 @@ def main():
         print(f"  {sta1} & {sta2}: {len(overlap_dates)} overlapping days")
 
     # ==========================================
-    # 4. Download exact matching files
+    # 4. Download exact matching files (Multi-threaded)
     # ==========================================
     if not to_download:
         print("\nNo overlaps found. Nothing to download.")
         sys.exit(0)
 
     print(f"\n{'='*60}")
-    print(f"Downloading {len(to_download)} files (only overlapping days)")
+    print(f"Downloading {len(to_download)} files in parallel (Threads: {args.workers})")
     print(f"{'='*60}\n")
 
     all_downloads = []
+    global_total = len(to_download)
+    global_progress = 0
     
-    # Sort for consistent progress output
+    # Sort for consistency
     to_download_sorted = sorted(list(to_download))
-    
-    for i, (sta_label, s3_key) in enumerate(to_download_sorted):
-        net, sta = sta_label.split('.')
-        sta_dir = os.path.join(args.outdir, sta_label)
-        os.makedirs(sta_dir, exist_ok=True)
-        local_path = os.path.join(sta_dir, s3_key)
-        os.makedirs(os.path.dirname(local_path), exist_ok=True)
-        
-        if os.path.exists(local_path):
-            all_downloads.append({'station': sta_label, 'key': s3_key, 'status': 'skipped'})
-            continue
-            
-        try:
-            resp = s3_client.get_object(Bucket=BUCKET, Key=s3_key)
-            with open(local_path, "wb") as f:
-                f.write(resp['Body'].read())
-            all_downloads.append({'station': sta_label, 'key': s3_key, 'status': 'ok'})
-            print(f"  [{i+1}/{len(to_download_sorted)}] Downloaded {sta_label} ({s3_key.split('/')[-2]}/{s3_key.split('/')[-1]})")
-        except Exception as e:
-            error_str = str(e)
-            if "ExpiredToken" in error_str or "Token expired" in error_str:
-                print("  -> Token expired. Refreshing credentials...")
-                s3_client = refresh_s3_client(es_client)
-                try:
-                    resp = s3_client.get_object(Bucket=BUCKET, Key=s3_key)
-                    with open(local_path, "wb") as f:
-                        f.write(resp['Body'].read())
-                    all_downloads.append({'station': sta_label, 'key': s3_key, 'status': 'ok'})
-                except Exception as e2:
-                    all_downloads.append({'station': sta_label, 'key': s3_key, 'status': f'error: {e2}'})
-            else:
-                all_downloads.append({'station': sta_label, 'key': s3_key, 'status': f'error: {e}'})
+    download_tasks = [(BUCKET, args.outdir, sta, key) for sta, key in to_download_sorted]
+
+    # Execute with ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = [executor.submit(download_worker, item) for item in download_tasks]
+        for future in as_completed(futures):
+            all_downloads.append(future.result())
+
+    print("\n\nFinished all threads.")
 
     # ==========================================
     # 5. Summary
