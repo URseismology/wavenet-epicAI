@@ -1,22 +1,27 @@
 #!/usr/bin/env python
 """
-download_pairs.py — GeoLab Download Script (Fast Inventory & Multithreading)
+download_pairs.py — GeoLab Download Script (Parquet Index + Multithreading)
 ===========================================================================
-Reads GridMeta's station pairs CSV, finds overlapping days of data for each pair
-using a local inventory file (s3_inventory.csv), and downloads ONLY the raw
-MiniSEED files that overlap. Uses multithreading to download concurrently.
+Reads GridMeta's station pairs CSV, calculates overlapping days instantly
+using a partitioned Parquet key index (keys_partitioned_year/), and downloads
+ONLY the raw MiniSEED files that overlap using 50 parallel threads.
 
 Saves them locally in a structured directory tree ready for transfer to BlueHive.
 
 Run this on GeoLab (EarthScope cloud) where S3 access is fast and free.
 
+Prerequisites:
+    1. Build the key index first:  python build_key_index.py --outdir keys_partitioned_year
+    2. Have your pairs CSV:        global_station_pairs10k.csv
+
 Usage:
-    # To download using the fast pre-computed inventory (RECOMMENDED):
-    python download_pairs.py --pairs global_station_pairs10k.csv \
-                             --inventory s3_inventory.csv \
-                             --outdir raw_data \
-                             --max-pairs 5 \
-                             --networks CI
+    python download_pairs.py \
+        --pairs global_station_pairs10k.csv \
+        --keyindex keys_partitioned_year \
+        --outdir raw_data \
+        --max-pairs 100 \
+        --networks CI \
+        --workers 50
 """
 
 import os
@@ -24,7 +29,6 @@ import sys
 import time
 import argparse
 import pandas as pd
-from datetime import datetime
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -32,48 +36,41 @@ import boto3
 from botocore.config import Config
 from earthscope_sdk import EarthScopeClient
 
-# Global lock for safely refreshing credentials across threads
+
+# ==========================================
+# Thread-safe globals
+# ==========================================
 AUTH_LOCK = threading.Lock()
-# Global variables for the shared S3 client and EarthScope client
 global_s3_client = None
 global_es_client = None
-global_progress = 0
-global_total = 0
+progress_downloaded = 0
+progress_skipped = 0
+progress_errors = 0
+progress_total = 0
+total_bytes_downloaded = 0
 
-def refresh_s3_client(es_client):
+
+def refresh_s3_client(es_client, max_pool=50):
     """Get fresh AWS credentials and return a new S3 client."""
     creds = es_client.user.get_aws_credentials()
-    def _get_val(x):
+    def _v(x):
         return x.get_secret_value() if hasattr(x, 'get_secret_value') else x
 
     session = boto3.Session(
         aws_access_key_id=creds.aws_access_key_id,
-        aws_secret_access_key=_get_val(creds.aws_secret_access_key),
-        aws_session_token=_get_val(creds.aws_session_token),
+        aws_secret_access_key=_v(creds.aws_secret_access_key),
+        aws_session_token=_v(creds.aws_session_token),
     )
     s3_config = Config(
         request_checksum_calculation="when_required",
         response_checksum_validation="when_required",
+        max_pool_connections=max_pool,
     )
     return session.client("s3", config=s3_config)
 
-def get_thread_safe_client():
-    """Returns the current global S3 client."""
-    global global_s3_client
-    with AUTH_LOCK:
-        return global_s3_client
 
-def handle_expired_token():
-    """Safely refreshes the token. Only one thread can do this at a time."""
-    global global_s3_client, global_es_client
-    with AUTH_LOCK:
-        # Check if another thread already refreshed it by making a quick test call, 
-        # but the simplest way is to just force a refresh since we are holding the lock
-        print("  -> Thread caught expired token. Refreshing credentials...")
-        global_s3_client = refresh_s3_client(global_es_client)
-        return global_s3_client
-
-def load_and_filter_pairs(pairs_file, networks=None, max_pairs=None, dist_min=None, dist_max=None):
+def load_and_filter_pairs(pairs_file, networks=None, max_pairs=None):
+    """Load GridMeta pairs and apply optional filters."""
     df = pd.read_csv(pairs_file)
     print(f"Loaded {len(df):,} pairs from {pairs_file}")
 
@@ -81,12 +78,6 @@ def load_and_filter_pairs(pairs_file, networks=None, max_pairs=None, dist_min=No
         mask = df['net1'].isin(networks) & df['net2'].isin(networks)
         df = df[mask].reset_index(drop=True)
         print(f"  After network filter ({networks}): {len(df):,} pairs")
-
-    if dist_min is not None:
-        df = df[df['distance_km'] >= dist_min].reset_index(drop=True)
-    if dist_max is not None:
-        df = df[df['distance_km'] <= dist_max].reset_index(drop=True)
-        print(f"  After distance filter [{dist_min}-{dist_max} km]: {len(df):,} pairs")
 
     if max_pairs is not None:
         if 'days1' in df.columns and 'days2' in df.columns:
@@ -97,261 +88,233 @@ def load_and_filter_pairs(pairs_file, networks=None, max_pairs=None, dist_min=No
 
     return df
 
-def get_unique_stations(df_pairs):
-    stations = set()
-    for _, row in df_pairs.iterrows():
-        stations.add((row['net1'], row['sta1']))
-        stations.add((row['net2'], row['sta2']))
-    return sorted(stations)
 
-def get_available_keys(s3_client, bucket, station_net, station_sta, start_dt=None, end_dt=None):
-    available = {}
-    if start_dt and end_dt:
-        current = start_dt
-        while current <= end_dt:
-            year = current.strftime("%Y")
-            jday = current.strftime("%j")
-            day_prefix = f"miniseed/{station_net}/{year}/{jday}/"
-            try:
-                resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=day_prefix)
-                if 'Contents' in resp:
-                    for obj in resp['Contents']:
-                        s3_key = obj['Key']
-                        filename = s3_key.split('/')[-1]
-                        if filename.startswith(f"{station_sta}."):
-                            available[current.strftime("%Y-%m-%d")] = s3_key
-            except Exception:
-                pass
-            current += pd.Timedelta(days=1)
-    else:
-        try:
-            resp_years = s3_client.list_objects_v2(Bucket=bucket, Prefix=f"miniseed/{station_net}/", Delimiter='/')
-            years = [p['Prefix'].split('/')[-2] for p in resp_years.get('CommonPrefixes', [])]
-            for year in sorted(years):
-                resp_days = s3_client.list_objects_v2(Bucket=bucket, Prefix=f"miniseed/{station_net}/{year}/", Delimiter='/')
-                days = [p['Prefix'].split('/')[-2] for p in resp_days.get('CommonPrefixes', [])]
-                for jday in sorted(days):
-                    day_prefix = f"miniseed/{station_net}/{year}/{jday}/"
-                    resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=day_prefix)
-                    if 'Contents' in resp:
-                        for obj in resp['Contents']:
-                            s3_key = obj['Key']
-                            filename = s3_key.split('/')[-1]
-                            if filename.startswith(f"{station_sta}."):
-                                dt_str = datetime.strptime(f"{year}{jday}", "%Y%j").strftime("%Y-%m-%d")
-                                available[dt_str] = s3_key
-        except Exception as e:
-            print(f"  -> Warning: Failed to scan full history for {station_net}: {e}")
-    return available
+def build_availability_from_parquet(keyindex_path, unique_stations):
+    """Load the partitioned Parquet index and build availability dicts instantly."""
+    print(f"Loading key index from {keyindex_path}...")
+    t0 = time.time()
 
-def build_availability_from_inventory(inventory_file, unique_stations, start_dt=None, end_dt=None):
-    print(f"Loading inventory from {inventory_file}...")
-    inv_df = pd.read_csv(inventory_file)
-    
-    nets = [n for n, s in unique_stations]
-    stas = [s for n, s in unique_stations]
-    mask = inv_df['network'].isin(nets) & inv_df['station'].isin(stas)
-    inv_df = inv_df[mask].copy()
+    # Build filter for only the stations we need
+    nets = list(set(n for n, s in unique_stations))
+    stas = list(set(s for n, s in unique_stations))
 
-    if start_dt and end_dt:
-        inv_df['date_ts'] = pd.to_datetime(
-            inv_df['year'].astype(str) + inv_df['yearday'].astype(str).str.zfill(3), 
-            format='%Y%j'
-        )
-        inv_df = inv_df[
-            (inv_df['date_ts'] >= pd.Timestamp(start_dt)) & 
-            (inv_df['date_ts'] <= pd.Timestamp(end_dt))
+    # Read only relevant rows from Parquet (partition pruning + row filtering)
+    df = pd.read_parquet(
+        keyindex_path,
+        filters=[
+            ('network', 'in', nets),
         ]
+    )
+    # Further filter by station
+    df = df[df['station'].isin(stas)].copy()
+
+    # Build the availability dict using vectorized ops
+    df['sta_key'] = df['network'].astype(str) + '.' + df['station'].astype(str)
+    df['date_str'] = pd.to_datetime(
+        df['year'].astype(str) + df['yearday'].astype(str).str.zfill(3),
+        format='%Y%j'
+    ).dt.strftime('%Y-%m-%d')
 
     station_availability = {}
-    for _, row in inv_df.iterrows():
-        sta = f"{row['network']}.{row['station']}"
-        date_str = pd.to_datetime(f"{row['year']}{str(row['yearday']).zfill(3)}", format='%Y%j').strftime("%Y-%m-%d")
-        if sta not in station_availability:
-            station_availability[sta] = {}
-        station_availability[sta][date_str] = row['dataacess_key']
+    for sta_key, group in df.groupby('sta_key'):
+        station_availability[sta_key] = dict(zip(group['date_str'], group['dataacess_key']))
+
+    elapsed = time.time() - t0
+    print(f"  Loaded {len(df):,} records for {len(station_availability)} stations in {elapsed:.1f}s")
+
     return station_availability
 
+
 def download_worker(item):
-    """Worker function to download a single file."""
-    global global_progress, global_total
+    """Worker function to download a single file from S3."""
+    global progress_downloaded, progress_skipped, progress_errors
+    global progress_total, total_bytes_downloaded, global_s3_client
+
     bucket, outdir, sta_label, s3_key = item
-    
+
     sta_dir = os.path.join(outdir, sta_label)
     local_path = os.path.join(sta_dir, s3_key)
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
-    
+
+    # Skip if already exists
     if os.path.exists(local_path):
         with AUTH_LOCK:
-            global_progress += 1
-        return {'station': sta_label, 'key': s3_key, 'status': 'skipped'}
-        
-    s3_client = get_thread_safe_client()
-    
+            progress_skipped += 1
+            done = progress_downloaded + progress_skipped + progress_errors
+            if done % 50 == 0 or done == progress_total:
+                sys.stdout.write(f"\r  Progress: [{done}/{progress_total}] ({progress_downloaded} new, {progress_skipped} cached, {progress_errors} err)")
+                sys.stdout.flush()
+        return {'station': sta_label, 'key': s3_key, 'status': 'skipped', 'bytes': 0}
+
+    s3_client = global_s3_client
+
     try:
         resp = s3_client.get_object(Bucket=bucket, Key=s3_key)
+        data = resp['Body'].read()
         with open(local_path, "wb") as f:
-            f.write(resp['Body'].read())
-        
+            f.write(data)
+        nbytes = len(data)
+
         with AUTH_LOCK:
-            global_progress += 1
-            if global_progress % 10 == 0 or global_progress == global_total:
-                sys.stdout.write(f"\r  -> Progress: [{global_progress}/{global_total}] files downloaded...")
+            progress_downloaded += 1
+            total_bytes_downloaded += nbytes
+            done = progress_downloaded + progress_skipped + progress_errors
+            if done % 10 == 0 or done == progress_total:
+                dl_gb = total_bytes_downloaded / (1024**3)
+                sys.stdout.write(f"\r  Progress: [{done}/{progress_total}] ({progress_downloaded} new, {progress_skipped} cached, {progress_errors} err) — {dl_gb:.2f} GB downloaded")
                 sys.stdout.flush()
-                
-        return {'station': sta_label, 'key': s3_key, 'status': 'ok'}
-        
+
+        return {'station': sta_label, 'key': s3_key, 'status': 'ok', 'bytes': nbytes}
+
     except Exception as e:
         error_str = str(e)
         if "ExpiredToken" in error_str or "Token expired" in error_str or "Forbidden" in error_str:
-            # Token expired. Let this thread trigger the refresh safely.
-            s3_client = handle_expired_token()
+            # Refresh credentials safely
+            with AUTH_LOCK:
+                print(f"\n  -> Token expired. Refreshing credentials...")
+                global_s3_client = refresh_s3_client(global_es_client, max_pool=50)
+                s3_client = global_s3_client
+
+            # Retry once
             try:
-                # Retry once after refresh
                 resp = s3_client.get_object(Bucket=bucket, Key=s3_key)
+                data = resp['Body'].read()
                 with open(local_path, "wb") as f:
-                    f.write(resp['Body'].read())
-                
+                    f.write(data)
+                nbytes = len(data)
                 with AUTH_LOCK:
-                    global_progress += 1
-                return {'station': sta_label, 'key': s3_key, 'status': 'ok'}
+                    progress_downloaded += 1
+                    total_bytes_downloaded += nbytes
+                return {'station': sta_label, 'key': s3_key, 'status': 'ok', 'bytes': nbytes}
             except Exception as e2:
                 with AUTH_LOCK:
-                    global_progress += 1
-                return {'station': sta_label, 'key': s3_key, 'status': f'error: {e2}'}
+                    progress_errors += 1
+                return {'station': sta_label, 'key': s3_key, 'status': f'error: {e2}', 'bytes': 0}
         else:
             with AUTH_LOCK:
-                global_progress += 1
-            return {'station': sta_label, 'key': s3_key, 'status': f'error: {e}'}
+                progress_errors += 1
+            return {'station': sta_label, 'key': s3_key, 'status': f'error: {e}', 'bytes': 0}
+
 
 def main():
-    global global_s3_client, global_es_client, global_progress, global_total
-    
+    global global_s3_client, global_es_client
+    global progress_downloaded, progress_skipped, progress_errors, progress_total, total_bytes_downloaded
+
     parser = argparse.ArgumentParser(
         description="Download raw MiniSEED data for overlapping GridMeta station pairs."
     )
     parser.add_argument("--pairs", required=True, help="Path to GridMeta pairs CSV")
-    parser.add_argument("--inventory", default=None, help="Path to s3_inventory.csv (Fast mode)")
-    parser.add_argument("--start", default=None, help="(Optional) Start date (YYYY-MM-DD)")
-    parser.add_argument("--end", default=None, help="(Optional) End date (YYYY-MM-DD)")
+    parser.add_argument("--keyindex", required=True, help="Path to keys_partitioned_year/ Parquet directory")
     parser.add_argument("--outdir", default="raw_data", help="Output directory")
-    parser.add_argument("--max-pairs", type=int, default=None, help="Max pairs")
-    parser.add_argument("--networks", nargs="+", default=None, help="Filter networks")
-    parser.add_argument("--dist-min", type=float, default=None, help="Min distance (km)")
-    parser.add_argument("--dist-max", type=float, default=None, help="Max distance (km)")
-    parser.add_argument("--workers", type=int, default=10, help="Number of parallel download threads")
+    parser.add_argument("--max-pairs", type=int, default=None, help="Max pairs to process")
+    parser.add_argument("--networks", nargs="+", default=None, help="Filter by network codes (e.g., CI IU)")
+    parser.add_argument("--workers", type=int, default=50, help="Number of parallel download threads (default: 50)")
     args = parser.parse_args()
+
+    # Validate keyindex exists
+    if not os.path.exists(args.keyindex):
+        print(f"ERROR: Key index '{args.keyindex}' not found!")
+        print(f"Run build_key_index.py first:  python build_key_index.py --outdir {args.keyindex}")
+        sys.exit(1)
 
     # ==========================================
     # 1. Authenticate with EarthScope
     # ==========================================
     print("Authenticating with EarthScope...")
     global_es_client = EarthScopeClient()
-    global_s3_client = refresh_s3_client(global_es_client)
+    global_s3_client = refresh_s3_client(global_es_client, max_pool=args.workers)
     BUCKET = "earthscope-mseed-res-na3mtd4fq5kz7pntcyr1uh46use2a--ol-s3"
     print("Authenticated successfully.\n")
 
     t_start = time.time()
-    
-    start_dt = None
-    end_dt = None
-    if args.start and args.end:
-        start_dt = datetime.strptime(args.start, "%Y-%m-%d")
-        end_dt = datetime.strptime(args.end, "%Y-%m-%d")
+
+    # Track peak RAM
+    try:
+        import resource
+        ram_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    except ImportError:
+        ram_before = None
 
     # ==========================================
     # 2. Load and filter pairs
     # ==========================================
     df_pairs = load_and_filter_pairs(
-        args.pairs, networks=args.networks, max_pairs=args.max_pairs,
-        dist_min=args.dist_min, dist_max=args.dist_max
+        args.pairs, networks=args.networks, max_pairs=args.max_pairs
     )
     os.makedirs(args.outdir, exist_ok=True)
     df_pairs.to_csv(os.path.join(args.outdir, "pairs_to_process.csv"), index=False)
 
-    unique_stations = get_unique_stations(df_pairs)
-    print(f"\nUnique stations to check: {len(unique_stations)}")
+    # Get unique stations
+    stations = set()
+    for _, row in df_pairs.iterrows():
+        stations.add((row['net1'], row['sta1']))
+        stations.add((row['net2'], row['sta2']))
+    unique_stations = sorted(stations)
+    print(f"\nUnique stations: {len(unique_stations)}")
 
     # ==========================================
-    # 3. Check Overlaps
+    # 3. Instant Overlap Calculation (Parquet)
     # ==========================================
     print(f"\n{'='*60}")
-    if args.inventory and os.path.exists(args.inventory):
-        print(f"Using local inventory for INSTANT overlap calculation: {args.inventory}")
-        print(f"{'='*60}")
-        station_availability = build_availability_from_inventory(
-            args.inventory, unique_stations, start_dt, end_dt
-        )
-    else:
-        if args.inventory:
-            print(f"Warning: Inventory '{args.inventory}' not found. Falling back to S3 scan.")
-        if start_dt and end_dt:
-            print(f"Scanning S3 for overlaps: {args.start} → {args.end}")
-        else:
-            print(f"Scanning S3 for ALL-TIME overlaps (this may take a few minutes...)")
-        print(f"{'='*60}")
-        
-        station_availability = {}
-        for i, (net, sta) in enumerate(unique_stations):
-            print(f"  Scanning history for {net}.{sta}...")
-            station_availability[f"{net}.{sta}"] = get_available_keys(
-                global_s3_client, BUCKET, net, sta, start_dt, end_dt
-            )
-    
-    # Calculate overlaps for pairs
-    print(f"\n{'='*60}")
-    print("Calculating exact pair overlaps...")
+    print(f"Calculating overlaps from Parquet index...")
     print(f"{'='*60}")
-    to_download = set()  # Store exact S3 keys to download
+
+    station_availability = build_availability_from_parquet(args.keyindex, unique_stations)
+
+    to_download = set()
     total_overlapping_days = 0
-    
+    pairs_with_overlap = 0
+
     for _, row in df_pairs.iterrows():
         sta1 = f"{row['net1']}.{row['sta1']}"
         sta2 = f"{row['net2']}.{row['sta2']}"
-        
+
         avail1 = station_availability.get(sta1, {})
         avail2 = station_availability.get(sta2, {})
-        
-        # Find intersecting dates
+
         overlap_dates = set(avail1.keys()).intersection(set(avail2.keys()))
-        
+
         if overlap_dates:
             total_overlapping_days += len(overlap_dates)
+            pairs_with_overlap += 1
             for date in overlap_dates:
                 to_download.add((sta1, avail1[date]))
                 to_download.add((sta2, avail2[date]))
-        
-        print(f"  {sta1} & {sta2}: {len(overlap_dates)} overlapping days")
+
+    print(f"\n  Pairs with overlap:    {pairs_with_overlap} / {len(df_pairs)}")
+    print(f"  Total overlapping days: {total_overlapping_days:,}")
+    print(f"  Unique files to fetch:  {len(to_download):,}")
 
     # ==========================================
-    # 4. Download exact matching files (Multi-threaded)
+    # 4. Download (Multithreaded)
     # ==========================================
     if not to_download:
         print("\nNo overlaps found. Nothing to download.")
         sys.exit(0)
 
     print(f"\n{'='*60}")
-    print(f"Downloading {len(to_download)} files in parallel (Threads: {args.workers})")
+    print(f"Downloading with {args.workers} parallel threads...")
     print(f"{'='*60}\n")
 
-    all_downloads = []
-    global_total = len(to_download)
-    global_progress = 0
-    
-    # Sort for consistency
+    progress_total = len(to_download)
+    progress_downloaded = 0
+    progress_skipped = 0
+    progress_errors = 0
+    total_bytes_downloaded = 0
+
     to_download_sorted = sorted(list(to_download))
     download_tasks = [(BUCKET, args.outdir, sta, key) for sta, key in to_download_sorted]
 
-    # Execute with ThreadPoolExecutor
+    all_downloads = []
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = [executor.submit(download_worker, item) for item in download_tasks]
         for future in as_completed(futures):
             all_downloads.append(future.result())
 
-    print("\n\nFinished all threads.")
+    print("\n")
 
     # ==========================================
-    # 5. Summary
+    # 5. Summary with Statistics
     # ==========================================
     manifest = pd.DataFrame(all_downloads)
     if not manifest.empty:
@@ -361,20 +324,63 @@ def main():
     total_ok = sum(1 for d in all_downloads if d['status'] == 'ok')
     total_skip = sum(1 for d in all_downloads if d['status'] == 'skipped')
     total_err = sum(1 for d in all_downloads if d['status'].startswith('error'))
+    total_bytes = sum(d.get('bytes', 0) for d in all_downloads)
+
+    # Calculate total size on disk (including previously cached files)
+    disk_size = 0
+    for root, dirs, files in os.walk(args.outdir):
+        for f in files:
+            fp = os.path.join(root, f)
+            try:
+                disk_size += os.path.getsize(fp)
+            except OSError:
+                pass
 
     t_elapsed = time.time() - t_start
     mins, secs = divmod(int(t_elapsed), 60)
     hrs, mins = divmod(mins, 60)
 
-    print(f"\n{'='*60}")
+    # RAM usage
+    try:
+        import resource
+        ram_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # On Linux, ru_maxrss is in KB
+        ram_peak_mb = ram_after / 1024
+        ram_str = f"{ram_peak_mb:.0f} MB"
+    except (ImportError, Exception):
+        try:
+            import psutil
+            process = psutil.Process(os.getpid())
+            ram_peak_mb = process.memory_info().rss / (1024 * 1024)
+            ram_str = f"{ram_peak_mb:.0f} MB"
+        except (ImportError, Exception):
+            ram_str = "N/A (install psutil for RAM tracking)"
+
+    # Download speed
+    if t_elapsed > 0 and total_ok > 0:
+        speed_files = total_ok / t_elapsed
+        speed_mb = (total_bytes / (1024 * 1024)) / t_elapsed
+    else:
+        speed_files = 0
+        speed_mb = 0
+
+    print(f"{'='*60}")
     print(f"DOWNLOAD COMPLETE")
     print(f"{'='*60}")
-    print(f"  Pairs Processed:   {len(df_pairs)}")
-    print(f"  Overlapping Days:  {total_overlapping_days}")
-    print(f"  Files Downloaded:  {total_ok:,}")
-    print(f"  Files Skipped:     {total_skip:,} (already exist)")
-    print(f"  Errors:            {total_err:,}")
-    print(f"  Total Time:        {hrs}h {mins}m {secs}s")
+    print(f"  Pairs Processed:     {len(df_pairs):,}")
+    print(f"  Pairs with Overlap:  {pairs_with_overlap:,}")
+    print(f"  Overlapping Days:    {total_overlapping_days:,}")
+    print(f"  ─────────────────────────────────────")
+    print(f"  Files Downloaded:    {total_ok:,}")
+    print(f"  Files Cached:        {total_skip:,} (already on disk)")
+    print(f"  Files Errored:       {total_err:,}")
+    print(f"  ─────────────────────────────────────")
+    print(f"  Data Downloaded:     {total_bytes / (1024**3):.2f} GB (this run)")
+    print(f"  Total on Disk:       {disk_size / (1024**3):.2f} GB (raw_data/)")
+    print(f"  Download Speed:      {speed_files:.1f} files/s | {speed_mb:.1f} MB/s")
+    print(f"  ─────────────────────────────────────")
+    print(f"  Peak RAM Usage:      {ram_str}")
+    print(f"  Total Time:          {hrs}h {mins}m {secs}s")
 
 
 if __name__ == "__main__":
