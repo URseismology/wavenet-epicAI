@@ -87,7 +87,6 @@ def scan_network(network, bucket):
             # Refresh credentials (thread-safe)
             with AUTH_LOCK:
                 print(f"\n  -> Token expired during {network}. Refreshing...")
-                global global_s3_client
                 global_s3_client = refresh_s3_client(global_es_client)
             
             # Retry this network from scratch with fresh client
