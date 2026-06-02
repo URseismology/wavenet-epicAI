@@ -121,7 +121,7 @@ def main():
     parser = argparse.ArgumentParser(description="Build partitioned Parquet key index from EarthScope S3.")
     parser.add_argument("--outdir", default="keys_partitioned_year", help="Output directory for partitioned Parquet")
     parser.add_argument("--workers", type=int, default=20, help="Number of parallel scanning threads")
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
 
     # ==========================================
     # 1. Authenticate
