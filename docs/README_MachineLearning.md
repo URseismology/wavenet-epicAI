@@ -53,6 +53,9 @@ The project's data is organized into specific directories and files, each servin
 ### Modern Data Aggregation & PyTorch Workflow (v2)
 The project has transitioned from `.npy` files to a unified HDF5 dataset structure to support efficient data loading and PyTorch integration.
 
+> [!IMPORTANT]
+> **Complete Database Schema:** For a deep dive into the HDF5 schema (`ftan_inputs`, `target_masks`, `velocity_models`) and future PyTorch U-Net integration, please read the [HDF5 Dataset Architecture Documentation](./HDF5_Dataset_Architecture.md).
+
 **1. HDF5 Aggregation (`h5_wavenet_tools.py`)**
 This module defines the `HDF5Writer` and `HDF5Reader` classes. 
 - The schema stores `raw_waveforms`, `ftan_inputs`, `target_masks`, and `velocity_models` with a metadata log.

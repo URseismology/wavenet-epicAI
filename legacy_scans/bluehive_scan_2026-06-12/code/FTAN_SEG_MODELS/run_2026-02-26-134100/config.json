@@ -1,0 +1,9 @@
+{
+    "numerical_dir": "FTAN_NUMERICAL",
+    "metadata_file": "FTAN_ML_INPUT/metadata.csv",
+    "output_dir": "FTAN_SEG_MODELS",
+    "batch_size": 16,
+    "learning_rate": 0.0001,
+    "num_epochs": 200,
+    "patience": 25
+}

@@ -1,0 +1,10 @@
+{
+    "data_dir": "FTAN_ML_INPUT",
+    "metadata_file": "FTAN_ML_INPUT/metadata.csv",
+    "output_dir": "FTAN_ML_MODELS",
+    "batch_size": 8,
+    "learning_rate": 0.0001,
+    "num_epochs": 200,
+    "patience": 20,
+    "augment": true
+}
