@@ -3,6 +3,10 @@
 ## Goal
 To parse the massively parallel synthetic waveforms across the Bluehive directories, compute their FTAN matrices, and securely append them into an incremental, high-performance `HDF5` database. This dataset will permanently archive the raw waveforms while supplying the exact `(80, 400)` matrices expected by the `UNetSeg` model.
 
+> [!TIP]
+> **Download the Dataset:** You can download the fully packaged 1.7GB `wavenet_training_data.h5` file directly from our secure NAS server:
+> [Download WaveNet Training Data (HDF5)](https://repovibranium.quickconnect.to/sharing/xL5f3x1FE)
+
 ## Proposed Architecture
 
 ### 1. Incremental Data Aggregation Strategy
