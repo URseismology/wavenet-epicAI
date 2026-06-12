@@ -1,0 +1,48 @@
+# 🚀 WaveNet-EpicAI: Collaborative Roadmap
+
+Welcome to the central roadmap for the WaveNet-EpicAI project! This document outlines the immediate priorities for fully automating our Bluehive data pipelines and pivoting the project entirely into PyTorch.
+
+> [!NOTE]
+> **To Collaborators (Chris):** Please treat this document as your primary checklist. If you hit any roadblocks or queue timeouts on Bluehive, document your debugging steps alongside the task.
+
+---
+
+## Phase 1: WaveSim Simulation Cron Automation
+The master Orchestrator script (`src/simulation_runner/launch_wavesim_auto.sh`) currently handles dynamic payload scaling across the `preempt`, `standard`, and `urseismo` queues. However, it must be launched manually. 
+**Note:** This phase will be developed in direct collaboration with Tolu to ensure the scheduling aligns properly with lab resources.
+
+**Your Tasks:**
+- [ ] **Cron Deployment:** Set up a user `crontab` on Bluehive (e.g., `0 */6 * * *`) to trigger the Orchestrator automatically.
+- [ ] **Queue Safety Wrapper:** Write a lightweight Bash wrapper script that the cron job executes first. It should run `squeue -u $USER -p urseismo | wc -l`. The wrapper should *only* trigger the Orchestrator if the number of actively running jobs drops below a safe threshold (e.g., `< 50`).
+- [ ] **Error Handling:** Ensure the wrapper script gracefully handles Slurm queue errors or SSH timeouts, so the cron job fails silently rather than spawning infinite zombie processes.
+
+---
+
+## Phase 2: HDF5 Training Data Daily Append
+Our PyTorch models no longer rely on millions of `.npy` files. Instead, they stream directly from a massive, unified `wavenet_training_data.h5` database. 
+
+**Your Tasks:**
+- [ ] **Automate `build_ml_dataset.py`:** Create `auto_hdf5_submit.sh` to trigger the Python dataset builder daily.
+- [ ] **State-Aware Diffing:** Ensure your automation tightly integrates with the `generate_jobmap_diff.py` log scanner. The script should only trigger the `submit_dataset_builder.sh` SLURM array if new `.done` files actually exist in `logs/status/`.
+- [ ] **NAS Backup Automation:** Implement `rsync` logic at the end of the appending script to securely back up the newly updated `1.7GB+` `.h5` file directly to the Synology NAS. *(Hint: Use `-e "ssh -o ServerAliveInterval=60"` to prevent timeouts).*
+
+---
+
+## Phase 3: Dataset Verification and Debugging
+Because the dataset is built dynamically while simulations are still running, we must mathematically and visually prove the integrity of the data before feeding it to the neural networks.
+
+**Your Tasks:**
+- [ ] **Visual Profiling:** Develop a `verify_hdf5.py` Python script that randomly samples indices from the `.h5` arrays. It must use Matplotlib to plot a random raw waveform matrix `[time_steps, 6]`, its computed FTAN `[80, 400]`, and the target label mask side-by-side.
+- [ ] **Automated Shape & NaN Checks:** Implement rigorous shape assertions and `np.isnan()` checks across the dataset. 
+- [ ] **Self-Healing:** If a specific batch index contains NaNs or incomplete arrays, the verification script must actively flag the offending `simulation_id` string and safely strip it from the database to prevent catastrophic loss spikes during PyTorch training.
+
+---
+
+## Phase 4: PyTorch GPU Integration (U-Net)
+With the data packaged and verified, we must pivot to the actual machine learning execution on the Bluehive GPU nodes.
+
+**Your Tasks:**
+- [ ] **Finalize the Dataloader:** Review the `HDF5Reader` class inside `src/data_processing/h5_wavenet_tools.py`. Ensure it can seamlessly stream batches of `(80, 400)` matrices into PyTorch without loading the entire 1.7GB file into RAM.
+- [ ] **Update U-Net Code:** Refactor `src/machine_learning/U_NET_array.py` to natively consume the PyTorch Dataloader batches instead of parsing legacy `.npy` files.
+- [ ] **GPU Slurm Script:** Draft `submit_gpu_training.sh` targeting the Bluehive `-p gpu` partition. Ensure it requests adequate VRAM.
+- [ ] **Checkpointing:** Implement PyTorch model checkpointing to save weights (`.pth` or `.pt` files) after every $N$ epochs.
