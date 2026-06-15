@@ -60,7 +60,13 @@ def check_and_download_data():
             sys.exit(1)
 
 # ===========================================================================
-# TIME-DOMAIN CCF AND COHERENCE (Adapted from compute_ccf.py)
+# TIME-DOMAIN CCF AND COHERENCE
+# Adapted from: legacy_scans/bluehive_scan_2026-06-12/code/compute_ccf.py
+# 
+# These functions recreate the exact mathematical pipeline used to process 
+# the original Bluehive raw waveforms into Time-Domain CCF and Frequency 
+# Coherence. By adapting them here, we can process the arrays on-the-fly 
+# straight from the HDF5 file instead of reading intermediate `.txt` dumps.
 # ===========================================================================
 def moving_average(data, window_size):
     kernel = np.ones(window_size) / window_size
@@ -136,6 +142,12 @@ def compute_ccf_and_coherence(r1, r2, dt):
 
 # ===========================================================================
 # PLOTTING FUNCTIONS
+# Adapted from: legacy_scans/bluehive_scan_2026-06-12/code/plot_exp716.py 
+#          and legacy_scans/bluehive_scan_2026-06-12/code/coverage_analysis.py
+#
+# The layout uses matplotlib.gridspec to match the original 6-panel plots.
+# The source distribution is reconstructed procedurally rather than using 
+# the legacy `all_sources.csv` which is no longer packaged.
 # ===========================================================================
 def plot_source_distribution(ax, distance_km, radius_range, azimuth_range):
     """
