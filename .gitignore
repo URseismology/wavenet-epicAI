@@ -2,3 +2,4 @@ src/wavenet_pipeline/02_simulation/_simulation_outputs/
 __pycache__/
 *.pyc
 _root_debug_archive/
+.DS_Store
