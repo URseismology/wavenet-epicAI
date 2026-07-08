@@ -10,7 +10,7 @@ If you are joining the project, please start by reviewing our active development
 ## Documentation Directory
 
 Our detailed architectural documentation is housed in the `docs/` folder:
-- **[HDF5 Dataset Architecture](docs/HDF5_Dataset_Architecture.md)**: Detailed schema of the 1.7GB `.h5` file and PyTorch streaming logic. *(Includes Direct Download Link)*
+- **[HDF5 Dataset Architecture](docs/HDF5_Dataset_Architecture.md)**: Detailed schema of the two `.h5` files and PyTorch streaming logic. *(Includes Direct Download Link)*
 - **[Machine Learning Pipeline](docs/README_MachineLearning.md)**: Overview of the legacy `.npy` flows and the modern PyTorch transitions.
 - **[WaveSim Architecture](docs/README_WaveSimArchitecture.md)**: Breakdown of the Bluehive HPC autosubmission and job-diffing components.
 
