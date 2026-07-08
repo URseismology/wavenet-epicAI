@@ -207,6 +207,7 @@ def main():
     parser.add_argument("--keyindex", required=True, help="Path to keys_partitioned_year/ Parquet directory")
     parser.add_argument("--outdir", default="raw_data", help="Output directory")
     parser.add_argument("--max-pairs", type=int, default=None, help="Max pairs to process")
+    parser.add_argument("--limit-files", type=int, default=None, help="Max files to download (for testing)")
     parser.add_argument("--networks", nargs="+", default=None, help="Filter by network codes (e.g., CI IU)")
     parser.add_argument("--workers", type=int, default=50, help="Number of parallel download threads (default: 50)")
     args = parser.parse_args()
@@ -304,6 +305,10 @@ def main():
 
     to_download_sorted = sorted(list(to_download))
     download_tasks = [(BUCKET, args.outdir, sta, key) for sta, key in to_download_sorted]
+    if args.limit_files:
+        print(f"\n  [TEST MODE] Limiting to {args.limit_files} files!")
+        download_tasks = download_tasks[:args.limit_files]
+        progress_total = len(download_tasks)
 
     all_downloads = []
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
