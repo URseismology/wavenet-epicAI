@@ -1,5 +1,10 @@
 # AWS Initial Setup & Authentication Guide
 
+> **📚 Documentation Map:** This is **Part 1** of our cloud orchestration documentation.
+> * **[Part 1: AWS Setup Guide](./AWS_Setup_Guide.md)** (You are here) - Steps to configure your local credentials and AWS CLI.
+> * **[Part 2: Cloud Pipeline Guide](./AWS_Docker_Pipeline_Guide.md)** - How to launch the EC2 orchestrator and download data securely.
+> * **[Part 3: Private Registry Architecture](./URseismogate_Registry_Architecture.md)** - Details on our zero-trust `urseismogate` Docker registry and how it feeds the EC2 orchestrators.
+
 Before you can run the EarthScope Zero-Egress Cloud Pipeline, you must have your own AWS account and configure your local machine with the correct credentials. 
 
 This guide walks you through creating an account, generating security keys, installing the AWS CLI, and linking your Mac/PC to AWS.

@@ -1,5 +1,10 @@
 # The URseismogate Docker Registry Architecture
 
+> **📚 Documentation Map:** This is **Part 3** of our cloud orchestration documentation.
+> * **[Part 1: AWS Setup Guide](./AWS_Setup_Guide.md)** - Steps to configure your local credentials and AWS CLI.
+> * **[Part 2: Cloud Pipeline Guide](./AWS_Docker_Pipeline_Guide.md)** - How to launch the EC2 orchestrator and download data securely.
+> * **[Part 3: Private Registry Architecture](./URseismogate_Registry_Architecture.md)** (You are here) - Details on our zero-trust `urseismogate` Docker registry and how it feeds the EC2 orchestrators.
+
 This document outlines the architecture of our lab's private Docker registry (`urseismogate.earth.rochester.edu`), how it integrates with our AWS orchestration scripts, and why it is critical for scaling to full production runs.
 
 ---

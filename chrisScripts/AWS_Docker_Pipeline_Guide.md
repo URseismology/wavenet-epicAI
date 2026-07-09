@@ -1,6 +1,11 @@
 # EarthScope Zero-Egress Cloud Pipeline Guide
 
-**Prerequisite:** Before running this pipeline, you must have an AWS account and a properly configured local environment. If you or your team have not done this yet, please see the [**AWS Initial Setup & Authentication Guide**](./AWS_Setup_Guide.md) first!
+> **📚 Documentation Map:** This is **Part 2** of our cloud orchestration documentation.
+> * **[Part 1: AWS Setup Guide](./AWS_Setup_Guide.md)** - Steps to configure your local credentials and AWS CLI.
+> * **[Part 2: Cloud Pipeline Guide](./AWS_Docker_Pipeline_Guide.md)** (You are here) - How to launch the EC2 orchestrator and download data securely.
+> * **[Part 3: Private Registry Architecture](./URseismogate_Registry_Architecture.md)** - Details on our zero-trust `urseismogate` Docker registry and how it feeds the EC2 orchestrators.
+
+**Prerequisite:** Before running this pipeline, you must have an AWS account and a properly configured local environment. If you or your team have not done this yet, please see **Part 1** first!
 
 ---
 
