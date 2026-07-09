@@ -126,3 +126,38 @@ python chrisScripts/singleNCFtest/orchestrator.py
 5.  **Retrieve Data:** It SCPs the downloaded `.mseed` files back to your Mac. 
     *   *Egress Costs:* The EC2 server downloading data from S3 is free. However, copying the final `.mseed` files from the EC2 server down to your Mac incurs a tiny Egress fee ($0.09 per GB). For our test pair, this is negligible. In future production workflows, the EC2 server will process the `.mseed` into tiny `.csv` feature files, and *only* the `.csv` will be downloaded to your Mac, ensuring Egress costs remain incredibly low.
 6.  **Auto-Termination:** To ensure you are not billed indefinitely for an idle server, the script is programmed to automatically terminate (delete) the EC2 instance and Security Group as soon as it finishes. For your first run, it pauses for 3 minutes before terminating so you can inspect the AWS console.
+
+---
+
+## 5. Running the End-to-End Cloud Test (`singleNCFtest`)
+
+To verify the entire zero-egress cloud architecture works seamlessly, we have included a fully automated test suite in the repository.
+
+### What the Test Does
+The test uses a tiny dummy CSV (`test_pairs.csv`) containing a single station pair, alongside a pre-computed Parquet index (`keys_partitioned_year/`). It spins up an EC2 instance, downloads the precise miniseed files for that pair into `raw_data/`, brings them back to your Mac, and then terminates the EC2 instance automatically.
+
+### Execution Steps
+Ensure you are in your isolated AWS clone:
+```bash
+cd ~/wavenet-epicAI
+```
+
+**Step 1: Launch the Orchestrator**
+Run the orchestrator test script. This handles all the AWS provisioning, Docker launching, and SCP transfers automatically:
+```bash
+python3 chrisScripts/singleNCFtest/orchestrator.py
+```
+*Note: You do not need the `--inspect` flag. The script will automatically terminate the EC2 instance upon completion to prevent billing.*
+
+**Step 2: Verify the Downloaded Data**
+Once the orchestrator completes, the downloaded EarthScope data will be securely resting on your Mac. You can check the files:
+```bash
+ls -al chrisScripts/singleNCFtest/raw_data/
+```
+
+**Step 3: Visualize the Seismic Data**
+We have included a simple ObsPy script to read and plot one of the downloaded `.mseed` files to prove data integrity:
+```bash
+python3 chrisScripts/singleNCFtest/view_mseed.py
+```
+This will generate `miniseed_plot.png` locally, demonstrating a perfectly preserved seismic trace retrieved seamlessly from the restricted AWS Open Data bucket!
