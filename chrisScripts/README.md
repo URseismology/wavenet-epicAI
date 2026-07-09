@@ -2,7 +2,21 @@
 
 This project is a high-performance pipeline designed to automate the discovery, spatial indexing, and metadata extraction of EarthScope (formerly IRIS) seismic stations. 
 
-When dealing with ambient noise cross-correlation at a global scale, researchers face a massive data bottleneck: downloading decades of continuous waveforms for over 60,000 stations is computationally unfeasible. This project solves that problem by drastically downsampling the global network into an optimal, high-uptime grid of representative stations and pre-calculating their valid spatial pairs.
+When dealing with ambient noise cross-correlation at a global scale, researchers face a massive data bottleneck: downloading decades of continuous waveforms for over 60,000 stations is computationally unfeasible. This project solves that problem through intelligent spatial downsampling and a highly optimized, zero-egress cloud architecture.
+
+---
+
+## 🚀 The Zero-Egress Cloud Orchestration Pipeline (New)
+
+Previously, our workflows relied on local machines to download massive seismic datasets directly from EarthScope's AWS S3 buckets. Due to recent EarthScope Object Lambda policy changes, this "legacy" local-download approach now results in `FgaAccessDenied` errors and risks massive AWS Egress fees.
+
+To adapt, we have built a fully automated **Zero-Egress Cloud Orchestrator**. This pipeline automatically spins up ephemeral EC2 instances inside the `us-east-2` AWS region, executes pre-compiled Docker images from our private lab registry, performs S3 downloads with zero egress costs, and securely SCPs the data back to your local machine before terminating the server.
+
+**Documentation Series:**
+To get started with the new cloud orchestrator, please read our 3-part documentation series:
+1. **[Part 1: AWS Setup Guide](./AWS_Setup_Guide.md)** - Setting up your AWS account, IAM keys, and CLI.
+2. **[Part 2: Cloud Pipeline Guide](./AWS_Docker_Pipeline_Guide.md)** - Launching the EC2 orchestrator and running the `singleNCFtest` end-to-end test.
+3. **[Part 3: Private Registry Architecture](./URseismogate_Registry_Architecture.md)** - How our zero-trust `urseismogate` Docker registry feeds the cloud environment.
 
 ---
 
