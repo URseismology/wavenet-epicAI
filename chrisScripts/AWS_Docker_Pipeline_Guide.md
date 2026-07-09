@@ -1,23 +1,6 @@
-# AWS & Docker Pipeline Guide
+# EarthScope Zero-Egress Cloud Pipeline Guide
 
-This document explains the granular details of running the EarthScope/AWS containerized pipeline. It is designed to help researchers new to Docker understand how the infrastructure operates under the hood.
-
-## The Architecture: What Uses AWS and What Doesn't?
-
-When running this pipeline on your local Mac (or on the ATOS-NAS), it is important to distinguish between local compute and cloud resources.
-
-*   **What DOES NOT use AWS (runs locally):** The Docker container itself is running on your physical Mac's CPU and RAM. When you type `docker run`, your computer is executing the Python code locally.
-*   **What DOES use AWS (the Cloud):** The Python scripts inside the container (`boto3`) reach out over the internet to Amazon Web Services to query the EarthScope S3 buckets. When the script downloads `.mseed` files, AWS servers package the data and stream it across the internet down to your local Mac.
-*   **Future Goal (The Cloud Orchestrator):** In the ultimate production architecture, we will move the *Docker container itself* to an AWS EC2 instance. In that scenario, everything (both compute and data storage) will happen in the cloud, and your local machine will just trigger the process.
-
-## Why is `es login` Necessary?
-
-You might wonder: *"If I already provided my AWS Access Keys, why do I need to log into EarthScope?"*
-
-EarthScope hosts its massive seismic database on AWS S3 Open Data. However, access to this data is managed by EarthScope's own identity systems. 
-When you run `es login` (EarthScope Login), you are proving to EarthScope that you are a registered researcher. EarthScope then takes your saved token and securely instructs AWS to allow your specific AWS Keys to access their S3 buckets. 
-
-Without the `es login` token, AWS will reject your requests with a `Forbidden` error because EarthScope hasn't vouched for you.
+**Prerequisite:** Before running this pipeline, you must have an AWS account and a properly configured local environment. If you or your team have not done this yet, please see the [**AWS Initial Setup & Authentication Guide**](./AWS_Setup_Guide.md) first!
 
 ---
 
@@ -41,6 +24,10 @@ docker run -it --rm \
   urseismogate.earth.rochester.edu/chrisscripts:latest \
   es login
 ```
+
+Without the `es login` token, AWS will reject your requests with a `Forbidden` error because EarthScope hasn't vouched for you.
+
+---
 
 ### 2. Build the S3 Key Index
 This command scans the entire S3 bucket to build a local Parquet index for lightning-fast lookups.
