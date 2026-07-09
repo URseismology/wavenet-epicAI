@@ -21,6 +21,15 @@ Without the `es login` token, AWS will reject your requests with a `Forbidden` e
 
 ---
 
+## 🛑 Critical Architecture Note: The Isolated AWS Clone
+Before running any cloud orchestration, you **MUST** ensure you are working from the dedicated AWS clone located at:
+`~/wavenet-epicAI/`
+
+**Do NOT** run AWS orchestration from inside your local `Admin8_LabAI` project clones (e.g., `~/SynologyDrive/1.UofR_Seismology/1_Admin/Admin8_LabAI/wavenet-epicAI`). 
+The `~/wavenet-epicAI` directory is specifically maintained as an isolated cloud-execution environment. Running orchestrator scripts directly from your synchronized NAS/project drives can cause unintended syncing issues with large data downloads.
+
+---
+
 ## Step-by-Step Local Execution Guide
 
 ### 1. Authenticate with EarthScope (Interactive Mode)
