@@ -16,7 +16,7 @@ import os
 import h5py
 
 
-def merge_ncf_files(indir, outpath):
+def merge_h5_files(indir, outpath):
     """Copies every pair group from all *_ncf.h5 files in indir into a single HDF5 at outpath."""
     pattern = os.path.join(indir, "*_ncf.h5")
     files = sorted(glob.glob(pattern))

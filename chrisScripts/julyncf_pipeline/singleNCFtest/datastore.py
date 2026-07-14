@@ -33,25 +33,31 @@ class InMemoryDataStore:
         catalog: XMLStationChannelCatalog,
         timespan_seconds: int = 86400,
         min_stations: int = 2,
+        min_channels: int = 1,
+        station_coords: Dict[str, tuple] = None,
     ) -> None:
         """
         Initializes the DataStore with preprocessed data and catalog information.
+        station_coords: optional dict mapping "NET.STA" → (lat, lon) seeded from the
+        pairs CSV so NoisePy's spatial bounding-box filter always has real coordinates.
         """
         self.catalog = catalog
         self._channels: Dict[str, dict] = {}
         self._timespan_objects: Dict[str, DateTimeRange] = {}
         self._start_index: Dict[int, str] = {}
+        _coords = station_coords or {}
 
         #Populates the DataStore with preprocessed data
         for sta_id, dates in preprocessed_data.items():
             parts = sta_id.split(".")
             net, sta = parts[0], parts[1]
+            lat, lon = _coords.get(sta_id, (0.0, 0.0))
             #Iterates through the dates
             for date_str, stream in dates.items():
                 # Converts the date string to a datetime object
                 dt = datetime.fromisoformat(date_str).replace(tzinfo=timezone.utc)
                 dr = DateTimeRange(dt, dt + timedelta(seconds=timespan_seconds))
-                ts_str = str(dr) 
+                ts_str = str(dr)
                 if ts_str not in self._channels:
                     #Creates a new timespan if not already in the datastore
                     self._channels[ts_str] = {}
@@ -64,11 +70,11 @@ class InMemoryDataStore:
                     ch_key = (net, sta, chan_code, loc_code)
                     if ch_key not in self._channels[ts_str]:
                         ch_type = ChannelType(chan_code, loc_code)
-                        station_obj = Station(net, sta, location=loc_code)
+                        station_obj = Station(net, sta, location=loc_code, lat=lat, lon=lon)
                         channel = Channel(ch_type, station_obj)
                         self._channels[ts_str][ch_key] = (channel, stream)
         
-        # Enrich channels with catalog metadata and compute valid timespans  
+        # Enrich channels with catalog metadata and compute valid timespans.
         self._cached_channels: Dict[str, List[Channel]] = {}
         for ts_str, ch_dict in self._channels.items():
             dr = self._timespan_objects[ts_str]
@@ -77,10 +83,21 @@ class InMemoryDataStore:
             for c, _ in ch_dict.values():
                 try:
                     full_c = self.catalog.get_full_channel(dr, c)
-                    if full_c.type.name != c.type.name:
-                        full_c = c
-                except Exception as e:
-                    print(f"    Warning: catalog lookup failed for {c}: {e}")
+                    # Keep the channel code and location from the stored data (c),
+                    # but carry over coordinates that NoisePy needs for spatial filtering.
+                    if (full_c.type.name != c.type.name or
+                            getattr(full_c.station, 'location', '') !=
+                            getattr(c.station, 'location', '')):
+                        enriched_sta = Station(
+                            c.station.network,
+                            c.station.name,
+                            location=getattr(c.station, 'location', ''),
+                            lat=getattr(c.station, 'lat', 0.0),
+                            lon=getattr(c.station, 'lon', 0.0),
+                            elevation=getattr(full_c.station, 'elevation', 0.0),
+                        )
+                        full_c = Channel(c.type, enriched_sta)
+                except Exception:
                     full_c = c
                 key = str(full_c)
                 if key not in seen:
@@ -90,7 +107,7 @@ class InMemoryDataStore:
 
         self._valid_ts: List[str] = [
             ts for ts in sorted(self._channels.keys())
-            if self._count_complete_stations(ts) >= min_stations
+            if self._count_complete_stations(ts, min_channels) >= min_stations
         ]
         n_total = len(self._channels)
         n_valid = len(self._valid_ts)
@@ -139,22 +156,13 @@ class InMemoryDataStore:
         net = chan.station.network.strip()
         sta = chan.station.name.strip()
         loc = (getattr(chan.station, 'location', '') or '').strip()
-        ch_key = (net, sta, chan.type.name, loc)
-        # Gets the entry for the given timespan and channel
-        entry = self._channels[ts_str].get(ch_key)
-        if entry is None and loc != '':
-            entry = self._channels[ts_str].get((net, sta, chan.type.name, ''))
-        if entry is None:
-            for stored_key, stored_entry in self._channels[ts_str].items():
-                if (stored_key[0].strip() == net and
-                        stored_key[1].strip() == sta and
-                        stored_key[2] == chan.type.name):
-                    entry = stored_entry
-                    break
+        # NoisePy may encode location into the name ("LHE_01" → "LHE"); always use bare code
+        bare_chan = chan.type.name.split('_')[0]
+        entry = self._channels[ts_str].get((net, sta, bare_chan, loc))
         if entry is None:
             return ChannelData.empty()
         _, stream = entry
-        st = obspy.Stream(tr for tr in stream if tr.stats.channel == chan.type.name)
+        st = obspy.Stream(tr for tr in stream if tr.stats.channel == bare_chan)
         if len(st) == 0:
             return ChannelData.empty()
         return ChannelData(st)

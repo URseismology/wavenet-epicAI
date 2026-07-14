@@ -15,6 +15,7 @@ Entry points:
 """
 import os
 import gc
+import warnings
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 import obspy
@@ -22,6 +23,8 @@ from obspy import Stream, Trace, Inventory
 from obspy.clients.fdsn import Client
 from config import CONFIG
 import numpy as np
+
+warnings.filterwarnings('ignore', message='.*FIR normalized.*')
 from scipy.signal import butter, sosfiltfilt
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -50,29 +53,17 @@ def _get_sos_hp(order: int, cutoff: float) -> np.ndarray:
 
 
 def safe_decimate(tr: Trace, target_sr: float = 1.0) -> Trace:
-    """ Function to safely decimate a trace to a target sampling rate """ 
-    while round(tr.stats.sampling_rate) > round(target_sr):
-        current_sr = round(tr.stats.sampling_rate)
-        factor = None
-        # Decimate by the largest possible factor
-        for f in [10, 8, 5, 4, 2]:
-            if current_sr % f == 0 and (current_sr // f) >= round(target_sr):
-                factor = f
-                break
-        if factor is None:
-            factor = max(2, int(round(tr.stats.sampling_rate / target_sr)))
-        # Low pass filter to avoid aliasing 
+    """ Function to safely decimate a trace to a target sampling rate """
+    if round(tr.stats.sampling_rate) > round(target_sr):
         cutoff_lp = (0.4 * target_sr) / (tr.stats.sampling_rate / 2.0)
         cutoff_lp = min(cutoff_lp, 0.999)
         sos_lp = _get_sos(8, cutoff_lp)
         tr.data = sosfiltfilt(sos_lp, tr.data).astype(tr.data.dtype)
-
+        factor = int(round(tr.stats.sampling_rate / target_sr))
         tr.decimate(factor, no_filter=True)
-    # High pass filter to remove long period noise
     cutoff_hp = (1.0 / 3600.0) / (tr.stats.sampling_rate / 2.0)
     sos_hp = _get_sos_hp(4, cutoff_hp)
     tr.data = sosfiltfilt(sos_hp, tr.data).astype(tr.data.dtype)
-
     return tr
 
 

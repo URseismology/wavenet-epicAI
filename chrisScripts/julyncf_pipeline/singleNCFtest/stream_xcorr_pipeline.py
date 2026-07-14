@@ -53,6 +53,21 @@ def _token_to_iso(token):
     return d.strftime('%Y-%m-%d')
 
 
+def _load_denied_pairs(path):
+    """Load the set of pair labels that previously hit FgaAccessDenied so we can skip them on re-runs."""
+    if os.path.exists(path):
+        with open(path) as f:
+            return set(line.strip() for line in f if line.strip())
+    return set()
+
+
+def _save_denied_pairs(path, pairs):
+    """Persist the current denied-pairs set to disk (one pair label per line, alphabetically sorted)."""
+    with open(path, 'w') as f:
+        for p in sorted(pairs):
+            f.write(p + '\n')
+
+
 def main():
     """Parses CLI arguments and runs the streaming download → xcorr → rotate/stack pipeline."""
     parser = argparse.ArgumentParser(description="Streaming Download and Cross-Correlation Pipeline")
@@ -110,6 +125,23 @@ def main():
 
     print(f"Loaded {len(df_pairs)} pairs. Starting pipeline stream...\n")
 
+    # Track pairs that are permanently access-denied so future runs skip them without wasting download time.
+    denied_path = os.path.join(ncf_outdir, "denied_pairs.txt")
+    denied_pairs = _load_denied_pairs(denied_path)
+    if denied_pairs and not args.force:
+        print(f"  Loaded {len(denied_pairs)} previously access-denied pairs (use --force to retry).\n")
+
+    # Pre-load the full Parquet key index once for all unique stations before the pair loop.
+    all_avail = {}
+    if not args.skip_download:
+        all_unique_stations = set()
+        for _, row in df_pairs.iterrows():
+            all_unique_stations.add((row['net1'], row['sta1']))
+            all_unique_stations.add((row['net2'], row['sta2']))
+        print(f"Pre-loading key index for {len(all_unique_stations)} unique stations...")
+        all_avail = download_pairs.build_availability_from_parquet(args.keyindex, sorted(all_unique_stations))
+        print()
+
     n_skipped = 0
     n_success = 0
     n_failed = 0
@@ -122,6 +154,12 @@ def main():
         print(f"Processing Pair {idx+1}/{len(df_pairs)}: {pair_label}")
         print(f"{'='*60}")
         
+        # Skip pairs that previously hit FgaAccessDenied — their data is permanently inaccessible.
+        if not args.force and pair_label in denied_pairs:
+            print(f"  Previously access-denied — skipping (use --force to retry).")
+            n_failed += 1
+            continue
+
         # Make sure to check for existing NCF output
         cc_path = os.path.join(args.ncfdir, pair_label)
         if not args.force and os.path.exists(cc_path):
@@ -152,13 +190,10 @@ def main():
             print(f"  Found {len(iso_dates)} days on disk ({pair_start} to {pair_end}). Starting cross-correlation...")
 
         else:
-            unique_stations = [(row['net1'], row['sta1']), (row['net2'], row['sta2'])]
-            # Build availability from parquet
-            avail = download_pairs.build_availability_from_parquet(args.keyindex, unique_stations)
+            avail1 = all_avail.get(sta1_id, {})
+            avail2 = all_avail.get(sta2_id, {})
 
-            avail1 = avail.get(sta1_id, {})
-            avail2 = avail.get(sta2_id, {})
-            # Overlap dates are the dates where both stations have data
+            # Overlap dates are the calendar days where both stations have data in the index
             overlap_dates = set(avail1.keys()).intersection(set(avail2.keys()))
 
             if not overlap_dates:
@@ -167,28 +202,63 @@ def main():
                 continue
 
             overlap_dates_sorted = sorted(list(overlap_dates))
-            # Limit the number of days to process for testing
-            if args.max_days and len(overlap_dates_sorted) > args.max_days:
-                overlap_dates_sorted = overlap_dates_sorted[:args.max_days]
+            total_overlap = len(overlap_dates_sorted)
+
+            if args.max_days and total_overlap > args.max_days:
+                if args.max_days == 1:
+                    overlap_dates_sorted = [overlap_dates_sorted[0]]
+                else:
+                    indices = [
+                        int(round(i * (total_overlap - 1) / (args.max_days - 1)))
+                        for i in range(args.max_days)
+                    ]
+                    overlap_dates_sorted = [overlap_dates_sorted[i] for i in indices]
                 overlap_dates = set(overlap_dates_sorted)
-                print(f" Limited to first {args.max_days} overlapping days.")
+                print(f"  Sampled {args.max_days} days spread across {total_overlap} overlapping days.")
 
             print(f"  Found {len(overlap_dates)} overlapping days. Starting download...")
 
-            # Build the list of files to download
+            # Build the list of S3 keys to fetch for both stations across all sampled days
             to_download = set()
             for date in overlap_dates:
                 to_download.add((sta1_id, avail1[date]))
                 to_download.add((sta2_id, avail2[date]))
 
             download_tasks = [(BUCKET, args.outdir, sta, key) for sta, key in to_download]
+
+            download_pairs.progress_downloaded = 0
+            download_pairs.progress_skipped = 0
+            download_pairs.progress_errors = 0
+            download_pairs.total_bytes_downloaded = 0
+            download_pairs.progress_total = len(download_tasks)
+
             # Download the files in parallel
             with ThreadPoolExecutor(max_workers=download_workers) as executor:
                 results = list(executor.map(download_pairs.download_worker, download_tasks))
 
             errors = [r for r in results if r['status'].startswith('error')]
             if errors:
-                print(f"  {len(errors)} downloads failed. Example error: {errors[0]['status']}")
+                print(f"\n  {len(errors)} downloads failed. Example error: {errors[0]['status']}")
+
+            sta_successes = {}
+            for r in results:
+                if r['status'] in ('ok', 'skipped'):
+                    sta_successes[r['station']] = sta_successes.get(r['station'], 0) + 1
+            missing_data = [s for s in [sta1_id, sta2_id] if sta_successes.get(s, 0) == 0]
+            if missing_data:
+                is_access_denied = any(
+                    'FgaAccessDenied' in r['status'] or 'AccessDenied' in r['status']
+                    for r in results if r['status'].startswith('error')
+                )
+                print(f"  No usable data downloaded for: {', '.join(missing_data)}")
+                if is_access_denied:
+                    denied_pairs.add(pair_label)
+                    _save_denied_pairs(denied_path, denied_pairs)
+                    print(f"  FgaAccessDenied detected — logged to {os.path.basename(denied_path)}. Skipping xcorr.")
+                else:
+                    print(f"  All downloads failed (non-auth error). Skipping xcorr.")
+                n_failed += 1
+                continue
 
             print(f"  Download complete. Starting cross-correlation...")
 
@@ -227,6 +297,9 @@ def main():
     print(f"  Skipped (cached):  {n_skipped}")
     print(f"  No Overlap:        {n_no_overlap}")
     print(f"  Failed:            {n_failed}")
+    # Show how many pairs are permanently locked out — useful for knowing what to expect on re-runs
+    if denied_pairs:
+        print(f"  Access Denied:     {len(denied_pairs)} total logged → {os.path.basename(denied_path)}")
     print(f"  Total Time:        {hrs}h {mins}m {secs}s")
 
 if __name__ == "__main__":

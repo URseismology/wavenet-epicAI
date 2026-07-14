@@ -101,11 +101,8 @@ def rotate_tensor(components, azimuth_deg):
         entry = components.get(key)
         if entry is None or entry[1] == 0:
             return None
-        # Calculate linear and coherence 
         linear = entry[0] / entry[1]
-        # entry[2] is the sum of the phasors
         coherence = np.abs(entry[2]) / entry[1]
-        # Resultant phase weighted stack
         return linear * coherence ** 1
     
     # Stacks the components together
@@ -180,6 +177,8 @@ def save_pair_ncf(outpath, pair_label, sensor_key, rotated, dt, maxlag, n_days, 
         pair_grp.attrs["maxlag"] = maxlag
         pair_grp.attrs["stack_days"] = n_days
 
+        if sensor_key in pair_grp:
+            del pair_grp[sensor_key]
         sensor_grp = pair_grp.create_group(sensor_key)
         sensor_grp.attrs["n_windows_ZZ"] = n_win.get("ZZ", 0)
         sensor_grp.attrs["n_windows_RR"] = n_win.get("NN", 0)
@@ -263,10 +262,8 @@ def rotate_stack_pair(pair_row, ncfdir, ncf_outdir):
         if sum(v[1] for v in components.values()) == 0:
             continue
         print(f"  Rotating {sensor_key} with azimuth φ = {az:.2f}°...")
-        # Rotates the components from NEZ to RTZ and stacks
         rotated = rotate_tensor(components, az)
         n_win = rotated.get("_n_windows", {})
-        # Saves the rotated components to a new h5 file
         save_pair_ncf(pair_outpath, pair_label, sensor_key,
                       rotated, dt, maxlag, overlap_days, n_win)
     return True

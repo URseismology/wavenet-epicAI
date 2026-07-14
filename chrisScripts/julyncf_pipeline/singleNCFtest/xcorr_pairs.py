@@ -192,11 +192,24 @@ def process_single_pair(args):
             raw_store = InMemoryDataStore(
                 merged_preprocessed,
                 catalog,
-                timespan_seconds=86400, 
+                timespan_seconds=86400,
                 min_stations=1 if (net1 == net2 and sta1 == sta2) else 2,
+                station_coords={
+                    f"{net1}.{sta1}": (pair_row['lat1'], pair_row['lon1']),
+                    f"{net2}.{sta2}": (pair_row['lat2'], pair_row['lon2']),
+                },
             )
             n_blocks = sum(len(v) for v in merged_preprocessed.values())
             print(f"  DataStore: {n_blocks} station-window blocks total")
+            if not raw_store.get_timespans():
+                print(f"  No valid timespans after filtering — skipping xcorr.")
+                for _sta_dir in [sta1_dir, sta2_dir]:
+                    if os.path.exists(_sta_dir):
+                        shutil.rmtree(_sta_dir)
+                        print(f"    [CLEANUP] Deleted raw data for {_sta_dir}")
+                result['status'] = 'no_data'
+                result['runtime_sec'] = round(time_module.time() - t_start, 1)
+                return result
             #Cross-correlates the data in the DataStore
             _t_xcorr = time_module.time()
             cross_correlate(raw_store, config, cc_store)
@@ -228,15 +241,13 @@ def process_single_pair(args):
 
         timespans = cc_store.get_timespans(src_id, rec_id)
         result['n_timespans'] = len(timespans)
-        # If there are timespans, delete the raw data
+        # Delete raw data regardless of outcome — keeping failed pair data wastes GeoLab disk
+        for sta_dir in [sta1_dir, sta2_dir]:
+            if os.path.exists(sta_dir):
+                shutil.rmtree(sta_dir)
+                print(f"    [CLEANUP] Deleted raw data for {sta_dir}")
         if len(timespans) > 0:
             result['status'] = 'ok'
-            if os.path.exists(sta1_dir):
-                shutil.rmtree(sta1_dir)
-                print(f"    [CLEANUP] Deleted raw data for {sta1_dir}")
-            if os.path.exists(sta2_dir):
-                shutil.rmtree(sta2_dir)
-                print(f"    [CLEANUP] Deleted raw data for {sta2_dir}")
         else:
             result['status'] = 'no_data'
 

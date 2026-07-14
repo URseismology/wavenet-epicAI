@@ -67,16 +67,15 @@ def load_adama_freq_domain(filepath: str, pair: str) -> Tuple[np.ndarray, np.nda
 
 
 def noisepy_to_cross_spectrum(time_signal: np.ndarray, dt: float) -> Tuple[np.ndarray, np.ndarray]:
-    """Symmetrizes a time-domain NCF and returns its real cross-spectrum and frequency axis."""
-    sym = (time_signal + time_signal[::-1]) / 2.0
-    npts = len(sym)
+    """Returns the real cross-spectrum and frequency axis of a time-domain NCF."""
+    npts = len(time_signal)
     zero_lag_idx = npts // 2
     n_pad = max(4096, int(2**np.ceil(np.log2(npts))))
     padded = np.zeros(n_pad)
     right_len = npts - zero_lag_idx
-    padded[0:right_len] = sym[zero_lag_idx:]
+    padded[0:right_len] = time_signal[zero_lag_idx:]
     left_len = zero_lag_idx
-    padded[-left_len:] = sym[:zero_lag_idx]
+    padded[-left_len:] = time_signal[:zero_lag_idx]
     freqs = np.fft.rfftfreq(n_pad, d=dt)
     real_spec = np.real(np.fft.rfft(padded))
     return freqs, real_spec
@@ -141,7 +140,7 @@ def plot_cross_spectra(
         maxlag = (npts - 1) / 2 * dt
         time_axis = np.linspace(-maxlag, maxlag, npts)
         ax_t.plot(time_axis, _norm(sym_np),
-                  color='steelblue', linewidth=0.9, label='NoisePy (symmetrized)')
+                  color='steelblue', linewidth=0.9, label='NoisePy')
 
         if adama_time_signal is not None:
             npts_ad = len(adama_time_signal)
