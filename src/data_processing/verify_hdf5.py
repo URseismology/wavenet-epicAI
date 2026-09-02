@@ -1,14 +1,40 @@
 #!/usr/bin/env python3
 """
-HDF5 Dataset Verification Suite
-Samples 100 entries from the unified wavenet_training_data.h5 dataset
-and reconstructs the legacy 6-panel verification plots:
-1. Source Distribution
-2. FTAN Input
-3. Target Mask
-4. P-wave Velocity Profile
-5. Time-Domain CCF
-6. Frequency Coherence
+verify_hdf5.py — WaveNet HDF5 Dataset Verification Suite
+
+ORIGINAL PURPOSE:
+  Samples 100 random entries from the unified wavenet_training_data.h5 dataset
+  (assembled by build_ml_dataset.py from the old Instaseis+MPI pipeline) and
+  reconstructs 6-panel verification plots:
+    1. Source Distribution
+    2. FTAN Input (80×400 heatmap)
+    3. Target Mask
+    4. P-wave Velocity Profile
+    5. Time-Domain CCF
+    6. Frequency Coherence
+
+USAGE ON MACHINES:
+  Local Mac:       src/data_processing/verify_hdf5.py  (canonical source)
+  terravibranium:  src/wavenet_pipeline/01_parametrization/verify_hdf5.py
+                   Used during verification of the legacy wavenet_training_data.h5
+                   (Jun 15, 2026). NOT used on the current 10K CPS output.
+
+COMPATIBILITY WARNING — NEW HDF5 SCHEMA:
+  This script reads the OLD HDF5 layout produced by build_ml_dataset.py:
+    /ftan_inputs, /target_masks, /velocity_models, /metadata/...
+  The NEW 10K HDF5 (wavenetv2_dataset_10k_full.h5) produced by wvsim_main.py
+  uses a DIFFERENT layout:
+    /simulations/<model_id>/velocity_profile/...
+    /simulations/<model_id>/theoretical/...
+    /simulations/<model_id>/geometries/separation_<sep>km/ccf_isotropic/...
+    /simulations/<model_id>/geometries/separation_<sep>km/empirical_ftan_dispersion/...
+
+  To verify the new CPS-based dataset, use verify_main.py (local) or
+  verify_terra_v2.py (on terravibranium) instead. This script needs
+  updating before it can be used with the new schema.
+
+COMMAND LINE:
+  python3 verify_hdf5.py  (auto-downloads HDF5 from NAS if not present)
 """
 
 import os

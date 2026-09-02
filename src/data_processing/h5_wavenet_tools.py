@@ -1,3 +1,27 @@
+#!/usr/bin/env python3
+"""
+h5_wavenet_tools.py — WaveNet HDF5 Reader/Writer Utilities
+
+ROLE IN PIPELINE:
+  This module is a shared utility library imported by two active production scripts:
+    - src/data_processing/build_ml_dataset.py  → imports HDF5Writer  (assembles ML training HDF5)
+    - src/machine_learning/U_NET_array.py       → imports HDF5Reader  (streams batches to PyTorch)
+
+  It must be co-located with build_ml_dataset.py in src/data_processing/ for the
+  import to resolve when scripts are run from that directory.
+
+USAGE ON MACHINES:
+  Local Mac:       src/data_processing/h5_wavenet_tools.py  (canonical source)
+  terravibranium:  src/wavenet_pipeline/01_parametrization/h5_wavenet_tools.py
+                   (used by build_ml_dataset.py and U_NET_array.py — NOT the 02_simulation engine)
+
+NOTE: The wvsim_main.py simulator does NOT use this module. It writes its own HDF5
+  output directly using h5py. This module is for the downstream ML data assembly step.
+
+CONTENTS:
+  HDF5Writer  — incremental appender for building the ML training dataset from simulation outputs.
+  HDF5Reader  — PyTorch-compatible streaming reader for training the U-Net model.
+"""
 import h5py
 import numpy as np
 

@@ -1,4 +1,39 @@
 #!/usr/bin/env python3
+"""
+build_ml_dataset.py — WaveNet ML Training Dataset Assembler
+
+ROLE IN PIPELINE:
+  This is the downstream data assembly step that runs AFTER the simulator
+  (wvsim_main.py) has produced raw simulation output directories. It reads
+  individual simulation output files, computes FTAN heatmaps and CCF arrays,
+  and incrementally appends them into the unified ML training HDF5 via HDF5Writer.
+
+  Imports: from h5_wavenet_tools import HDF5Writer
+  (h5_wavenet_tools.py must be in the same directory or on PYTHONPATH)
+
+INPUT FORMAT (OLD PIPELINE):
+  Originally designed to consume directories of .sac / .npy outputs from the
+  Instaseis+MPI Bluehive pipeline. The input structure expected by --input_dir
+  is a directory of subdirectories, one per simulation, each containing CCF
+  and waveform arrays.
+
+  STATUS: This script's input format may need updating to consume the NEW
+  CPS-based HDF5 output format from wvsim_main.py. The new simulator writes
+  directly to HDF5 groups (simulations/<model_id>/...), which is a different
+  layout than what this script currently expects.
+
+USAGE ON MACHINES:
+  Local Mac:       src/data_processing/build_ml_dataset.py  (canonical source)
+  terravibranium:  src/wavenet_pipeline/01_parametrization/build_ml_dataset.py
+                   (present but NOT used by the current 10K simulation run;
+                    wvsim_main.py writes HDF5 directly — this script is for
+                    the legacy output-directory-based format)
+  Bluehive:        Referenced by src/wavenet_pipeline/01_parametrization/submit_dataset_builder.sh
+                   for batch HDF5 assembly jobs (not yet run on new CPS outputs)
+
+COMMAND LINE:
+  python3 build_ml_dataset.py --input_dir <sim_output_dir> --output_h5 <output.h5>
+"""
 import os
 import glob
 import re
