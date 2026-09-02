@@ -1,11 +1,65 @@
 # WaveNet-EpicAI: Agent Handoff Document
 
 > **Intended Audience:** A new AI agent (Claude Code) with humans in the loop, picking up this project fresh.
-> **Last Updated:** September 2, 2026
+> **Last Updated:** September 2, 2026 (13:19 EDT)
 > **Status of Primary Simulation:** ✅ COMPLETE — 10,000 models at `sep_km=127.0 km`.
 > **Next Priority:** Run more training sets on `terravibranium` (nightly). Then expand to multi-separation scan on Bluehive.
 
 ---
+
+## 0. Project Timeline
+
+> All timestamps are verified from git commit history, file modification times on `terravibranium`, and the simulation execution log. Times are Eastern (EDT, UTC-4).
+
+### Phase 0 — Repository Initialized
+| Date | Event | Source |
+|---|---|---|
+| **2026-02-23** | First commit: `FTAN for ML model` — initial FTAN ML code uploaded | `git log` |
+| **2026-05-28** | Repository activity resumes with Chris's scripts for NoisePy/S3 data download | `git log` |
+| **2026-05-29 – Jun 1** | Chris's `chrisScripts/` pipeline development: EarthScope S3 download, FDSN coverage, Parquet indexing | `git log` |
+
+### Phase 1 — New CPS-Based Physics Engine (wvsim Development)
+| Date | Event | Source |
+|---|---|---|
+| **2026-06-12 17:01** | Major restructure: `src/` hierarchy created; `h5_wavenet_tools.py`, `build_ml_dataset.py`, `U_NET_array.py` placed in organized structure; ML docs updated | `git log` (commit `ebe8c8d`) |
+| **2026-06-12 17:18 – 17:30** | HDF5 dataset architecture documented; NAS download link embedded; `Collaborative_Roadmap.md` added for Chris | `git log` |
+| **2026-06-15 12:33** | `verify_hdf5.py` written and committed — 6-panel verification suite for the old Instaseis HDF5 | `git log` (commit `a3417f3`) |
+| **2026-06-15 12:38** | `verify_hdf5.py` helper notes updated (last touch before sim work began) | `git log` (commit `21a507f`) |
+| **2026-06-16 ~16:56 – 17:47** | CPS simulator development on `terravibranium`: `wavenet_simulator.py` → `v2` → `v3` written and iterated | File mtimes on `terravibranium` |
+| **2026-06-16 ~20:47** | `wavenet_simulator_v3.1.py` finalized — last of the iterative debug versions; key physics bugs being resolved | File mtime on `terravibranium` |
+
+### Phase 2 — Physics Bug Fixes & Final Simulator (wvsim_terra_allmodsv2.py)
+| Date | Event | Source |
+|---|---|---|
+| **2026-06-17 ~09:09** | `wvsim_terra_allmodsv2.py` written on `terravibranium` — the production-ready simulator incorporating all 7 bug fixes (CPS pipeline order, LUT resolution, halfspace, wedge noise, dynamic NPT, SREGN.ASC columns) | File mtime on `terravibranium` |
+| **2026-06-17 10:27** | **🚀 10,000-model production run launched** on `terravibranium` via `nohup` with `--cores 44 --sep_km 127.0` | Conversation log + git history |
+| **2026-06-17 ~10:00 – 10:17** | Verification of earlier test run: `verify_terra_v2.py` used to generate 3 rounds of animated verification frames (`verify_frames_100`, `_v2`, `_v3`) | File mtimes on `terravibranium` |
+| **2026-06-17 10:57** | Repository cleanup: simulation scripts renamed to `wvsim_main.py` / `verify_main.py`; legacy v1–v4 archived | `git log` (commit `87cedf8`) |
+| **2026-06-17 11:06 – 11:15** | Root-level debug scripts, old datasets, and SLURM scripts consolidated and archived; all pushed to GitHub | `git log` (commits `b527763`, `4c1454f`) |
+| **2026-06-18 03:14:19** | **✅ 10,000-model run COMPLETED** — 16.65 hours, 10,000/10,000 models, 0 errors. HDF5 and log written simultaneously. | `stat` on terravibranium output files |
+
+### Phase 3 — Post-Simulation Backup & Documentation
+| Date | Event | Source |
+|---|---|---|
+| **2026-06-20 08:20** | `wavenetv2_dataset_10k_full.h5` (11 GB) **backed up to repovibranium** at `/volume1/ADAMA-Shared/traindatawavenet/` | `ls -lh` on repovibranium |
+| **2026-07-08** | Chris adds AWS Docker pipeline docs and orchestrator scripts; documentation expanded | `git log` |
+| **2026-07-09 – 14** | Additional pipeline development pushed (exact details in `chrisScripts/` commits) | `git log` |
+| **2026-07-16** | TA reporting script for JupyterHub added; unrelated to wavenet simulation | `git log` |
+| **2026-09-02 13:11** | **This handoff document first written** by AI agent — project timeline documented, stale docs flagged, next steps defined | `git log` (commit `5515740`) |
+| **2026-09-02 13:18** | Three critical data processing files restored to `src/data_processing/` with usage documentation | `git log` (commit `b27bea6`) |
+| **2026-09-02 13:19** | Handoff updated with repovibranium Synology Drive sync paths (this version) | `git log` (commit `1182374`) |
+
+### What Has Not Happened Yet (Future Milestones)
+| Milestone | Status |
+|---|---|
+| Additional terravibranium overnight runs (other `sep_km` values) | ⏳ Not started |
+| `submit_wvsim_bluehive.sh` created and tested | ⏳ Not started |
+| Bluehive 100-separation array job run | ⏳ Not started |
+| `build_ml_dataset.py` adapted for new CPS HDF5 schema | ⏳ Not started |
+| PyTorch U-Net training on new CPS dataset | ⏳ Not started |
+
+---
+
 
 ## ⚠️ Critical Documentation Warning (Read This First)
 
@@ -97,7 +151,7 @@ Root: `/Users/olugboji/SynologyDrive/1.UofR_Seismology/1_Admin/Admin8_LabAI/wave
 | Relative Path | Description |
 |---|---|
 | `src/wavenet_pipeline/02_simulation/wvsim_main.py` | **Primary simulator** — production version |
-| `src/wavenet_pipeline/02_simulation/verify_main.py` | Verification script (CCF plots, dispersion animation) |
+| `src/wavenet_pipeline/02_simulation/verify_main.py` | Verification script & **Reference HDF5 Reader** — Study this script to understand the new CPS HDF5 schema (`wavenetv2_dataset_10k_full.h5`) |
 | `src/wavenet_pipeline/01_parametrization/model_manifest.parquet` | **10,000 unique Earth models (1.7 MB) — master input** |
 | `src/wavenet_pipeline/01_parametrization/wavenet_training_data.h5` | 1.7 GB **legacy** HDF5 (old Instaseis pipeline — NOT CPS) |
 | `src/simulation_runner/submit_wavesim_batch.sh` | Legacy Bluehive MPI batch script (old pipeline — reference only) |
@@ -293,9 +347,11 @@ else:
 ## 7. Machine Learning (Phase 3–4, Future)
 
 Once multiple HDF5 files exist, the ML pipeline can begin:
-- `src/wavenet_pipeline/01_parametrization/h5_wavenet_tools.py` — HDF5 reader/dataloader utilities
-- `src/machine_learning/U_NET_array.py` — Legacy U-Net (needs updating from `.npy` to HDF5 streaming)
+- **Reference HDF5 Reader:** `src/wavenet_pipeline/02_simulation/verify_main.py` — Study this script to understand how to read the new CPS HDF5 schema (`wavenetv2_dataset_10k_full.h5`). It is the only fully compatible reader for the new output format.
+- `src/wavenet_pipeline/01_parametrization/h5_wavenet_tools.py` — Legacy HDF5 reader/dataloader utilities (needs adapting to the new CPS schema based on `verify_main.py`)
+- `src/machine_learning/U_NET_array.py` — Legacy U-Net (needs updating from `.npy` to HDF5 streaming using the updated dataloader)
 - **Target GPU hardware:** `terravibranium-gpu` (RTX 3090, 24 GB VRAM, `ssh terravibranium-gpu`) or Empire AI (`ssh empireai` — H100/H200 GPUs)
+
 
 ---
 
