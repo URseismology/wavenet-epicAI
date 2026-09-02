@@ -124,12 +124,30 @@ Root: `/Users/olugboji/SynologyDrive/1.UofR_Seismology/1_Admin/Admin8_LabAI/wave
 **SSH:** `ssh administrator@repovibranium.earth.rochester.edu`
 **Key:** `~/.ssh/id_rsa_nas`
 
+**Two distinct storage areas exist on repovibranium:**
+
+**A) Manually backed-up HDF5 training data** (`/volume1/ADAMA-Shared/traindatawavenet/`):
+
 | Remote Path | Description |
 |---|---|
-| `/volume1/ADAMA-Shared/traindatawavenet/wavenetv2_dataset_10k_full.h5` | **11 GB backup — backed up June 20, 2026 ✅** |
-| `/volume1/ADAMA-Shared/traindatawavenet/wavenet_training_data.h5` | 1.7 GB legacy dataset (old Instaseis pipeline) |
+| `/volume1/ADAMA-Shared/traindatawavenet/wavenetv2_dataset_10k_full.h5` | **11 GB — 10K CPS models, sep=127 km, backed up June 20, 2026 ✅** |
+| `/volume1/ADAMA-Shared/traindatawavenet/wavenet_training_data.h5` | 1.7 GB legacy dataset (old Instaseis pipeline — NOT CPS) |
 | `/volume1/ADAMA-Shared/GodModeData/CodeBaseFull/` | AI-mapped code snapshots (from `roverBckUp.py`) |
 | `/volume1/ADAMA-Shared/GodModeData/Wikis/` | Auto-generated AI wikis |
+
+**B) Synology Drive auto-sync of local Mac** (`/volume1/homes/Administrator/Drive/`):
+
+The entire local `wavenet-epicAI` directory is **automatically mirrored** to repovibranium via Synology Drive:
+```
+/volume1/homes/Administrator/Drive/1.UofR_Seismology/1_Admin/Admin8_LabAI/wavenet-epicAI/
+```
+This means every file you edit locally also appears here automatically. Note that `wavenet_training_data.h5` appears in **two locations** within this mirror (under `src/wavenet_pipeline/01_parametrization/` and `src/data_processing/`) — both are the same legacy 1.7 GB file. The 11 GB new CPS output is NOT in the Drive sync; it is only in `traindatawavenet/` above.
+
+**Legacy simulator archive on NAS** (for historical reference):
+```
+/volume1/.../wavenet-epicAI/src/wavenet_pipeline/02_simulation/_simulation_outputs/archive_legacy/
+  wavenet_simulator.py, v2, v3, v3.1, v4
+```
 
 ### 4.4 GitHub
 - **Repo:** `https://github.com/URseismology/wavenet-epicAI`
