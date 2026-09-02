@@ -18,11 +18,24 @@ Full project state: docs/HANDOFF.md (always check this first)
 
 ## Single-machine rule
 
-ALL work originates from the local Mac (EES-C02X20PPHX8F).
-- Other machines are accessed via SSH from this Mac only.
-- All code changes are committed from the Mac and pushed to GitHub.
-- Do NOT commit directly from terravibranium or Bluehive.
-- The Mac root is synced to repovibranium automatically via Synology Drive.
+ALL work originates from axon-1 (10.17.6.243, macOS, urseismoadmin).
+- Other machines are accessed via SSH from axon-1 only.
+- All code changes are committed from axon-1 and pushed to GitHub.
+- Do NOT commit directly from terravibranium, Bluehive, or repovibranium.
+- code-server runs on axon-1 at http://10.17.6.243:8080 (lab network only).
+- Each team member logs into axon-1 with their own account (wavenet-senior,
+  wavenet-junior) and maintains their own clone at ~/wavenet-epicAI/.
+- Always `git pull` at the start of a session.
+- Always `git push` when your work is complete.
+- Coordinate overnight terravibranium jobs in the lab Slack before launching.
+
+## axon-1 accounts
+
+| Account | Role |
+|---|---|
+| urseismoadmin | Admin, service account, PI access |
+| wavenet-senior | Senior researcher — sims, Bluehive, ML |
+| wavenet-junior | Junior researcher — monitoring, docs, verification |
 
 ---
 
@@ -52,9 +65,10 @@ ALL work originates from the local Mac (EES-C02X20PPHX8F).
 
 ## Infrastructure
 
-### Mac (command center — all work starts here)
-Root: `/Users/olugboji/SynologyDrive/1.UofR_Seismology/1_Admin/Admin8_LabAI/wavenet-epicAI/`
-Git SSH key: `~/.ssh/id_ed25519`
+### Hub (axon-1 — all work starts here)
+Address: 10.17.6.243
+OS: macOS 15
+code-server: http://10.17.6.243:8080
 
 ### terravibranium (primary CPU compute)
 SSH: `ssh tolugboj@terravibranium.earth.rochester.edu`
