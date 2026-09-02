@@ -91,7 +91,9 @@ Partition: `urseismo`, Account: `tolugboj_lab`
 SSH: `ssh administrator@repovibranium.earth.rochester.edu`
 Key: `~/.ssh/id_rsa_nas`
 CPS HDF5 backup: `/volume1/ADAMA-Shared/traindatawavenet/`
-Synology Drive mirror of Mac: `/volume1/homes/Administrator/Drive/`
+Note: The 11 GB CPS HDF5 dataset is NOT in any auto-sync path.
+It lives only in `/volume1/ADAMA-Shared/traindatawavenet/` on repovibranium
+and must be manually rsync'd after each run (see HANDOFF.md §5.5).
 
 ### GitHub
 Repo: `https://github.com/URseismology/wavenet-epicAI`
@@ -106,7 +108,8 @@ Push: `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519" git push`
 1. Do not suggest or use Instaseis, MPI, `.sac` files, or any old-pipeline approach.
 2. Do not use `h5_wavenet_tools.py` to read new CPS HDF5 output. Use `verify_main.py` schema only.
 3. Do not run intensive jobs on terravibranium during daytime hours.
-4. Do not commit from terravibranium or Bluehive. Commit from Mac only.
+4. Do not commit from terravibranium, Bluehive, or repovibranium.
+   All commits originate from axon-1 (10.17.6.243) only.
 5. Do not delete or move files in `/RAID6/wavenet_output/` or `repovibranium:/volume1/ADAMA-Shared/traindatawavenet/` without PI approval.
 
 ### Always do these

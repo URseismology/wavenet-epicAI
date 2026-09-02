@@ -48,6 +48,7 @@
 | **2026-09-02 13:11** | **This handoff document first written** by AI agent — project timeline documented, stale docs flagged, next steps defined | `git log` (commit `5515740`) |
 | **2026-09-02 13:18** | Three critical data processing files restored to `src/data_processing/` with usage documentation | `git log` (commit `b27bea6`) |
 | **2026-09-02 13:19** | Handoff updated with repovibranium Synology Drive sync paths (this version) | `git log` (commit `1182374`) |
+| **2026-09-02** | **Hub migration complete** — axon-1 provisioned as central lab hub (macOS 15, code-server, Claude Code CLI). All team accounts (urseismoadmin, wavenet-senior, wavenet-junior) created with passwordless SSH to terravibranium and repovibranium. CLAUDE.md, TEAMS_PROJECT_PROMPT.md, and submit_wvsim_bluehive.sh committed to repo. | Migration via Antigravity + Claude Teams |
 
 ### What Has Not Happened Yet (Future Milestones)
 | Milestone | Status |
@@ -145,8 +146,15 @@ Phases 3–4 of `docs/Collaborative_Roadmap.md` (HDF5 verification, Dataloader, 
 
 ## 4. Where Everything Lives
 
-### 4.1 Local Mac (`EES-C02X20PPHX8F`)
-Root: `/Users/olugboji/SynologyDrive/1.UofR_Seismology/1_Admin/Admin8_LabAI/wavenet-epicAI/`
+### 4.1 axon-1 (Hub Machine — all commits originate here)
+**IP:** `10.17.6.243` | **OS:** macOS 15 | **User:** `urseismoadmin`
+**code-server:** `http://10.17.6.243:8080` (lab network, browser-based VS Code)
+
+| Relative Path | Location on axon-1 |
+|---|---|
+| `wavenet-epicAI/` (urseismoadmin) | `/Users/urseismoadmin/wavenet-epicAI/` |
+| `wavenet-epicAI/` (senior) | `/Users/wavenet-senior/wavenet-epicAI/` |
+| `wavenet-epicAI/` (junior) | `/Users/wavenet-junior/wavenet-epicAI/` |
 
 | Relative Path | Description |
 |---|---|
@@ -189,13 +197,14 @@ Root: `/Users/olugboji/SynologyDrive/1.UofR_Seismology/1_Admin/Admin8_LabAI/wave
 | `/volume1/ADAMA-Shared/GodModeData/CodeBaseFull/` | AI-mapped code snapshots (from `roverBckUp.py`) |
 | `/volume1/ADAMA-Shared/GodModeData/Wikis/` | Auto-generated AI wikis |
 
-**B) Synology Drive auto-sync of local Mac** (`/volume1/homes/Administrator/Drive/`):
+**B) axon-1 repo clones (per user)**
 
-The entire local `wavenet-epicAI` directory is **automatically mirrored** to repovibranium via Synology Drive:
-```
-/volume1/homes/Administrator/Drive/1.UofR_Seismology/1_Admin/Admin8_LabAI/wavenet-epicAI/
-```
-This means every file you edit locally also appears here automatically. Note that `wavenet_training_data.h5` appears in **two locations** within this mirror (under `src/wavenet_pipeline/01_parametrization/` and `src/data_processing/`) — both are the same legacy 1.7 GB file. The 11 GB new CPS output is NOT in the Drive sync; it is only in `traindatawavenet/` above.
+Each team member on axon-1 maintains their own clone of the wavenet-epicAI
+repository in their home directory. These are not auto-synced — team members
+use `git pull` / `git push` to stay current with GitHub. The 11 GB CPS HDF5
+dataset is NOT tracked by git and is NOT in any auto-sync path; it lives only
+in `/volume1/ADAMA-Shared/traindatawavenet/` on repovibranium and must be
+manually rsync'd after each simulation run (HANDOFF.md §5.5).
 
 **Legacy simulator archive on NAS** (for historical reference):
 ```
@@ -332,8 +341,7 @@ if _cps_which:
     CPS_BIN = os.path.dirname(_cps_which)   # works on Bluehive after module load CPS/3.30
 elif platform.system() == 'Linux':
     CPS_BIN = '/home/tolugboj/PROGRAMS.330/bin'  # fallback for terravibranium
-else:
-    CPS_BIN = '/Users/olugboji/SynologyDrive/1.UofR_Seismology/1_Admin/Admin8_LabAI/wavenet-epicAI/scratch/cps/PROGRAMS.330/bin'
+    # Note: Mac/axon-1 local CPS path removed — CPS runs on terravibranium only
 ```
 
 ### 6.5 Bluehive Environment Facts (Verified)
@@ -358,6 +366,10 @@ Once multiple HDF5 files exist, the ML pipeline can begin:
 ## 8. Quick Reference: Key Commands
 
 ```bash
+# axon-1 hub (code-server for browser IDE)
+# Access via browser: http://10.17.6.243:8080
+# SSH to axon-1 if needed: ssh urseismoadmin@10.17.6.243
+
 # SSH to compute nodes
 ssh tolugboj@terravibranium.earth.rochester.edu
 ssh administrator@repovibranium.earth.rochester.edu  # NAS

@@ -31,9 +31,14 @@ infrastructure or workflow advice.
 
 ## Single-machine rule
 
-All work originates from the PI's Mac. Other machines (terravibranium,
-Bluehive, repovibranium) are accessed via SSH from the Mac only. All commits
-go from the Mac to GitHub. Never suggest committing from remote machines.
+All work originates from axon-1 (10.17.6.243, macOS), the dedicated lab hub.
+Other machines (terravibranium, Bluehive, repovibranium) are accessed via SSH
+from axon-1 only. All commits go from axon-1 to GitHub. Never suggest
+committing from terravibranium, Bluehive, or repovibranium.
+
+Team members access axon-1 via code-server at http://10.17.6.243:8080.
+Each user has their own account (wavenet-senior, wavenet-junior) and their
+own repo clone at ~/wavenet-epicAI/.
 
 ## Ground-truth code (everything else may be stale)
 
