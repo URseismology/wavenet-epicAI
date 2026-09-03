@@ -1,9 +1,9 @@
 # WaveNet-EpicAI: Agent Handoff Document
 
 > **Intended Audience:** A new AI agent (Claude Code) with humans in the loop, picking up this project fresh.
-> **Last Updated:** September 2, 2026 (13:19 EDT)
-> **Status of Primary Simulation:** ✅ COMPLETE — 10,000 models at `sep_km=127.0 km`.
-> **Next Priority:** Run more training sets on `terravibranium` (nightly). Then expand to multi-separation scan on Bluehive.
+> **Last Updated:** September 3, 2026 (11:05 EDT)
+> **Status of Primary Simulation:** ✅ COMPLETE — 10,000 models each at `sep_km=127.0 km` and `sep_km=100.0 km`.
+> **Next Priority:** Run more training sets on `terravibranium` (nightly) at additional sep_km values. Then expand to multi-separation scan on Bluehive.
 
 ---
 
@@ -50,10 +50,18 @@
 | **2026-09-02 13:19** | Handoff updated with repovibranium Synology Drive sync paths (this version) | `git log` (commit `1182374`) |
 | **2026-09-02** | **Hub migration complete** — axon-1 provisioned as central lab hub (macOS 15, code-server, Claude Code CLI). All team accounts (urseismoadmin, wavenet-senior, wavenet-junior) created with passwordless SSH to terravibranium and repovibranium. CLAUDE.md, TEAMS_PROJECT_PROMPT.md, and submit_wvsim_bluehive.sh committed to repo. | Migration via Antigravity + Claude Teams |
 
+### Phase 4 — Second Production Run (sep_km=100.0)
+| Date | Event | Source |
+|---|---|---|
+| **2026-09-02 16:22** | Second 10,000-model production run launched on `terravibranium` (`--cores 44 --sep_km 100.0`), after a clean 2-model sanity check on the freshly rsync'd `wvsim_main.py` | Conversation log |
+| **2026-09-03 09:13** | **✅ Run COMPLETED** — 10,000/10,000 models, 0 errors, 16.72 hours (60,177s). Output: `wavenetv2_dataset_10k_sep100km.h5` (11.8 GB) | `run_sep100km.log` on terravibranium |
+| **2026-09-03 ~10:58** | Verified with `verify_main.py` (20 sample frames, no exceptions) and schema check (10,000 models confirmed in `simulations` group) | Conversation log |
+| **2026-09-03 ~11:09** | **✅ Backup to repovibranium COMPLETE** — `/volume1/ADAMA-Shared/traindatawavenet/wavenetv2_dataset_10k_sep100km.h5`, byte-for-byte verified (11,810,179,616 bytes) | Conversation log |
+
 ### What Has Not Happened Yet (Future Milestones)
 | Milestone | Status |
 |---|---|
-| Additional terravibranium overnight runs (other `sep_km` values) | ⏳ Not started |
+| Additional terravibranium overnight runs (other `sep_km` values beyond 127.0 and 100.0 km) | ⏳ Not started |
 | `submit_wvsim_bluehive.sh` created and tested | ⏳ Not started |
 | Bluehive 100-separation array job run | ⏳ Not started |
 | `build_ml_dataset.py` adapted for new CPS HDF5 schema | ⏳ Not started |
@@ -177,8 +185,10 @@ Phases 3–4 of `docs/Collaborative_Roadmap.md` (HDF5 verification, Dataloader, 
 | `/home/tolugboj/wavenet-epicAI/src/wavenet_pipeline/02_simulation/wvsim_terra_allmodsv2.py` | **Script that ran the 10K job** |
 | `/home/tolugboj/wavenet-epicAI/src/wavenet_pipeline/01_parametrization/model_manifest.parquet` | Remote copy of the model manifest |
 | `/RAID6/wavenet_output/wavenetv2_dataset_10k_full.h5` | **PRIMARY OUTPUT — 11 GB, 10,000 models, sep=127 km** |
+| `/RAID6/wavenet_output/wavenetv2_dataset_10k_sep100km.h5` | **10,000 models, sep=100 km — 11.8 GB, completed 2026-09-03** |
 | `/RAID6/wavenet_output/wavenetv2_dataset_10k.h5` | Earlier partial test run (122 MB — ignore) |
-| `/RAID6/wavenet_output/terra_v2_run_full.log` | Full execution log of the 10K run |
+| `/RAID6/wavenet_output/terra_v2_run_full.log` | Full execution log of the 10K run (sep=127km) |
+| `/RAID6/wavenet_output/run_sep100km.log` | Full execution log of the sep=100km run |
 | `/home/tolugboj/miniconda/envs/wavenet/` | Active conda environment with all Python dependencies |
 | `/home/tolugboj/PROGRAMS.330/bin/` | CPS binaries (`sprep96`, `sdisp96`, `sregn96`, etc.) |
 
@@ -193,6 +203,7 @@ Phases 3–4 of `docs/Collaborative_Roadmap.md` (HDF5 verification, Dataloader, 
 | Remote Path | Description |
 |---|---|
 | `/volume1/ADAMA-Shared/traindatawavenet/wavenetv2_dataset_10k_full.h5` | **11 GB — 10K CPS models, sep=127 km, backed up June 20, 2026 ✅** |
+| `/volume1/ADAMA-Shared/traindatawavenet/wavenetv2_dataset_10k_sep100km.h5` | **11.8 GB — 10K CPS models, sep=100 km, backed up September 3, 2026 ✅** |
 | `/volume1/ADAMA-Shared/traindatawavenet/wavenet_training_data.h5` | 1.7 GB legacy dataset (old Instaseis pipeline — NOT CPS) |
 | `/volume1/ADAMA-Shared/GodModeData/CodeBaseFull/` | AI-mapped code snapshots (from `roverBckUp.py`) |
 | `/volume1/ADAMA-Shared/GodModeData/Wikis/` | Auto-generated AI wikis |

@@ -1,7 +1,7 @@
 # CLAUDE.md — WaveNet-EpicAI
 # Claude Code reads this file automatically at the start of every session.
 # Keep this file current. It is the single source of truth for all AI agents.
-# Last updated: 2026-09-02
+# Last updated: 2026-09-03
 
 ---
 
@@ -133,6 +133,7 @@ Push: `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519" git push`
 | File | sep_km | Models | Location | Backed up |
 |---|---|---|---|---|
 | `wavenetv2_dataset_10k_full.h5` | 127.0 km | 10,000 ✅ | `/RAID6/wavenet_output/` | repovibranium ✅ |
+| `wavenetv2_dataset_10k_sep100km.h5` | 100.0 km | 10,000 ✅ | `/RAID6/wavenet_output/` | repovibranium ✅ |
 
 **Next runs needed:** Other sep_km values across 50–297.5 km range (see HANDOFF.md §5)
 
