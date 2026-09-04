@@ -102,11 +102,11 @@ User: tolulopeolugboji
 OS: macOS
 Passwordless SSH key access confirmed working from axon-1.
 
-### Empire AI (Alpha/Grace — added 2026-09-04, target GPU hardware for ML training)
+### Empire AI (added 2026-09-04, target GPU hardware for ML training)
 SSH: `ssh empireai` (alias in ~/.ssh/config; matches `empireai`, `alpha1.empireai.edu`,
 `alpha.empire-ai.org`, `alpha1.empire-ai.org` — all resolve to the same host, 67.99.173.2)
 Canonical hostname: `alpha1.empireai.edu` | User: `tolugboji`
-Hardware: Grace CPU nodes (GA), NVL72 Superpod (Beta) — H100/H200 GPUs
+Project account: **`ro_tolugboji_planetary`** (project 580) — required for job submission.
 **Requires password + 2FA (authenticator code) — cannot be automated.** Access from Claude
 Code works via SSH `ControlMaster`/`ControlPersist`: a human logs in once interactively
 (`ssh empireai`), which becomes the master connection; Claude Code then reuses that socket
@@ -116,6 +116,20 @@ and its own manual login** — see `docs/memos/2026-09-04-empireai-persistent-ac
 Occasionally refuses the TCP connection on first attempt (load balancer flakiness observed
 2026-09-04, not a lockout) — retry once before assuming it's actually down. Support:
 support@empireai.edu | https://empireai.freshdesk.com/support/home
+
+**Two clusters — do not confuse them:**
+- **Alpha** (what we connect to via `ssh empireai`) — Grace ARM CPU nodes + newly added
+  NVIDIA RTX Pro 6000 GPUs (for single-GPU jobs). **Starting 2026-09-18, institutional
+  partitions retire** — all Alpha job submissions must use `--account ro_tolugboji_planetary`
+  instead. Confirmed live in Alpha's own login banner (partition retirement notice).
+- **Beta** — separate, newer cluster: NVIDIA GB200 NVL72 SuperPOD (Blackwell B200 GPUs,
+  4-rack unified NVLink fabric). **Minimum 4 GPUs per job** — not for single-GPU work.
+  Not yet connected to from this project; would need its own hostname/access setup.
+
+Billing (SU charging) for both clusters deferred to **2026-10-01**. Any publication using
+these resources must include: *"We gratefully acknowledge use of the research computing
+resources of the Empire AI Consortium, Inc, with support from Empire State Development of
+the State of New York, the Simons Foundation, and the Secunda Family Foundation."*
 
 ### GitHub
 Repo: `https://github.com/URseismology/wavenet-epicAI`

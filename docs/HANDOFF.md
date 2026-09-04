@@ -64,6 +64,7 @@
 | **2026-09-04** | `cerebrum` (10.17.6.17) SSH alias added to axon-1; two Empire AI planning docs pulled from cerebrum's `UR_EmpireAI` project into `docs/` for reference | Conversation log |
 | **2026-09-04** | Empire AI (`alpha1.empireai.edu`) reachable and login confirmed (password + 2FA). Canonical hostname corrected — earlier `alpha.empire-ai.org` alias is a working but non-canonical name for the same host (67.99.173.2) | Conversation log |
 | **2026-09-04** | Persistent access configured via SSH `ControlMaster`/`ControlPersist` (`ssh empireai`) — same pattern as the existing Bluehive setup. Claude Code can drive Empire AI directly for up to 12h after a human completes one interactive 2FA login | Conversation log; verified via `ssh -O check empireai` → `Master running` |
+| **2026-09-04** | Sysadmin emails (6/29, 8/24, 8/28) digested: corrected hardware description (no H100/H200 — Alpha has Grace CPU + new RTX Pro 6000, separate Beta cluster has Blackwell B200 NVL72); recorded project account `ro_tolugboji_planetary` (project 580); flagged 2026-09-18 Alpha project-account deadline and 2026-10-01 billing start | Forwarded sysadmin emails |
 
 ### What Has Not Happened Yet (Future Milestones)
 | Milestone | Status |
@@ -230,10 +231,27 @@ manually rsync'd after each simulation run (HANDOFF.md §5.5).
   wavenet_simulator.py, v2, v3, v3.1, v4
 ```
 
-### 4.4 Empire AI (Alpha/Grace — GPU cluster, target for ML training)
+### 4.4 Empire AI (GPU cluster, target for ML training)
 **SSH:** `ssh empireai` (alias in `~/.ssh/config`) | **Canonical hostname:** `alpha1.empireai.edu`
-**User:** `tolugboji` | **Hardware:** Grace CPU nodes (GA), NVL72 Superpod H100/H200 GPUs (Beta)
+**User:** `tolugboji` | **Project account:** `ro_tolugboji_planetary` (project 580)
 **Auth:** password + 2FA (authenticator code) — **cannot be automated**, unlike terravibranium/repovibranium.
+
+**Two separate clusters exist under Empire AI — don't conflate them:**
+- **Alpha** (this is what `ssh empireai` connects to) — Grace ARM CPU nodes, plus newly
+  added NVIDIA RTX Pro 6000 GPUs for single-GPU jobs. **As of 2026-09-18, institutional
+  partitions are retired** — job submissions must pass `--account ro_tolugboji_planetary`
+  instead. (Confirmed: Alpha's own login MOTD already carries this retirement notice.)
+- **Beta** — a newer, separate cluster: NVIDIA GB200 NVL72 SuperPOD, Blackwell B200 GPUs,
+  4-rack unified NVLink fabric (13.4 TB unified GPU memory, 130 TB/s NVLink bandwidth).
+  **Minimum 4 GPUs per job** — not usable for single-GPU work (use Alpha's RTX Pro 6000 for
+  that instead). Not yet connected to from this project — would need its own hostname and
+  the same ControlMaster access setup as Alpha.
+
+Billing (SU charging) for both clusters deferred to **2026-10-01** per Empire AI sysadmin
+(supersedes an earlier 2026-09-01 date). Required acknowledgment for any publication using
+these resources: *"We gratefully acknowledge use of the research computing resources of the
+Empire AI Consortium, Inc, with support from Empire State Development of the State of New
+York, the Simons Foundation, and the Secunda Family Foundation."*
 
 Access model (same as Bluehive): a human runs `ssh empireai` once and completes the 2FA
 prompt interactively. That becomes an SSH `ControlMaster` session (`ControlPersist 12h`);
@@ -398,7 +416,7 @@ Once multiple HDF5 files exist, the ML pipeline can begin:
 - **Reference HDF5 Reader:** `src/wavenet_pipeline/02_simulation/verify_main.py` — Study this script to understand how to read the new CPS HDF5 schema (`wavenetv2_dataset_10k_full.h5`). It is the only fully compatible reader for the new output format.
 - `src/wavenet_pipeline/01_parametrization/h5_wavenet_tools.py` — Legacy HDF5 reader/dataloader utilities (needs adapting to the new CPS schema based on `verify_main.py`)
 - `src/machine_learning/U_NET_array.py` — Legacy U-Net (needs updating from `.npy` to HDF5 streaming using the updated dataloader)
-- **Target GPU hardware:** `terravibranium-gpu` (RTX 3090, 24 GB VRAM, `ssh terravibranium-gpu`) or Empire AI (`ssh empireai` — H100/H200 GPUs, access confirmed 2026-09-04, see §4.4)
+- **Target GPU hardware:** `terravibranium-gpu` (RTX 3090, 24 GB VRAM, `ssh terravibranium-gpu`) or Empire AI Alpha (`ssh empireai` — RTX Pro 6000, single-GPU; Grace ARM CPU nodes also available; access confirmed 2026-09-04, see §4.4)
 
 
 ---
@@ -415,7 +433,7 @@ ssh tolugboj@terravibranium.earth.rochester.edu
 ssh administrator@repovibranium.earth.rochester.edu  # NAS
 ssh tolugboj@bluehive.circ.rochester.edu             # HPC (2FA required)
 ssh terravibranium-gpu                               # GPU node (RTX 3090)
-ssh empireai                                         # Empire AI Alpha/Grace (2FA required, H100/H200)
+ssh empireai                                         # Empire AI Alpha (2FA required, RTX Pro 6000 / Grace)
 
 # Verify HDF5 output on terravibranium
 ssh tolugboj@terravibranium.earth.rochester.edu \
