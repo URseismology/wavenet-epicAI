@@ -244,8 +244,60 @@ manually rsync'd after each simulation run (HANDOFF.md §5.5).
 - **Beta** — a newer, separate cluster: NVIDIA GB200 NVL72 SuperPOD, Blackwell B200 GPUs,
   4-rack unified NVLink fabric (13.4 TB unified GPU memory, 130 TB/s NVLink bandwidth).
   **Minimum 4 GPUs per job** — not usable for single-GPU work (use Alpha's RTX Pro 6000 for
-  that instead). Not yet connected to from this project — would need its own hostname and
-  the same ControlMaster access setup as Alpha.
+  that instead). **Connection confirmed 2026-09-04**: `ssh empireai-beta` (canonical hostname
+  `beta.empireai.edu`), same ControlMaster pattern and `~/.ssh/config` block as Alpha (see
+  below), same `ro_tolugboji_planetary` project account — no separate Beta-specific account.
+  Compute nodes are DGX-class, `Gres=gpu:b200:4` each (i.e. one "node" = one full 4-GPU unit,
+  matching the 4-GPU minimum), 144 CPUs / ~1.5 TB RAM per node, ~71 nodes total on the `beta`
+  partition.
+
+**Job submission protocol — confirmed on both clusters, plain Slurm works, Beta expects
+containers:** A standard `sbatch`/`srun` script with `#SBATCH -A ro_tolugboji_planetary`
+submits and runs fine on both clusters — proven directly (Alpha: completed job; Beta: 4-GPU
+job ran `hostname`/`nvidia-smi` with no container). But Empire AI's own KB
+([Pyxis/Enroot on Beta](https://empireai.freshdesk.com/support/solutions/articles/157000374868-pyxis-enroot-on-beta))
+states plainly: *"The Blackwell compute nodes feature a minimal software installation. All
+workloads should run within containers... utilizing the Pyxis/Enroot runtime framework."*
+Confirms what the sysadmin said informally — Beta is moving away from admin-installed
+per-user software toward a containers-first model. Not yet a hard block (plain jobs still
+run), but expect the minimal-install trend to continue; don't plan on `module load`-ing
+scientific software stacks on Beta going forward. No equivalent language found for Alpha.
+
+Container mechanism: **Pyxis, not Docker.** There is no Docker daemon running jobs — Docker
+exists on the node only as a module (`module load docker/29.1.3`). The actual path is a flag
+on `srun`/`sbatch`: `--container-image=<registry>/<image>:<tag>`. Enroot pulls the image
+(Docker-registry-v2 protocol — works with NGC, Docker Hub, or a private registry equally),
+converts it to squashfs, and runs an ephemeral, unprivileged container scoped to that job's
+GPU allocation; nothing persists after the job ends. Credentials for a private registry go in
+`~/.config/enroot/.credentials` in the Empire AI home directory (read by the host at pull
+time, not baked into the image).
+
+**Self-hosted registry (`urseismogate.earth.rochester.edu/registry`, lab-owned) — confirmed
+working 2026-09-04:** tested from an actual allocated Beta compute node (not just the login
+node) — DNS resolves, TCP 443 reachable, and a general internet check (`8.8.8.8:443`) also
+succeeded. **Beta compute nodes have full outbound internet access** — this is notably
+different from the "compute nodes have no internet, only the login node does" pattern already
+documented above for Bluehive/terravibranium; that workaround is not needed here.
+
+**Pyxis image pull test (`spec2vec`) — network/registry/protocol confirmed working; image
+push format needs a fix.** `srun --container-image=urseismogate.earth.rochester.edu/spec2vec:latest`
+reached the registry, completed TLS, and got a well-formed Docker Registry v2 API response —
+but `MANIFEST_UNKNOWN: "OCI index found, but accept header does not support OCI indexes"`.
+Root cause (confirmed via direct `curl` against the registry API, no GPU needed): the image
+was pushed as an **OCI multi-platform index** carrying a Buildx attestation manifest — the
+signature of `docker buildx build --push` with its default provenance/SBOM attestations
+enabled. Enroot's registry client doesn't negotiate `Accept: application/vnd.oci.image.index.v1+json`,
+so it never finds the actual `linux/amd64` manifest nested inside the index. **Fix is on the
+push side, not Empire AI's**: rebuild/push with `docker buildx build --provenance=false
+--sbom=false -t <image> --push .` (or `DOCKER_BUILDKIT=0 docker build && docker push`) to get
+a plain Docker v2 manifest instead of an OCI index. Re-test once repushed.
+
+QOS gotcha (Beta): a job submitted with no `--qos` can land in `PD (Priority)` with
+`squeue --start` showing `N/A` — no ETA, matching the general SLURM gotcha already logged in
+§ Architecture lesson below. Fix: pass `--qos=test` (2h wall limit, priority 800) for a quick
+sanity/interactive check instead of waiting on the default `normal` QOS (priority 0). Full QOS
+list available to `ro_tolugboji_planetary`: `interactive`, `long`, `normal`, `priority`,
+`standard`, `test`.
 
 Billing (SU charging) for both clusters deferred to **2026-10-01** per Empire AI sysadmin
 (supersedes an earlier 2026-09-01 date). Required acknowledgment for any publication using

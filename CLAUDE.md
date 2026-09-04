@@ -124,7 +124,31 @@ support@empireai.edu | https://empireai.freshdesk.com/support/home
   instead. Confirmed live in Alpha's own login banner (partition retirement notice).
 - **Beta** — separate, newer cluster: NVIDIA GB200 NVL72 SuperPOD (Blackwell B200 GPUs,
   4-rack unified NVLink fabric). **Minimum 4 GPUs per job** — not for single-GPU work.
-  Not yet connected to from this project; would need its own hostname/access setup.
+  SSH: `ssh empireai-beta` (canonical hostname `beta.empireai.edu`), same ControlMaster
+  pattern as Alpha, same `ro_tolugboji_planetary` project account. Connection confirmed
+  2026-09-04. Nodes are DGX-class, `Gres=gpu:b200:4` each — one node = the 4-GPU minimum.
+
+**Job submission — plain Slurm works on both; Beta expects containers going forward.** A
+normal `sbatch`/`srun` script with `#SBATCH -A ro_tolugboji_planetary` runs fine on both
+clusters (proven directly). But Empire AI's own KB says Beta's nodes have "minimal software
+installation" and "all workloads should run within containers" via Pyxis/Enroot — confirms
+what sysadmin said informally: Beta is moving away from admin-installed software toward
+containers-first. No equivalent language for Alpha. Container mechanism is **Pyxis, not
+Docker** — no daemon, just a `--container-image=<registry>/<image>:<tag>` flag on
+`srun`/`sbatch`; enroot pulls (any Docker-registry-v2 host, NGC/Docker Hub/private all work
+the same way), converts to squashfs, runs ephemeral per-job. Private registry auth via
+`~/.config/enroot/.credentials`. Gotcha: a job with no `--qos` can sit `PD (Priority)` with no
+ETA — pass `--qos=test` for a quick sanity check instead.
+
+**Self-hosted registry (`urseismogate.earth.rochester.edu`) — confirmed reachable 2026-09-04**
+from an actual allocated Beta compute node (DNS + TCP 443 + general internet egress all
+succeeded) — unlike Bluehive/terravibranium, **Beta compute nodes have full outbound
+internet**, no login-node-relay workaround needed. Note repo path is `spec2vec`, not
+`registry/spec2vec` — "registry" is the service name, not a URL path segment.
+**Pyxis pull of `spec2vec:latest` failed with `MANIFEST_UNKNOWN` (OCI index)** — the image was
+pushed via `docker buildx build --push` with default provenance/SBOM attestations, producing
+an OCI multi-platform index enroot can't negotiate. Not an Empire AI or network issue — fix is
+re-pushing with `--provenance=false --sbom=false`. Full diagnosis: `docs/HANDOFF.md` §4.4.
 
 Billing (SU charging) for both clusters deferred to **2026-10-01**. Any publication using
 these resources must include: *"We gratefully acknowledge use of the research computing
