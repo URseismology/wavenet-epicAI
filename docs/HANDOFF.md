@@ -1,7 +1,7 @@
 # WaveNet-EpicAI: Agent Handoff Document
 
 > **Intended Audience:** A new AI agent (Claude Code) with humans in the loop, picking up this project fresh.
-> **Last Updated:** September 3, 2026 (11:05 EDT)
+> **Last Updated:** September 4, 2026 (11:20 EDT)
 > **Status of Primary Simulation:** ✅ COMPLETE — 10,000 models each at `sep_km=127.0 km` and `sep_km=100.0 km`.
 > **Next Priority:** Run more training sets on `terravibranium` (nightly) at additional sep_km values. Then expand to multi-separation scan on Bluehive.
 
@@ -57,6 +57,13 @@
 | **2026-09-03 09:13** | **✅ Run COMPLETED** — 10,000/10,000 models, 0 errors, 16.72 hours (60,177s). Output: `wavenetv2_dataset_10k_sep100km.h5` (11.8 GB) | `run_sep100km.log` on terravibranium |
 | **2026-09-03 ~10:58** | Verified with `verify_main.py` (20 sample frames, no exceptions) and schema check (10,000 models confirmed in `simulations` group) | Conversation log |
 | **2026-09-03 ~11:09** | **✅ Backup to repovibranium COMPLETE** — `/volume1/ADAMA-Shared/traindatawavenet/wavenetv2_dataset_10k_sep100km.h5`, byte-for-byte verified (11,810,179,616 bytes) | Conversation log |
+
+### Phase 5 — Empire AI GPU Cluster Access Established
+| Date | Event | Source |
+|---|---|---|
+| **2026-09-04** | `cerebrum` (10.17.6.17) SSH alias added to axon-1; two Empire AI planning docs pulled from cerebrum's `UR_EmpireAI` project into `docs/` for reference | Conversation log |
+| **2026-09-04** | Empire AI (`alpha1.empireai.edu`) reachable and login confirmed (password + 2FA). Canonical hostname corrected — earlier `alpha.empire-ai.org` alias is a working but non-canonical name for the same host (67.99.173.2) | Conversation log |
+| **2026-09-04** | Persistent access configured via SSH `ControlMaster`/`ControlPersist` (`ssh empireai`) — same pattern as the existing Bluehive setup. Claude Code can drive Empire AI directly for up to 12h after a human completes one interactive 2FA login | Conversation log; verified via `ssh -O check empireai` → `Master running` |
 
 ### What Has Not Happened Yet (Future Milestones)
 | Milestone | Status |
@@ -223,7 +230,29 @@ manually rsync'd after each simulation run (HANDOFF.md §5.5).
   wavenet_simulator.py, v2, v3, v3.1, v4
 ```
 
-### 4.4 GitHub
+### 4.4 Empire AI (Alpha/Grace — GPU cluster, target for ML training)
+**SSH:** `ssh empireai` (alias in `~/.ssh/config`) | **Canonical hostname:** `alpha1.empireai.edu`
+**User:** `tolugboji` | **Hardware:** Grace CPU nodes (GA), NVL72 Superpod H100/H200 GPUs (Beta)
+**Auth:** password + 2FA (authenticator code) — **cannot be automated**, unlike terravibranium/repovibranium.
+
+Access model (same as Bluehive): a human runs `ssh empireai` once and completes the 2FA
+prompt interactively. That becomes an SSH `ControlMaster` session (`ControlPersist 12h`);
+Claude Code then runs `ssh empireai '...'` / `scp ... empireai:...` directly with no further
+prompts, until 12h of inactivity passes — then it needs a fresh manual login.
+
+`ControlPath` (`~/.ssh/cm-%r@%h:%p`) lives under each axon-1 user's own home directory, so
+**every team account (urseismoadmin, wavenet-senior, wavenet-junior) needs its own
+`~/.ssh/config` entry and its own manual login** — one person's open socket does not cover
+another account. Full setup steps: `docs/memos/2026-09-04-empireai-persistent-access.md`.
+
+Occasionally refuses the TCP connection on the first attempt and succeeds on immediate retry
+(observed 2026-09-04) — this is upstream flakiness, not an IP lockout or bad config; retry
+before escalating to `support@empireai.edu`.
+
+Reference docs pulled from cerebrum's `UR_EmpireAI` project: `docs/empireai_connections.md`,
+`docs/empireai_discovery.md`.
+
+### 4.5 GitHub
 - **Repo:** `https://github.com/URseismology/wavenet-epicAI`
 - **Branch:** `main`
 - **SSH Remote:** `git@github.com:URseismology/wavenet-epicAI.git`
@@ -369,7 +398,7 @@ Once multiple HDF5 files exist, the ML pipeline can begin:
 - **Reference HDF5 Reader:** `src/wavenet_pipeline/02_simulation/verify_main.py` — Study this script to understand how to read the new CPS HDF5 schema (`wavenetv2_dataset_10k_full.h5`). It is the only fully compatible reader for the new output format.
 - `src/wavenet_pipeline/01_parametrization/h5_wavenet_tools.py` — Legacy HDF5 reader/dataloader utilities (needs adapting to the new CPS schema based on `verify_main.py`)
 - `src/machine_learning/U_NET_array.py` — Legacy U-Net (needs updating from `.npy` to HDF5 streaming using the updated dataloader)
-- **Target GPU hardware:** `terravibranium-gpu` (RTX 3090, 24 GB VRAM, `ssh terravibranium-gpu`) or Empire AI (`ssh empireai` — H100/H200 GPUs)
+- **Target GPU hardware:** `terravibranium-gpu` (RTX 3090, 24 GB VRAM, `ssh terravibranium-gpu`) or Empire AI (`ssh empireai` — H100/H200 GPUs, access confirmed 2026-09-04, see §4.4)
 
 
 ---
@@ -386,6 +415,7 @@ ssh tolugboj@terravibranium.earth.rochester.edu
 ssh administrator@repovibranium.earth.rochester.edu  # NAS
 ssh tolugboj@bluehive.circ.rochester.edu             # HPC (2FA required)
 ssh terravibranium-gpu                               # GPU node (RTX 3090)
+ssh empireai                                         # Empire AI Alpha/Grace (2FA required, H100/H200)
 
 # Verify HDF5 output on terravibranium
 ssh tolugboj@terravibranium.earth.rochester.edu \

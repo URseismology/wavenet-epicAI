@@ -1,7 +1,7 @@
 # CLAUDE.md — WaveNet-EpicAI
 # Claude Code reads this file automatically at the start of every session.
 # Keep this file current. It is the single source of truth for all AI agents.
-# Last updated: 2026-09-03
+# Last updated: 2026-09-04
 
 ---
 
@@ -94,6 +94,28 @@ CPS HDF5 backup: `/volume1/ADAMA-Shared/traindatawavenet/`
 Note: The 11 GB CPS HDF5 dataset is NOT in any auto-sync path.
 It lives only in `/volume1/ADAMA-Shared/traindatawavenet/` on repovibranium
 and must be manually rsync'd after each run (see HANDOFF.md §5.5).
+
+### cerebrum (added 2026-09-04 — role not yet defined)
+SSH: `ssh cerebrum` (alias in ~/.ssh/config on axon-1)
+Address: 10.17.6.17
+User: tolulopeolugboji
+OS: macOS
+Passwordless SSH key access confirmed working from axon-1.
+
+### Empire AI (Alpha/Grace — added 2026-09-04, target GPU hardware for ML training)
+SSH: `ssh empireai` (alias in ~/.ssh/config; matches `empireai`, `alpha1.empireai.edu`,
+`alpha.empire-ai.org`, `alpha1.empire-ai.org` — all resolve to the same host, 67.99.173.2)
+Canonical hostname: `alpha1.empireai.edu` | User: `tolugboji`
+Hardware: Grace CPU nodes (GA), NVL72 Superpod (Beta) — H100/H200 GPUs
+**Requires password + 2FA (authenticator code) — cannot be automated.** Access from Claude
+Code works via SSH `ControlMaster`/`ControlPersist`: a human logs in once interactively
+(`ssh empireai`), which becomes the master connection; Claude Code then reuses that socket
+directly with no further prompts for up to 12h of inactivity. `ControlPath` is scoped to
+each axon-1 user's own home directory, so **each team account needs its own config entry
+and its own manual login** — see `docs/memos/2026-09-04-empireai-persistent-access.md`.
+Occasionally refuses the TCP connection on first attempt (load balancer flakiness observed
+2026-09-04, not a lockout) — retry once before assuming it's actually down. Support:
+support@empireai.edu | https://empireai.freshdesk.com/support/home
 
 ### GitHub
 Repo: `https://github.com/URseismology/wavenet-epicAI`
