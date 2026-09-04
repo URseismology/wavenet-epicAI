@@ -46,10 +46,18 @@ RESULTS
   - 1-sample overfit (lr=3e-3, 800 iters): loss 0.64->0.0085, IoU 0.03->0.977,
     Dice 0.06->0.988 (converged).
 
+  Tutorial notebook (notebooks/stage_b_model_definition.ipynb) written and EXECUTED
+  end-to-end via `jupyter nbconvert --execute` against the official tutorial data
+  (see stage_a_data_definition.md) — zero errors, torchinfo's model summary
+  independently confirms the exact encoder/decoder shape trace this stage's DECISION
+  is based on (80->40->20->10->5 height, 300->150->75->37->18 width), and the 1-sample
+  overfit re-ran cleanly to completion (final IoU 0.997 in this run, consistent with —
+  slightly better than — the ad-hoc run below).
+
 HARDWARE TIER LOG
   | Tier                | Status | Date       | Job ID | Log link |
   |---------------------|--------|------------|--------|----------|
-  | Local               | PASS   | 2026-09-04 |  n/a   | this doc, .local_test_data/overfit_test.py (git-ignored, ad hoc) |
+  | Local               | PASS   | 2026-09-04 |  n/a   | this doc, notebooks/stage_b_model_definition.ipynb, .local_test_data/overfit_test.py (git-ignored, ad hoc) |
   | terravibranium-gpu  | not started | | | |
   | Alpha               | not started | | | |
   | Beta                | not started | | | |

@@ -71,10 +71,17 @@ RESULTS
   too tight for real data (34% flag rate driven by expected cross-method variation, not
   data quality problems). See OPEN QUESTIONS.
 
+  Tutorial notebook (notebooks/stage_a_data_definition.ipynb) written against a proper
+  official 10-model (1-per-family), 2-geometry tutorial artifact
+  (data_samples/tutorial_subset_sep{127,100}km.h5 + tutorial_manifest.csv, 11.7MB each,
+  extracted directly from the real production files, not the ad-hoc .local_test_data/
+  used above) and EXECUTED end-to-end via `jupyter nbconvert --execute` — zero errors,
+  same 1.67% mask positive-fraction result reproduced independently.
+
 HARDWARE TIER LOG
   | Tier                | Status | Date       | Job ID | Log link |
   |---------------------|--------|------------|--------|----------|
-  | Local               | PASS   | 2026-09-04 |  n/a   | this doc, .local_test_data/ (git-ignored) |
+  | Local               | PASS   | 2026-09-04 |  n/a   | this doc, notebooks/stage_a_data_definition.ipynb, .local_test_data/ (git-ignored) |
   | terravibranium-gpu  | not started | | | |
   | Alpha               | not started | | | |
   | Beta                | not started | | | |
