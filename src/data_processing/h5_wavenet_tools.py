@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 """
+SUPERSEDED (2026-09-04): see src/wavenet_pipeline/03_machine_learning/{dataset,
+build_ml_cache}.py instead. This module's flat ftan_inputs/target_masks schema does not
+match the real CPS dataset (simulations/{key}/geometries/{geom}/empirical_ftan_dispersion
+etc.) — CLAUDE.md already forbids using this reader on new CPS HDF5 output. Kept only as
+historical reference — do not build on this file.
+
 h5_wavenet_tools.py — WaveNet HDF5 Reader/Writer Utilities
 
 ROLE IN PIPELINE:

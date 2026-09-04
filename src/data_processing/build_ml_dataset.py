@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
 """
+SUPERSEDED (2026-09-04): see src/wavenet_pipeline/03_machine_learning/build_ml_cache.py
+instead. This script's I/O layer expects old flat-file Instaseis-style simulation
+directories (WAVE_SIM_*.txt, model.d, loose SREGN.ASC) — incompatible with
+wvsim_main.py's direct-to-HDF5 output, which needs no separate assembly step. Its FTAN/
+CCF math (get_time_ccf, compute_ftan, create_mask_and_guidance) was reviewed and is
+reusable-in-spirit but was not reused verbatim — 03_machine_learning/ftan_grid.py's
+regrid_ftan/build_target_mask were promoted from chrisScripts' schema-correct variant
+instead. Kept only as historical reference — do not build on this file's I/O layer.
+
 build_ml_dataset.py — WaveNet ML Training Dataset Assembler
 
 ROLE IN PIPELINE:

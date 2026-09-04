@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """
+SUPERSEDED (2026-09-04): see src/wavenet_pipeline/03_machine_learning/ instead. This
+file's (80,400)/0.5-4.5km/s grid was rejected in favor of the (80,300)/2-5km/s
+convention, and its HDF5Reader data layer (h5_wavenet_tools.py) does not match the real
+CPS dataset schema. Kept only as historical reference — do not build on this file.
+
 UNet segmentation for FTAN dispersion curve extraction.
 
 Input  : (1, 80, 400) - per-row normalized observed FTAN (rows 0-75)

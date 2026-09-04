@@ -46,6 +46,7 @@ ALL work originates from axon-1 (10.17.6.243, macOS, urseismoadmin).
 | `src/wavenet_pipeline/02_simulation/wvsim_main.py` | **Production simulator — the only simulator** |
 | `src/wavenet_pipeline/02_simulation/verify_main.py` | HDF5 verifier + reference schema reader |
 | `src/wavenet_pipeline/01_parametrization/model_manifest.parquet` | 10,000 Earth models (master input) |
+| `src/wavenet_pipeline/03_machine_learning/` | **ML pipeline (added 2026-09-04) — FTAN group-velocity U-Net.** Staged build in progress; see `docs/ml_pipeline_stages/PROGRESS.md` for status. |
 | `docs/HANDOFF.md` | Full project state, timelines, infrastructure |
 | `CLAUDE.md` | This file — rules for all AI agents |
 
@@ -58,8 +59,11 @@ ALL work originates from axon-1 (10.17.6.243, macOS, urseismoadmin).
 | `README.md` | Describes old + new pipelines ambiguously |
 | `docs/Master_Project_Overview.md` | Describes abandoned Instaseis/MPI architecture |
 | `docs/README_WaveSimArchitecture.md` | Describes Bluehive MPI. Superseded. |
-| `docs/Collaborative_Roadmap.md` | Phases 1–2 are stale. Phases 3–4 (HDF5/PyTorch) still valid. |
+| `docs/Collaborative_Roadmap.md` | Phases 1–2 are stale. Phases 3–4 (HDF5/PyTorch) superseded by `src/wavenet_pipeline/03_machine_learning/` (2026-09-04). |
 | `src/wavenet_pipeline/01_parametrization/wavenet_training_data.h5` | Legacy Instaseis HDF5 — NOT the CPS dataset |
+| `src/machine_learning/U_NET_array.py` | Superseded 2026-09-04 — wrong grid (80,400)/0.5-4.5km/s, old schema reader. See `src/wavenet_pipeline/03_machine_learning/`. |
+| `src/data_processing/{h5_wavenet_tools,build_ml_dataset}.py` | Superseded 2026-09-04 — old flat HDF5 schema, incompatible with the real CPS dataset layout. |
+| `chrisScripts/julyncf_pipeline/ML_pipeline/` | Superseded 2026-09-04 — the prototype this design came from; kept as reference only, see its README. |
 
 ---
 
@@ -205,9 +209,10 @@ Push: `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519" git push`
 2. Create `src/simulation_runner/submit_wvsim_bluehive.sh` (HANDOFF.md §6.3)
 3. Fix CPS_BIN detection in `wvsim_main.py` for Bluehive (HANDOFF.md §6.4)
 4. Verify `pycwt` available on Bluehive (interactive session test)
-5. Adapt `h5_wavenet_tools.py` to new CPS HDF5 schema (use `verify_main.py` as reference)
-6. Update `U_NET_array.py` from `.npy` to HDF5 streaming
-7. Update stale `README.md`
+5. Continue staged ML pipeline build (`src/wavenet_pipeline/03_machine_learning/`) —
+   Stage A & B verified locally 2026-09-04; next: terravibranium-gpu tier, then Alpha,
+   then Beta. See `docs/ml_pipeline_stages/PROGRESS.md`.
+6. Update stale `README.md`
 
 ---
 

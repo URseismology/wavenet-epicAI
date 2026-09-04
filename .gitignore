@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 _root_debug_archive/
 .DS_Store
+.venv_ml/
+.local_test_data/

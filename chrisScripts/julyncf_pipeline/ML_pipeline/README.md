@@ -1,5 +1,11 @@
 # ML_pipeline
 
+> **Superseded (2026-09-04)**: this prototype's design (schema-correct FTAN regrid,
+> family-aware split, U-Net/loss/training loop) is now the documented, staged pipeline
+> at `src/wavenet_pipeline/03_machine_learning/` — see `docs/HANDOFF.md` sec 4.4/9 and
+> `docs/ml_pipeline_stages/`. This README is kept as the original design reference, not
+> deleted, but new work should go into the new location, not here.
+
 U-Net segmentation pipeline for extracting Rayleigh wave group velocity dispersion curves from synthetic FTAN images.
 
 Trains on `wavenetv2_dataset_10k_full.h5` (~10,000 synthetic simulations). Runs locally or on any CUDA-capable machine — no GeoLab dependency.
