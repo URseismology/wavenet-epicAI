@@ -69,6 +69,8 @@ Two production datasets exist, both complete and backed up to `repovibranium`:
 | [docs/ml_pipeline_stages/PROGRESS.md](docs/ml_pipeline_stages/PROGRESS.md) | ML pipeline: stage x hardware-tier status |
 | [docs/empireai_alpha_slurm_faq.md](docs/empireai_alpha_slurm_faq.md) | Empire AI Alpha Slurm/Apptainer reference |
 | [docs/empireai_alpha_slurm_tutorial.md](docs/empireai_alpha_slurm_tutorial.md) | Hands-on Alpha walkthrough with our real account |
+| [docs/containers_docker_vs_apptainer.md](docs/containers_docker_vs_apptainer.md) | Docker vs. Apptainer vs. our registry vs. Beta's Pyxis — what to use where |
+| [docs/empireai_allocation_award.md](docs/empireai_allocation_award.md) | Empire AI Beta SU award, Coldfront record, project goals (benchmark vs. AkiNet/iRADNet) |
 | [docs/memos/](docs/memos/) | Team memos — infra setup, review requests, workshop notes |
 
 **Stale docs — do not use for current workflows** (full list with reasons in
