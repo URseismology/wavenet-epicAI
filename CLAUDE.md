@@ -196,11 +196,19 @@ a replacement — check the source directly for anything not already covered her
   `apptainer exec --nv`), a completely different mechanism from Beta's Pyxis/Enroot —
   don't assume one cluster's container recipe works on the other. **Confirmed
   2026-09-10 by direct testing**: (1) `apptainer pull`/`apptainer build` work on the
-  login node, but `apptainer exec`/`run` does NOT — it needs an actual allocated
-  compute node (login node lacks `squashfuse`, fails FATAL there, not just an INFO
-  line as the workshop docs implied); (2) building your own container from a `.def`
-  file (`apptainer build --fakeroot`) works cleanly, no Docker/registry round-trip
-  needed — a real alternative to our self-hosted registry for Alpha-only work.
+  login node for small images, but `apptainer exec`/`run` does NOT — it needs an actual
+  allocated compute node (login node lacks `squashfuse`, fails FATAL there, not just an
+  INFO line as the workshop docs implied); (2) **large images (multi-GB) can get
+  OOM-killed pulling/building on the login node too** — a 7.4GB pull from our own
+  registry died after an hour (`signal: killed`, no memory-related error, easy to
+  mistake for a hang); fix is `srun ... --mem=32G bash -c "apptainer pull ..."`, same
+  as running — completed in ~3 min once given a real compute-node allocation; (3)
+  building your own container from a `.def` file (`apptainer build --fakeroot`) works
+  cleanly, no Docker/registry round-trip needed — a real alternative to our self-hosted
+  registry for Alpha-only work; (4) our own registry's `spec2vec` image successfully
+  pulls via Apptainer with no `MANIFEST_UNKNOWN` (unlike Beta's Pyxis) — but turned out
+  to just be a generic Anaconda base image, not the actual spec2vec package; worth
+  checking if that's a mislabeled/placeholder push.
   Full FAQ/tutorial: `docs/empireai_alpha_slurm_faq.md`, `docs/empireai_alpha_slurm_tutorial.md`.
   **Confused about Docker vs Apptainer vs registries and where each fits?** See
   `docs/containers_docker_vs_apptainer.md` — ties together our self-hosted registry

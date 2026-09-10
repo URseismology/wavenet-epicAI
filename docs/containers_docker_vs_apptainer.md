@@ -76,6 +76,16 @@ always test on the actual target cluster.** The concrete fix, if you hit
 `MANIFEST_UNKNOWN` again: rebuild/push with
 `docker buildx build --provenance=false --sbom=false -t <image> --push .`
 
+**Second gotcha, confirmed 2026-09-10, on the Apptainer side of the same test**: the
+image resolved fine, but at 7.4GB it OOM-killed on **Alpha's login node** during the
+final SIF-compression step — over an hour of runtime, climbing past 4-5GB of RAM,
+ending in a bare `signal: killed` with no memory-related error message (easy to mistake
+for a hang). Retrying the identical `apptainer pull` inside a real compute-node
+allocation (`srun ... --mem=32G ...`) completed cleanly in ~3 minutes. **Lesson: any
+multi-GB `apptainer pull`/`build`, not just `apptainer exec`/`run`, should happen inside
+an allocation on Alpha — the login node's resource limits apply to more than just
+container execution.**
+
 ## Practical guidance — which do I actually use?
 
 - **Need an image that works on *both* Alpha and Beta, guaranteed identical?** Build

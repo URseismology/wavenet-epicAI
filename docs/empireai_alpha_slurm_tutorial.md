@@ -195,6 +195,17 @@ apptainer exec --nv ~/wavenet_pytorch.sif python3 -c "import torch; print(torch.
 This works — the same INFO lines print, but this time Apptainer successfully falls back
 to a temporary sandbox and your command actually runs.
 
+**If you're pulling a large image (multi-GB), do that inside an allocation too —
+`apptainer pull`/`build` can get OOM-killed on the login node**, confirmed 2026-09-10
+with a 7.4GB image (died after an hour with a bare `signal: killed`, no memory-related
+error message, easy to mistake for a hang). Same fix as running — wrap it in `srun`
+with real memory:
+```bash
+srun -p alpha -A ro_tolugboji_planetary --qos=test --mem=32G bash -c \
+  "apptainer pull my.sif docker://urseismogate.earth.rochester.edu/<image>:<tag>"
+```
+This completed in ~3 minutes once given a compute node instead of the login node.
+
 Remember: this is **Apptainer**, Alpha-specific — Beta uses a completely different
 mechanism (Pyxis/Enroot, `.sif` vs. `--container-image=`, see `CLAUDE.md`). Don't
 assume a recipe built for one cluster works on the other.

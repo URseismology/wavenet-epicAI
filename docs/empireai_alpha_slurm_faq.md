@@ -213,12 +213,24 @@ INFO:    squashfuse not found, will not be able to mount SIF
 INFO:    Converting SIF file to temporary sandbox...
 <your program's actual output>
 ```
-**`apptainer pull`/`apptainer build` work fine on the login node — only actually
-*running* a container (`apptainer exec`/`run`) needs a real compute-node allocation.**
-Reproduced this twice with two different images; it's a consistent pattern, not a fluke.
-The workshop cheat sheet's "these INFO lines are harmless" note is true, but only once
-you're already inside a job — don't be confused if the identical command fails hard
-when you test it directly on the login node first.
+**`apptainer pull`/`apptainer build` work fine on the login node for small-to-medium
+images — only actually *running* a container (`apptainer exec`/`run`) needs a real
+compute-node allocation.** Reproduced this twice with two different images; it's a
+consistent pattern, not a fluke. The workshop cheat sheet's "these INFO lines are
+harmless" note is true, but only once you're already inside a job — don't be confused
+if the identical command fails hard when you test it directly on the login node first.
+
+**Second gotcha, confirmed 2026-09-10 — large images can OOM-kill on the login node
+during `pull`, not just during `exec`.** Pulling a 7.4GB image
+(`urseismogate.earth.rochester.edu/spec2vec:latest`, our own registry) on the login
+node ran for over an hour, climbed past 4-5GB RAM during the final "Creating SIF
+file..." step, then died with `FATAL: ...create command failed: signal: killed` — no
+error message pointing at memory, just a bare kill signal, easy to mistake for a hang
+rather than an OOM kill. **Fix: run the pull inside an actual compute-node allocation
+with enough memory instead** (`srun -p alpha -A ro_tolugboji_planetary --qos=test
+--mem=32G bash -c 'apptainer pull ...'`) — worked cleanly there in about 3 minutes.
+Rule of thumb: for anything you expect to be multi-GB, don't `apptainer pull`/`build`
+on the login node at all — request an allocation first, same as you would for running.
 
 ---
 

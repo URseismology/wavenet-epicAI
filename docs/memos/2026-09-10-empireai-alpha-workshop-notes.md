@@ -72,12 +72,18 @@ APPTAINER — I TESTED THIS MYSELF, NOT JUST READ THE DOCS
      Docker, no registry push/pull needed at all. This is a genuinely simpler path than
      our self-hosted registry for Alpha-only work.
 
-  3. Still in progress: I'm testing whether Apptainer can pull our OWN self-hosted
-     registry image (`spec2vec`, the one that failed on Beta with a MANIFEST_UNKNOWN
-     error from an OCI multi-platform index). Early result: Apptainer resolved and
-     copied all 10 image layers successfully — no MANIFEST_UNKNOWN, unlike Beta — but
-     my own first test run got interrupted before finishing the final compression step
-     (my mistake, not Alpha's). Re-running cleanly now; will follow up once it lands.
+  3. Resolved: Apptainer CAN pull our own self-hosted registry image (`spec2vec`, the
+     one that failed on Beta with a MANIFEST_UNKNOWN error) — no manifest problem at
+     all on Alpha, unlike Beta. But it surfaced a real gotcha: this particular image is
+     7.4GB, and pulling/converting it to a `.sif` on the **login node** got killed by
+     what looks like an out-of-memory limit after climbing past 4-5GB of RAM (took over
+     an hour before dying — not obviously a hang, easy to misjudge as one). Fix: run the
+     pull inside an actual compute-node allocation with enough `--mem` instead
+     (`srun ... --mem=32G ...`) — worked cleanly there, image builds and runs fine
+     (`python3 --version` inside it: 3.14.6, conda-based). Side finding: this specific
+     `spec2vec`-tagged image turned out to just be a generic Anaconda base distribution,
+     not the actual spec2vec package — worth checking if that's a mislabeled/placeholder
+     push in our registry, not something for you to debug.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TWO NEW DOCUMENTS FOR YOU
