@@ -121,6 +121,14 @@ Occasionally refuses the TCP connection on first attempt (load balancer flakines
 2026-09-04, not a lockout) — retry once before assuming it's actually down. Support:
 support@empireai.edu | https://empireai.freshdesk.com/support/home
 
+**Status/maintenance page**: https://rootly.com/teams/empireai/status-pages/public-system-status-page/public
+— check here before assuming a connection problem is on our end (blocks automated
+fetching, open in a browser). **Documentation source of truth**: everything under
+https://empireai.freshdesk.com/support/solutions — organized into How-tos, New User
+Information, FAQs, Troubleshooting (login issues), and Tutorials (the NVIDIA workshop
+series we pulled from, 2026-09-10). Our own FAQ/tutorial docs are curated excerpts, not
+a replacement — check the source directly for anything not already covered here.
+
 **Two clusters — do not confuse them:**
 - **Alpha** (what we connect to via `ssh empireai`) — **192 GPUs across 24 nodes, 8/node**:
   H100 80GB on `alphagpu01`-`18`, H200 141GB on `alphagpu19`-`24` (confirmed 2026-09-10 via

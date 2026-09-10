@@ -14,6 +14,16 @@ our actual project account. See `docs/empireai_alpha_slurm_tutorial.md` for a
 step-by-step walkthrough with our real settings, and `CLAUDE.md` / `docs/HANDOFF.md`
 §4.4 for full Empire AI access mechanics (SSH aliases, 2FA/ControlMaster, etc).
 
+**Two links worth bookmarking, not just reading once:**
+- **Status/maintenance**: https://rootly.com/teams/empireai/status-pages/public-system-status-page/public
+  — check here first if something seems down; it blocks automated fetching, open it in
+  a real browser.
+- **Documentation source of truth**: https://empireai.freshdesk.com/support/solutions
+  — organized into How-tos, New User Information, FAQs, Troubleshooting (login issues),
+  and Tutorials (the NVIDIA workshop series this FAQ was built from). This FAQ is a
+  curated excerpt, not a replacement — if something you need isn't covered here, that's
+  where to look before asking Tolu.
+
 ---
 
 ### Q: What's the difference between `sbatch`, `salloc`, and `srun`?
