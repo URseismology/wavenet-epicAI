@@ -130,14 +130,18 @@ series we pulled from, 2026-09-10). Our own FAQ/tutorial docs are curated excerp
 a replacement — check the source directly for anything not already covered here.
 
 **Two clusters — do not confuse them:**
-- **Alpha** (what we connect to via `ssh empireai`) — **192 GPUs across 24 nodes, 8/node**:
-  H100 80GB on `alphagpu01`-`18`, H200 141GB on `alphagpu19`-`24` (confirmed 2026-09-10 via
-  Empire AI's own Alpha docs). Also has NVIDIA RTX Pro 6000 GPUs per earlier sysadmin email
-  (added "to assist processing single-GPU jobs") — this specific Alpha-docs source doesn't
-  mention RTX Pro 6000 at all, most likely an additional/newer node group not yet covered
-  by that doc rather than a contradiction, but **unconfirmed** — ask support/office hours
-  rather than assuming. Separate `cpu` (x86_64) and `grace` (**ARM64/aarch64** — needs its
-  own environment, doesn't share binaries/venvs with Alpha/cpu) partitions also exist.
+- **Alpha** (what we connect to via `ssh empireai`) — **224 GPUs across 28 nodes**:
+  H100 80GB on `alphagpu01`-`18` (8/node, some sliced into MIG for the 2026-09-10
+  workshop — `alphagpu11`/`16` show as `gpu:1g.10gb:56` rather than 8 full GPUs while
+  that reservation is active), H200 141GB on `alphagpu19`-`24` (8/node), **and NVIDIA
+  RTX PRO 6000 Blackwell on `alphagpu51`-`54` (8/node = 32 total), single-GPU jobs
+  only** — confirmed both by the 2026-09-10 workshop Q&A live and independently by
+  `sinfo -N -o "%N %G"` directly on Alpha (`gres/gpu:rtx_pro_6000_blackwell:8` — this
+  is the newer Blackwell generation, not the older Ampere RTX A6000 a workshop slide's
+  shorthand briefly confused people about). The earlier "unconfirmed, might be a
+  contradiction" flag on this is now resolved — it's a real, distinct, quantified node
+  group. Separate `cpu` (x86_64) and `grace` (**ARM64/aarch64** — needs its own
+  environment, doesn't share binaries/venvs with Alpha/cpu) partitions also exist.
   **Starting 2026-09-18, institutional partitions retire** — all Alpha job submissions must
   pair `--account ro_tolugboji_planetary` with an explicit `--qos` (see tiers below), not
   just the account flag alone. Confirmed live in Alpha's own login banner (partition
@@ -154,6 +158,9 @@ a replacement — check the source directly for anything not already covered her
   | `burst` | System overflow | 7 days | 32 GPUs | free |
 
   SU billing = GPUs x Hours x SU-rate-for-QoS (billing starts 2026-10-01, see below).
+  Per-hardware base SU rate (from 2026-09-10 workshop Q&A, likely combines with the
+  QoS multiplier above — exact composition not yet verified against written docs):
+  Alpha = 1 SU/GPU-hr, Beta GB200 = 2 SU/GPU-hr, Grace = 0.5 SU/hr.
   **Containers on Alpha use Apptainer** (`.sif` images, `module load apptainer/1.1.9`,
   `apptainer exec --nv`), a completely different mechanism from Beta's Pyxis/Enroot —
   don't assume one cluster's container recipe works on the other. **Confirmed

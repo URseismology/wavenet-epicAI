@@ -13,13 +13,15 @@ new facts we didn't have before, plus two documents for you to actually use.
 NEW FACTS WORTH KNOWING (already folded into CLAUDE.md)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  1. Alpha's real GPU inventory, now fully resolved: 192 H100/H200 GPUs across 24 nodes
-     (H100 80GB on alphagpu01-18, H200 141GB on alphagpu19-24) — PLUS, confirmed live in
-     the workshop Q&A, 4 separate nodes of NVIDIA RTX Pro 6000 (8 GPUs/node = 32 total),
-     restricted to single-GPU jobs only. This was an open question as of this morning
-     (we only had an unconfirmed sysadmin email mentioning RTX Pro 6000, with no count)
-     — now confirmed as a real, distinct, quantified node group, not a documentation
-     conflict.
+  1. Alpha's real GPU inventory, now fully resolved TWO independent ways (live in the
+     workshop Q&A, AND directly via `sinfo` on Alpha itself): 224 GPUs across 28 nodes —
+     H100 80GB on alphagpu01-18 (8/node), H200 141GB on alphagpu19-24 (8/node), and
+     NVIDIA RTX PRO 6000 Blackwell on alphagpu51-54 (8/node = 32 total), single-GPU jobs
+     only. This was an open question this morning (we only had an unconfirmed sysadmin
+     email with no count) — now fully confirmed, including that it's the newer
+     Blackwell generation specifically (a workshop slide's "A6000" shorthand briefly had
+     people wondering if it meant the older Ampere card instead — Slurm's own gres
+     string, rtx_pro_6000_blackwell, settles it).
 
   2. Real QoS tiers exist and matter — test/interactive/standard/long/priority/burst,
      each with different wall-time limits, GPU caps, and SU cost multipliers (test and

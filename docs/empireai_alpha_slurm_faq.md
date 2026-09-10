@@ -82,20 +82,26 @@ sacctmgr show assoc where user="$USER" format=User,Account%30,Partition,QOS%60
 
 ### Q: What GPU hardware does Alpha actually have?
 
-**192 GPUs across 24 nodes, 8 GPUs per node** — two tiers:
+**224 GPUs across 28 nodes** — three tiers (confirmed 2026-09-10 via `sinfo -N -o "%N
+%G"` directly on Alpha, cross-checked against the workshop Q&A):
 
 | GPU type | Nodes | VRAM | Request pattern |
 |---|---|---|---|
-| H100 | `alphagpu01`–`alphagpu18` (18 nodes) | 80 GB | `--gres=gpu:N` or `--gres=gpu:nvidia_h100_80gb_hbm3:N` |
-| H200 | `alphagpu19`–`alphagpu24` (6 nodes) | 141 GB | `--gres=gpu:nvidia_h200:N` |
+| H100 | `alphagpu01`–`alphagpu18` (18 nodes, 8/node) | 80 GB | `--gres=gpu:N` or `--gres=gpu:nvidia_h100_80gb_hbm3:N` |
+| H200 | `alphagpu19`–`alphagpu24` (6 nodes, 8/node) | 141 GB | `--gres=gpu:nvidia_h200:N` |
+| RTX PRO 6000 (Blackwell) | `alphagpu51`–`alphagpu54` (4 nodes, 8/node = 32 total) | — | `--gres=gpu:rtx_pro_6000_blackwell:N` — **single-GPU jobs only** |
 
-**Reconcile with what we already had documented:** `CLAUDE.md` currently says Alpha
-also has NVIDIA RTX Pro 6000 GPUs "added...to assist processing single-GPU jobs" (per
-sysadmin emails, 2026-08/09). This Alpha-docs article doesn't mention RTX Pro 6000 at
-all — most likely the RTX Pro 6000 nodes are a newer addition alongside this
-established H100/H200 fleet (not a replacement, not a discrepancy), but **this isn't
-confirmed** — worth a quick question to Empire AI support/office hours rather than
-assuming either doc is wrong.
+**Resolved, no longer an open question**: earlier we only had an unconfirmed sysadmin
+email mentioning RTX Pro 6000 with no count, and the first Alpha-docs source we pulled
+didn't mention it at all — this is now confirmed two independent ways (live in the
+workshop Q&A, and directly in Slurm's own `sinfo` output) as a real, distinct,
+quantified node group. It's the newer **Blackwell** generation specifically — a
+workshop slide's "A6000" shorthand briefly confused people into wondering if it meant
+the older Ampere RTX A6000 instead; the Slurm gres string settles it.
+
+Note `alphagpu11`/`16` (the workshop's reservation nodes) currently show as
+`gpu:1g.10gb:56` rather than 8 full H100s each — they're H100 nodes sliced into MIG
+partitions for the workshop, not a separate hardware pool.
 
 **MIG vs full GPU:** the workshop used a MIG slice (`--gres=gpu:1g.10gb:1`, a 10GB
 partition of one H100) — smaller, isolated, less memory/compute than a full card. Our
@@ -122,6 +128,15 @@ python3 -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get
 
 Billing starts 2026-10-01 (already in `CLAUDE.md`) — worth picking QoS deliberately once
 that hits, not just defaulting to `standard`/`priority` out of habit.
+
+**Per-hardware base rate** (from the 2026-09-10 workshop Q&A — likely combines with the
+QoS multiplier above, exact composition not yet verified against written docs): Alpha =
+1 SU/GPU-hour, Beta GB200 = 2 SU/GPU-hour, Grace = 0.5 SU/hour.
+
+**Your actual SU balance/award isn't visible via Slurm CLI** — `sacctmgr show assoc`
+shows no `GrpTRES`/`GrpTRESMins` cap for our account, and there's no `coldfront` CLI on
+Alpha. That's tracked in Coldfront, a separate web portal (per the sysadmin's original
+email) — check there directly, not via `ssh`/`sacctmgr`.
 
 ---
 

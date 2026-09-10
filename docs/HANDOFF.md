@@ -67,6 +67,7 @@
 | **2026-09-04** | Sysadmin emails (6/29, 8/24, 8/28) digested: corrected hardware description (no H100/H200 — Alpha has Grace CPU + new RTX Pro 6000, separate Beta cluster has Blackwell B200 NVL72); recorded project account `ro_tolugboji_planetary` (project 580); flagged 2026-09-18 Alpha project-account deadline and 2026-10-01 billing start | Forwarded sysadmin emails |
 | **2026-09-10** | **Correction to the 2026-09-04 entry above**: Alpha's own documentation (pulled during an NVIDIA Kickstart Workshop) confirms Alpha *does* have a 192-GPU H100/H200 fleet (24 nodes, 8/node) as its base hardware — the "no H100/H200" claim four rows up was itself an overcorrection. RTX Pro 6000 (from the sysadmin email) is most likely an additional, newer node group not yet covered by this Alpha-docs source, not a replacement — still unconfirmed which is authoritative for the *current* full inventory. Also recorded: real QoS tier table (test/interactive/standard/long/priority/burst), the Alpha/`cpu` (x86_64) vs `grace` (ARM64) architecture split, Alpha's Apptainer container mechanism, and a documented PyTorch install recipe (`pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124`). Full writeup: `docs/empireai_alpha_slurm_faq.md`, `docs/empireai_alpha_slurm_tutorial.md`, `docs/memos/2026-09-10-empireai-alpha-workshop-notes.md` | NVIDIA Kickstart Workshop + Empire AI Freshdesk docs |
 | **2026-09-10** | Directly tested Apptainer on Alpha (not just read docs): confirmed `apptainer exec`/`run` fails FATAL on the login node (missing `squashfuse`) but works on an allocated compute node; confirmed building a custom container from a `.def` file works end-to-end with no Docker/registry dependency. See §4.4 | Live testing via `ssh empireai` |
+| **2026-09-10** | **RTX Pro 6000 group fully resolved** (previously "unconfirmed, possible doc conflict" per the two entries above): confirmed live in the workshop Q&A AND independently via `sinfo -N -o "%N %G"` on Alpha itself — 4 nodes (`alphagpu51`-`54`), 8 GPUs/node, 32 total, exact Slurm gres type `rtx_pro_6000_blackwell` (Blackwell generation, resolving a slide/Q&A ambiguity with the older Ampere RTX A6000). Alpha's real total is 224 GPUs / 28 nodes, not 192/24. Also recorded per-hardware SU rates from the Q&A (Alpha 1 SU/GPU-hr, Beta GB200 2 SU/GPU-hr, Grace 0.5 SU/hr — composition with the QoS multiplier not yet verified) | Live workshop Q&A + `sinfo` on Alpha |
 
 ### What Has Not Happened Yet (Future Milestones)
 | Milestone | Status |
@@ -239,14 +240,17 @@ manually rsync'd after each simulation run (HANDOFF.md §5.5).
 **Auth:** password + 2FA (authenticator code) — **cannot be automated**, unlike terravibranium/repovibranium.
 
 **Two separate clusters exist under Empire AI — don't conflate them:**
-- **Alpha** (this is what `ssh empireai` connects to) — **192 GPUs / 24 nodes / 8 per
-  node** (confirmed 2026-09-10 via Empire AI's own Alpha docs, pulled during an NVIDIA
-  Kickstart Workshop): H100 80GB on `alphagpu01`-`18`, H200 141GB on `alphagpu19`-`24`.
-  Also documented (earlier, sysadmin email) as having NVIDIA RTX Pro 6000 GPUs added for
-  single-GPU jobs — not mentioned in the 2026-09-10 Alpha-docs source, likely a newer
-  addition not yet covered there rather than a contradiction, but unconfirmed. Separate
-  `cpu` (x86_64) and `grace` (**ARM64/aarch64**, needs its own environment — no shared
-  binaries/venvs with Alpha/cpu) partitions also exist. **As of 2026-09-18, institutional
+- **Alpha** (this is what `ssh empireai` connects to) — **224 GPUs / 28 nodes**: H100
+  80GB on `alphagpu01`-`18` (8/node — `alphagpu11`/`16` show as MIG-sliced
+  `gpu:1g.10gb:56` while the 2026-09-10 workshop reservation is active), H200 141GB on
+  `alphagpu19`-`24` (8/node), and **NVIDIA RTX PRO 6000 Blackwell on `alphagpu51`-`54`
+  (8/node = 32 total), single-GPU jobs only**. The RTX PRO 6000 group — previously
+  flagged "unconfirmed, possible doc conflict" — is now confirmed two independent ways:
+  live in the 2026-09-10 workshop Q&A, and directly via `sinfo -N -o "%N %G"` on Alpha
+  itself (`gres/gpu:rtx_pro_6000_blackwell:8` per node — Blackwell generation, not the
+  older Ampere RTX A6000 a workshop slide's shorthand briefly confused people about).
+  Separate `cpu` (x86_64) and `grace` (**ARM64/aarch64**, needs its own environment — no
+  shared binaries/venvs with Alpha/cpu) partitions also exist. **As of 2026-09-18, institutional
   partitions are retired** — job submissions must pass `--account ro_tolugboji_planetary`
   *and* an explicit `--qos` (see tiers below) — not the account flag alone. (Confirmed:
   Alpha's own login MOTD already carries this retirement notice; Empire AI's own "current
@@ -263,6 +267,13 @@ manually rsync'd after each simulation run (HANDOFF.md §5.5).
   | `burst` | System overflow | 7 days | 32 GPUs | free |
 
   SU billing = GPUs x Hours x SU-rate-for-QoS (billing starts 2026-10-01, same as Beta).
+  Per-hardware base SU rate (from 2026-09-10 workshop Q&A, likely combines with the
+  QoS multiplier above — exact composition not yet verified against written docs):
+  Alpha = 1 SU/GPU-hr, Beta GB200 = 2 SU/GPU-hr, Grace = 0.5 SU/hr. Note: `sacctmgr show
+  assoc` for `ro_tolugboji_planetary` shows no `GrpTRES`/`GrpTRESMins` cap at the Slurm
+  level (checked 2026-09-10) — the actual SU award/balance for this project isn't
+  exposed via Slurm CLI at all; it lives in Coldfront (a separate web portal per the
+  sysadmin's original email), URL not yet captured here.
   **Alpha's container mechanism is Apptainer** (`.sif` images, `module load
   apptainer/1.1.9`, `apptainer exec --nv`) — distinct from Beta's Pyxis/Enroot (below);
   don't assume one cluster's container recipe transfers to the other.
