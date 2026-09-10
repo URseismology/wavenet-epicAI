@@ -66,6 +66,7 @@
 | **2026-09-04** | Persistent access configured via SSH `ControlMaster`/`ControlPersist` (`ssh empireai`) — same pattern as the existing Bluehive setup. Claude Code can drive Empire AI directly for up to 12h after a human completes one interactive 2FA login | Conversation log; verified via `ssh -O check empireai` → `Master running` |
 | **2026-09-04** | Sysadmin emails (6/29, 8/24, 8/28) digested: corrected hardware description (no H100/H200 — Alpha has Grace CPU + new RTX Pro 6000, separate Beta cluster has Blackwell B200 NVL72); recorded project account `ro_tolugboji_planetary` (project 580); flagged 2026-09-18 Alpha project-account deadline and 2026-10-01 billing start | Forwarded sysadmin emails |
 | **2026-09-10** | **Correction to the 2026-09-04 entry above**: Alpha's own documentation (pulled during an NVIDIA Kickstart Workshop) confirms Alpha *does* have a 192-GPU H100/H200 fleet (24 nodes, 8/node) as its base hardware — the "no H100/H200" claim four rows up was itself an overcorrection. RTX Pro 6000 (from the sysadmin email) is most likely an additional, newer node group not yet covered by this Alpha-docs source, not a replacement — still unconfirmed which is authoritative for the *current* full inventory. Also recorded: real QoS tier table (test/interactive/standard/long/priority/burst), the Alpha/`cpu` (x86_64) vs `grace` (ARM64) architecture split, Alpha's Apptainer container mechanism, and a documented PyTorch install recipe (`pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124`). Full writeup: `docs/empireai_alpha_slurm_faq.md`, `docs/empireai_alpha_slurm_tutorial.md`, `docs/memos/2026-09-10-empireai-alpha-workshop-notes.md` | NVIDIA Kickstart Workshop + Empire AI Freshdesk docs |
+| **2026-09-10** | Directly tested Apptainer on Alpha (not just read docs): confirmed `apptainer exec`/`run` fails FATAL on the login node (missing `squashfuse`) but works on an allocated compute node; confirmed building a custom container from a `.def` file works end-to-end with no Docker/registry dependency. See §4.4 | Live testing via `ssh empireai` |
 
 ### What Has Not Happened Yet (Future Milestones)
 | Milestone | Status |
@@ -264,7 +265,25 @@ manually rsync'd after each simulation run (HANDOFF.md §5.5).
   SU billing = GPUs x Hours x SU-rate-for-QoS (billing starts 2026-10-01, same as Beta).
   **Alpha's container mechanism is Apptainer** (`.sif` images, `module load
   apptainer/1.1.9`, `apptainer exec --nv`) — distinct from Beta's Pyxis/Enroot (below);
-  don't assume one cluster's container recipe transfers to the other. Documented PyTorch
+  don't assume one cluster's container recipe transfers to the other.
+
+  **Directly tested 2026-09-10** (not just read from docs): (1) `apptainer pull` and
+  `apptainer build` both work fine on Alpha's login node, but `apptainer exec`/`run`
+  does not — the login node has no `squashfuse`, and that failure is FATAL there
+  (`container creation failed: ...squashfuse not found`), not a harmless INFO line as
+  the workshop cheat sheet's phrasing implied. Reproduced identically for two different
+  images. The same command on an actual allocated compute node (`srun -p alpha -A
+  ro_tolugboji_planetary --qos=test ...`) succeeds — Apptainer falls back to converting
+  the SIF to a temporary sandbox and runs normally. (2) Building a custom container from
+  a `.def` file works cleanly end-to-end (`apptainer build --fakeroot my.sif my.def`,
+  base image from Docker Hub + a `%post` pip install + a `%test` block that runs during
+  the build) — no Docker daemon, no registry push/pull needed at all if you don't want
+  one. This is a real, simpler alternative to our self-hosted registry
+  (`urseismogate.earth.rochester.edu`) specifically for Alpha-only work, and a concrete
+  answer to this section's "no pinned PyTorch/CUDA environment" question below — pin the
+  environment inside a `.def` file instead of a bare venv or a pushed Docker image.
+
+  Documented PyTorch
   install recipe (no container): `module load Python/3.10.15` then `pip install torch
   torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124` — directly
   relevant to §7's still-open "no pinned PyTorch/CUDA environment" question. Full

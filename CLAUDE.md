@@ -148,7 +148,13 @@ support@empireai.edu | https://empireai.freshdesk.com/support/home
   SU billing = GPUs x Hours x SU-rate-for-QoS (billing starts 2026-10-01, see below).
   **Containers on Alpha use Apptainer** (`.sif` images, `module load apptainer/1.1.9`,
   `apptainer exec --nv`), a completely different mechanism from Beta's Pyxis/Enroot —
-  don't assume one cluster's container recipe works on the other.
+  don't assume one cluster's container recipe works on the other. **Confirmed
+  2026-09-10 by direct testing**: (1) `apptainer pull`/`apptainer build` work on the
+  login node, but `apptainer exec`/`run` does NOT — it needs an actual allocated
+  compute node (login node lacks `squashfuse`, fails FATAL there, not just an INFO
+  line as the workshop docs implied); (2) building your own container from a `.def`
+  file (`apptainer build --fakeroot`) works cleanly, no Docker/registry round-trip
+  needed — a real alternative to our self-hosted registry for Alpha-only work.
   Full FAQ/tutorial: `docs/empireai_alpha_slurm_faq.md`, `docs/empireai_alpha_slurm_tutorial.md`.
 - **Beta** — separate, newer cluster: NVIDIA GB200 NVL72 SuperPOD (Blackwell B200 GPUs,
   4-rack unified NVLink fabric). **Minimum 4 GPUs per job** — not for single-GPU work.

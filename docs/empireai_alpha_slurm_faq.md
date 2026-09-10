@@ -174,6 +174,77 @@ This directly matters for our ML pipeline's open environment question (see
 `docs/ml_pipeline_stages/stage_b_model_definition.md`) — Alpha and Beta use **different**
 container runtimes (Apptainer vs. Pyxis/Enroot); don't assume one recipe works on both.
 
+**Confirmed 2026-09-10, and this refines the "harmless INFO lines" claim above — it's
+only harmless on a compute node, not the login node:**
+```
+# on the LOGIN node:
+$ apptainer run my.sif
+INFO:    squashfuse not found, will not be able to mount SIF
+FATAL:   container creation failed: mount hook function failure: ...squashfuse not found
+
+# same command, on an ALLOCATED COMPUTE NODE (via srun/salloc):
+$ srun -p alpha -A ro_tolugboji_planetary --qos=test bash -c "apptainer run my.sif"
+INFO:    squashfuse not found, will not be able to mount SIF
+INFO:    Converting SIF file to temporary sandbox...
+<your program's actual output>
+```
+**`apptainer pull`/`apptainer build` work fine on the login node — only actually
+*running* a container (`apptainer exec`/`run`) needs a real compute-node allocation.**
+Reproduced this twice with two different images; it's a consistent pattern, not a fluke.
+The workshop cheat sheet's "these INFO lines are harmless" note is true, but only once
+you're already inside a job — don't be confused if the identical command fails hard
+when you test it directly on the login node first.
+
+---
+
+### Q: Can we actually build our own custom containers for Alpha? (confirmed: yes)
+
+Yes — tested end to end on 2026-09-10. Unlike Beta (which only ever *pulls* a
+pre-existing registry image via Pyxis), Apptainer supports building an image from a
+plain-text **definition file** (`.def`), with no Docker daemon, no registry round-trip,
+and no dependency on our self-hosted registry at all if you don't want one:
+
+```
+Bootstrap: docker
+From: python:3.11-slim
+
+%post
+    pip install --no-cache-dir numpy h5py
+
+%test
+    python3 -c "import numpy, h5py; print(numpy.__version__, h5py.__version__)"
+
+%runscript
+    python3 -c "import numpy, h5py; print(numpy.__version__, h5py.__version__)"
+```
+```bash
+module load apptainer/1.1.9
+unset SINGULARITY_TMPDIR SINGULARITY_CACHEDIR
+export APPTAINER_CACHEDIR="$HOME/.apptainer/cache"
+export APPTAINER_TMPDIR="/tmp/$USER/apptainer-build"
+mkdir -p "$APPTAINER_CACHEDIR" "$APPTAINER_TMPDIR"
+
+apptainer build --fakeroot wavenet_test.sif wavenet_test.def
+```
+This ran cleanly: pulled the base image, ran `%post` (`pip install`), ran `%test`
+during the build itself (confirming it works even before you deploy it), and produced a
+72MB `.sif` in about a minute. The `%test` block ran successfully on the login node
+during build — but running the *finished* `.sif` afterward via `apptainer run` still
+needs a compute-node allocation, same as the point above (build ≠ run for this purpose).
+
+**Note the `--fakeroot` flag** — without it, `apptainer build` prints
+`INFO: fakeroot command not found` / `INFO: Installing some packages may fail` and may
+not be able to run `%post` steps that need root-like permissions (e.g. `apt-get`,
+writing to system directories). `pip install` into the default Python's site-packages
+worked fine either way in this test, but more involved builds (system package installs)
+may need `--fakeroot` and possibly a Slurm allocation with fakeroot mapping enabled —
+verify with an admin if a more complex build fails silently or partially.
+
+**Practical implication for our ML pipeline:** we can define our own `.def` file (e.g.
+pinning a specific PyTorch/CUDA version, `pycwt`, `h5py`, etc.) as a real answer to the
+still-open "no pinned environment" question, entirely independent of whatever's in our
+Docker registry — build once on Alpha's login node, reuse the `.sif` across every job.
+
 ---
 
 ### Q: Do I need a container at all? How do I get PyTorch without one?

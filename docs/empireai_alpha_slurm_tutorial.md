@@ -175,15 +175,65 @@ mkdir -p "$APPTAINER_CACHEDIR" "$APPTAINER_TMPDIR"
 apptainer pull ~/wavenet_pytorch.sif docker://pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
 ```
 (This can sit quietly at "Creating SIF file..." for 10-20 minutes on a large image —
-that's normal.) Then, in an `sbatch` script or interactive session:
+that's normal.)
+
+**Important, confirmed 2026-09-10: don't try to run it right here on the login node.**
+`apptainer pull`/`apptainer build` work on the login node, but `apptainer exec`/`run`
+does not — the login node lacks `squashfuse` and (unlike what you'd expect from the
+INFO-level log lines) that's a hard failure there, not a harmless fallback:
+```bash
+# this FAILS on the login node:
+apptainer exec --nv ~/wavenet_pytorch.sif python3 -c "import torch; print(torch.cuda.is_available())"
+# FATAL: container creation failed: ... squashfuse not found
+```
+Run it inside an actual allocation instead (continuing from step 3's `salloc`):
 ```bash
 export APPTAINER_TMPDIR="/tmp/$USER/apptainer-$SLURM_JOB_ID"
 mkdir -p "$APPTAINER_TMPDIR"
 apptainer exec --nv ~/wavenet_pytorch.sif python3 -c "import torch; print(torch.cuda.is_available())"
 ```
+This works — the same INFO lines print, but this time Apptainer successfully falls back
+to a temporary sandbox and your command actually runs.
+
 Remember: this is **Apptainer**, Alpha-specific — Beta uses a completely different
 mechanism (Pyxis/Enroot, `.sif` vs. `--container-image=`, see `CLAUDE.md`). Don't
 assume a recipe built for one cluster works on the other.
+
+### 7a. Build your own container from scratch (no registry needed)
+
+Confirmed working: write a small `.def` file and build it directly — no Docker, no
+push/pull round-trip through any registry:
+```
+# ~/my_project.def
+Bootstrap: docker
+From: python:3.11-slim
+
+%post
+    pip install --no-cache-dir numpy h5py pycwt   # swap in whatever your project needs
+
+%test
+    python3 -c "import numpy, h5py; print('ok')"
+
+%runscript
+    python3 -c "import numpy, h5py; print('ok')"
+```
+```bash
+module load apptainer/1.1.9
+unset SINGULARITY_TMPDIR SINGULARITY_CACHEDIR
+export APPTAINER_CACHEDIR="$HOME/.apptainer/cache"
+export APPTAINER_TMPDIR="/tmp/$USER/apptainer-build"
+mkdir -p "$APPTAINER_CACHEDIR" "$APPTAINER_TMPDIR"
+
+apptainer build --fakeroot ~/my_project.sif ~/my_project.def
+```
+The build (including the `%post`/`%test` steps) runs fine on the login node — it's only
+running the *finished* `.sif` afterward (`apptainer exec`/`run`) that needs a compute
+node, per 7 above. `--fakeroot` matters if your `%post` needs root-like permissions
+(e.g. `apt-get`); plain `pip install` worked without it in testing, but include it
+anyway unless you have a reason not to.
+
+This is a genuine alternative to our self-hosted Docker registry for Alpha work — you
+never have to push/pull anything, just build once and reuse the `.sif` file directly.
 
 ---
 
