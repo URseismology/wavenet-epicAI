@@ -80,10 +80,13 @@ APPTAINER — I TESTED THIS MYSELF, NOT JUST READ THE DOCS
      an hour before dying — not obviously a hang, easy to misjudge as one). Fix: run the
      pull inside an actual compute-node allocation with enough `--mem` instead
      (`srun ... --mem=32G ...`) — worked cleanly there, image builds and runs fine
-     (`python3 --version` inside it: 3.14.6, conda-based). Side finding: this specific
-     `spec2vec`-tagged image turned out to just be a generic Anaconda base distribution,
-     not the actual spec2vec package — worth checking if that's a mislabeled/placeholder
-     push in our registry, not something for you to debug.
+     (`python3 --version` inside it: 3.14.6, conda-based). Correction to something I
+     said earlier: I initially thought this image was a mislabeled placeholder because
+     `pip list` showed nothing spec2vec-related — that was my mistake, I was checking
+     the base conda env. It's confirmed the real SPEC2VEC package (Tolu's student built
+     it, possibly ahead of the public GitHub repo) — `/app` inside the container is a
+     genuine clone of the real research code, dependencies live in a dedicated
+     `spec2vec_env` conda environment. Nothing wrong with the registry or the push.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TWO NEW DOCUMENTS FOR YOU

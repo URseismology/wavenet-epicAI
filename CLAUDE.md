@@ -206,9 +206,13 @@ a replacement — check the source directly for anything not already covered her
   building your own container from a `.def` file (`apptainer build --fakeroot`) works
   cleanly, no Docker/registry round-trip needed — a real alternative to our self-hosted
   registry for Alpha-only work; (4) our own registry's `spec2vec` image successfully
-  pulls via Apptainer with no `MANIFEST_UNKNOWN` (unlike Beta's Pyxis) — but turned out
-  to just be a generic Anaconda base image, not the actual spec2vec package; worth
-  checking if that's a mislabeled/placeholder push.
+  pulls via Apptainer with no `MANIFEST_UNKNOWN` (unlike Beta's Pyxis) and is confirmed
+  the real [SPEC2VEC](https://github.com/URseismology/SPEC2VEC) research package —
+  `/app` is a genuine git clone matching that repo's structure (possibly ahead of the
+  public GitHub state), with dependencies in a dedicated `spec2vec_env` conda
+  environment, not the base one. (An earlier check here — `pip list` against the base
+  env — wrongly concluded this was a mislabeled placeholder; corrected once the actual
+  env was checked.)
   Full FAQ/tutorial: `docs/empireai_alpha_slurm_faq.md`, `docs/empireai_alpha_slurm_tutorial.md`.
   **Confused about Docker vs Apptainer vs registries and where each fits?** See
   `docs/containers_docker_vs_apptainer.md` — ties together our self-hosted registry

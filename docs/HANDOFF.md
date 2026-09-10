@@ -70,7 +70,8 @@
 | **2026-09-10** | **RTX Pro 6000 group fully resolved** (previously "unconfirmed, possible doc conflict" per the two entries above): confirmed live in the workshop Q&A AND independently via `sinfo -N -o "%N %G"` on Alpha itself — 4 nodes (`alphagpu51`-`54`), 8 GPUs/node, 32 total, exact Slurm gres type `rtx_pro_6000_blackwell` (Blackwell generation, resolving a slide/Q&A ambiguity with the older Ampere RTX A6000). Alpha's real total is 224 GPUs / 28 nodes, not 192/24. Also recorded per-hardware SU rates from the Q&A (Alpha 1 SU/GPU-hr, Beta GB200 2 SU/GPU-hr, Grace 0.5 SU/hr — composition with the QoS multiplier not yet verified) | Live workshop Q&A + `sinfo` on Alpha |
 | **2026-09-10** | Official award letter + Coldfront project record obtained (Tolu's own records): project 580 "Planetary Imaging with AI" awarded **3,000 SUs on Empire AI Beta** (1-year allocation, exact dates TBD), no limit currently enforced on Alpha or during the Beta pilot. Fully confirms the SU formula (`SU = Hrs x SU/hr x QoS-multiplier`) against Coldfront's own caption, matching the workshop Q&A. Project description names two AI tools, "Aki-NET" and "iRAD-NET" | Award letter (Steve Dewhurst, VP Research) + Coldfront dashboard |
 | **2026-09-10** | **Aki-NET/iRAD-NET relationship clarified**: separate sibling repos (AkiNet_V1, iRADNet — physics-informed PINN/algorithm-unrolling frameworks), not alternate names for this pipeline. Stated PI goal: benchmark this repo's classical U-Net against them using our CPS synthetic dataset, then extend that framework further. See §1 and `docs/empireai_allocation_award.md` | PI direction |
-| **2026-09-10** | Resolved the pending Apptainer self-hosted-registry pull test: succeeds with no `MANIFEST_UNKNOWN` (unlike Beta), but the 7.4GB image OOM-killed on the login node after an hour before a clean 3-minute retry inside a compute-node allocation (`--mem=32G`) worked. New documented gotcha: large `apptainer pull`/`build` needs an allocation too, not just `exec`/`run`. Also found the test image itself is a mislabeled generic Anaconda base, not the real `spec2vec` package. See `docs/empireai_alpha_slurm_faq.md`, `docs/containers_docker_vs_apptainer.md` | Live testing via `ssh empireai` |
+| **2026-09-10** | Resolved the pending Apptainer self-hosted-registry pull test: succeeds with no `MANIFEST_UNKNOWN` (unlike Beta), but the 7.4GB image OOM-killed on the login node after an hour before a clean 3-minute retry inside a compute-node allocation (`--mem=32G`) worked. New documented gotcha: large `apptainer pull`/`build` needs an allocation too, not just `exec`/`run`. Also initially misjudged the image as a mislabeled generic Anaconda base (see correction directly below) | Live testing via `ssh empireai` |
+| **2026-09-10** | **Correction to the entry above**: the `spec2vec` image is NOT mislabeled — confirmed the real [SPEC2VEC](https://github.com/URseismology/SPEC2VEC) research package. `/app` inside the container is a genuine git clone matching that repo's structure (possibly ahead of the public GitHub state, per PI), with dependencies installed into a dedicated `spec2vec_env` conda environment. The earlier "generic Anaconda base" conclusion came from checking `pip list` against the base conda env instead of `spec2vec_env` — a real mistake, not a finding about the registry | Corrected per PI + direct re-inspection via `ssh empireai` |
 
 ### What Has Not Happened Yet (Future Milestones)
 | Milestone | Status |
@@ -330,10 +331,16 @@ users/description): `docs/empireai_allocation_award.md`.
   inside a real compute-node allocation with sufficient memory (`srun -p alpha -A
   ro_tolugboji_planetary --qos=test --mem=32G bash -c "apptainer pull ..."`) — completed
   in ~3 minutes there. Once pulled, the image runs correctly (`python3 --version` →
-  3.14.6, conda-based). Incidental finding: this particular `spec2vec`-tagged image
-  turned out to just be a generic Anaconda base distribution (no `spec2vec` package
-  actually installed) — likely a mislabeled/placeholder push in the registry, not a
-  container-tooling problem; worth checking with whoever manages that registry entry.
+  3.14.6, conda-based). **Confirmed (corrected from an earlier wrong read): this is the
+  real [SPEC2VEC](https://github.com/URseismology/SPEC2VEC) research package**, built by
+  a student directly (may be ahead of the public GitHub state) — `/app` inside the
+  container is a genuine git clone matching that repo's directory structure
+  (`esec_catalog_clustering/`, `other_useful_notebooks/`, `synth_geophysical_signal_clustering/`,
+  `software_requirements/spec2vec_requirements_*.txt`, etc.), with real dependencies
+  (Cartopy, dask, antropy, and more) installed into a dedicated `spec2vec_env` conda
+  environment. The earlier "generic Anaconda base, possibly mislabeled" conclusion came
+  from running `pip list` against the *base* conda env instead of `spec2vec_env` — a
+  verification mistake on this end, not anything wrong with the registry or the image.
 
   Documented PyTorch
   install recipe (no container): `module load Python/3.10.15` then `pip install torch
