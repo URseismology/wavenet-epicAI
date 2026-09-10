@@ -236,13 +236,13 @@ Push: `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519" git push`
 ## Next priorities (in order)
 
 1. Additional terravibranium overnight runs at other `sep_km` values
-2. Create `src/simulation_runner/submit_wvsim_bluehive.sh` (HANDOFF.md §6.3)
-3. Fix CPS_BIN detection in `wvsim_main.py` for Bluehive (HANDOFF.md §6.4)
-4. Verify `pycwt` available on Bluehive (interactive session test)
-5. Continue staged ML pipeline build (`src/wavenet_pipeline/03_machine_learning/`) —
+2. Fix CPS_BIN detection in `wvsim_main.py` for Bluehive (HANDOFF.md §6.4) —
+   `submit_wvsim_bluehive.sh` itself already exists (`src/simulation_runner/`), this is
+   the remaining blocker before it can actually be submitted
+3. Verify `pycwt` available on Bluehive (interactive session test)
+4. Continue staged ML pipeline build (`src/wavenet_pipeline/03_machine_learning/`) —
    Stage A & B verified locally 2026-09-04; next: terravibranium-gpu tier, then Alpha,
    then Beta. See `docs/ml_pipeline_stages/PROGRESS.md`.
-6. Update stale `README.md`
 
 ---
 
