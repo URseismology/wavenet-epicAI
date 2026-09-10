@@ -202,6 +202,11 @@ a replacement — check the source directly for anything not already covered her
   file (`apptainer build --fakeroot`) works cleanly, no Docker/registry round-trip
   needed — a real alternative to our self-hosted registry for Alpha-only work.
   Full FAQ/tutorial: `docs/empireai_alpha_slurm_faq.md`, `docs/empireai_alpha_slurm_tutorial.md`.
+  **Confused about Docker vs Apptainer vs registries and where each fits?** See
+  `docs/containers_docker_vs_apptainer.md` — ties together our self-hosted registry
+  (`urseismogate.earth.rochester.edu`, see the lab wiki's
+  `DeployRsrch2PrivateDockerRegistry.md`), Alpha's Apptainer, and Beta's Pyxis/Enroot
+  into one picture.
 - **Beta** — separate, newer cluster: NVIDIA GB200 NVL72 SuperPOD (Blackwell B200 GPUs,
   4-rack unified NVLink fabric). **Minimum 4 GPUs per job** — not for single-GPU work.
   SSH: `ssh empireai-beta` (canonical hostname `beta.empireai.edu`), same ControlMaster
