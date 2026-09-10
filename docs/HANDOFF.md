@@ -68,6 +68,7 @@
 | **2026-09-10** | **Correction to the 2026-09-04 entry above**: Alpha's own documentation (pulled during an NVIDIA Kickstart Workshop) confirms Alpha *does* have a 192-GPU H100/H200 fleet (24 nodes, 8/node) as its base hardware — the "no H100/H200" claim four rows up was itself an overcorrection. RTX Pro 6000 (from the sysadmin email) is most likely an additional, newer node group not yet covered by this Alpha-docs source, not a replacement — still unconfirmed which is authoritative for the *current* full inventory. Also recorded: real QoS tier table (test/interactive/standard/long/priority/burst), the Alpha/`cpu` (x86_64) vs `grace` (ARM64) architecture split, Alpha's Apptainer container mechanism, and a documented PyTorch install recipe (`pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124`). Full writeup: `docs/empireai_alpha_slurm_faq.md`, `docs/empireai_alpha_slurm_tutorial.md`, `docs/memos/2026-09-10-empireai-alpha-workshop-notes.md` | NVIDIA Kickstart Workshop + Empire AI Freshdesk docs |
 | **2026-09-10** | Directly tested Apptainer on Alpha (not just read docs): confirmed `apptainer exec`/`run` fails FATAL on the login node (missing `squashfuse`) but works on an allocated compute node; confirmed building a custom container from a `.def` file works end-to-end with no Docker/registry dependency. See §4.4 | Live testing via `ssh empireai` |
 | **2026-09-10** | **RTX Pro 6000 group fully resolved** (previously "unconfirmed, possible doc conflict" per the two entries above): confirmed live in the workshop Q&A AND independently via `sinfo -N -o "%N %G"` on Alpha itself — 4 nodes (`alphagpu51`-`54`), 8 GPUs/node, 32 total, exact Slurm gres type `rtx_pro_6000_blackwell` (Blackwell generation, resolving a slide/Q&A ambiguity with the older Ampere RTX A6000). Alpha's real total is 224 GPUs / 28 nodes, not 192/24. Also recorded per-hardware SU rates from the Q&A (Alpha 1 SU/GPU-hr, Beta GB200 2 SU/GPU-hr, Grace 0.5 SU/hr — composition with the QoS multiplier not yet verified) | Live workshop Q&A + `sinfo` on Alpha |
+| **2026-09-10** | Official award letter + Coldfront project record obtained (Tolu's own records): project 580 "Planetary Imaging with AI" awarded **3,000 SUs on Empire AI Beta** (1-year allocation, exact dates TBD), no limit currently enforced on Alpha or during the Beta pilot. Fully confirms the SU formula (`SU = Hrs x SU/hr x QoS-multiplier`) against Coldfront's own caption, matching the workshop Q&A. Project description names two AI tools, "Aki-NET" and "iRAD-NET" — relationship to this repo's WaveNet FTAN pipeline not yet clarified. Full record: `docs/empireai_allocation_award.md` | Award letter (Steve Dewhurst, VP Research) + Coldfront dashboard |
 
 ### What Has Not Happened Yet (Future Milestones)
 | Milestone | Status |
@@ -236,7 +237,11 @@ manually rsync'd after each simulation run (HANDOFF.md §5.5).
 
 ### 4.4 Empire AI (GPU cluster, target for ML training)
 **SSH:** `ssh empireai` (alias in `~/.ssh/config`) | **Canonical hostname:** `alpha1.empireai.edu`
-**User:** `tolugboji` | **Project account:** `ro_tolugboji_planetary` (project 580)
+**User:** `tolugboji` | **Project account:** `ro_tolugboji_planetary` (project 580,
+"Planetary Imaging with AI") — **awarded 3,000 SUs on Beta** (1-year allocation, exact
+dates TBD per the original award letter; no limit currently enforced on Alpha or during
+the Beta pilot). Full award letter + Coldfront record (SU formula confirmed, project
+users/description): `docs/empireai_allocation_award.md`.
 **Auth:** password + 2FA (authenticator code) — **cannot be automated**, unlike terravibranium/repovibranium.
 
 **Two separate clusters exist under Empire AI — don't conflate them:**
@@ -266,14 +271,17 @@ manually rsync'd after each simulation run (HANDOFF.md §5.5).
   | `priority` | Deadline-driven urgent | 24h | 64 GPUs | 2.0x |
   | `burst` | System overflow | 7 days | 32 GPUs | free |
 
-  SU billing = GPUs x Hours x SU-rate-for-QoS (billing starts 2026-10-01, same as Beta).
-  Per-hardware base SU rate (from 2026-09-10 workshop Q&A, likely combines with the
-  QoS multiplier above — exact composition not yet verified against written docs):
-  Alpha = 1 SU/GPU-hr, Beta GB200 = 2 SU/GPU-hr, Grace = 0.5 SU/hr. Note: `sacctmgr show
-  assoc` for `ro_tolugboji_planetary` shows no `GrpTRES`/`GrpTRESMins` cap at the Slurm
-  level (checked 2026-09-10) — the actual SU award/balance for this project isn't
-  exposed via Slurm CLI at all; it lives in Coldfront (a separate web portal per the
-  sysadmin's original email), URL not yet captured here.
+**SU formula — confirmed via Coldfront** (billing starts 2026-10-01, same as Beta):
+  `SU = Hrs x SU/hr(cluster base rate) x QoS multiplier`. Base rate per Coldfront's own
+  caption: Alpha 1, Beta 2, Grace 0.5, phrased as "per node-hr" (the 2026-09-10 workshop
+  Q&A said "per GPU-hour" instead — likely equivalent, since Coldfront's `Hrs` column
+  appears to already be GPU-hours, but not directly verified against a multi-GPU job
+  yet — see `docs/empireai_allocation_award.md`). QoS multiplier matches the table
+  above exactly. `sacctmgr show assoc` for `ro_tolugboji_planetary` shows no
+  `GrpTRES`/`GrpTRESMins` cap at the Slurm level (checked 2026-09-10) — the actual SU
+  award/balance isn't exposed via Slurm CLI at all; it lives in Coldfront (URL not
+  captured, browser/SSO only). Confirmed there: **3,000 SUs awarded on Beta**, no limit
+  currently enforced on Alpha or during the Beta pilot.
   **Alpha's container mechanism is Apptainer** (`.sif` images, `module load
   apptainer/1.1.9`, `apptainer exec --nv`) — distinct from Beta's Pyxis/Enroot (below);
   don't assume one cluster's container recipe transfers to the other.

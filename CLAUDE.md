@@ -110,7 +110,12 @@ Passwordless SSH key access confirmed working from axon-1.
 SSH: `ssh empireai` (alias in ~/.ssh/config; matches `empireai`, `alpha1.empireai.edu`,
 `alpha.empire-ai.org`, `alpha1.empire-ai.org` — all resolve to the same host, 67.99.173.2)
 Canonical hostname: `alpha1.empireai.edu` | User: `tolugboji`
-Project account: **`ro_tolugboji_planetary`** (project 580) — required for job submission.
+Project account: **`ro_tolugboji_planetary`** (project 580, "Planetary Imaging with AI")
+— required for job submission. **Awarded 3,000 SUs on Beta** (1-year allocation, exact
+dates TBD), no limit currently enforced on Alpha or during the Beta pilot. Full award
+letter + Coldfront record (SU formula confirmed, project users, description mentioning
+"Aki-NET"/"iRAD-NET" — relationship to this repo's pipeline not yet clarified):
+`docs/empireai_allocation_award.md`.
 **Requires password + 2FA (authenticator code) — cannot be automated.** Access from Claude
 Code works via SSH `ControlMaster`/`ControlPersist`: a human logs in once interactively
 (`ssh empireai`), which becomes the master connection; Claude Code then reuses that socket
@@ -157,10 +162,14 @@ a replacement — check the source directly for anything not already covered her
   | `priority` | Deadline-driven urgent | 24h | 64 GPUs | 2.0x |
   | `burst` | System overflow | 7 days | 32 GPUs | free |
 
-  SU billing = GPUs x Hours x SU-rate-for-QoS (billing starts 2026-10-01, see below).
-  Per-hardware base SU rate (from 2026-09-10 workshop Q&A, likely combines with the
-  QoS multiplier above — exact composition not yet verified against written docs):
-  Alpha = 1 SU/GPU-hr, Beta GB200 = 2 SU/GPU-hr, Grace = 0.5 SU/hr.
+**SU formula, confirmed via Coldfront** (billing starts 2026-10-01, see below):
+  `SU = Hrs x SU/hr(cluster base rate) x QoS multiplier`. Base rate: Alpha 1, Beta 2,
+  Grace 0.5 (per node-hr per Coldfront's caption; workshop Q&A said "per GPU-hour" —
+  likely equivalent since Coldfront's `Hrs` column already appears to be GPU-hours, not
+  directly verified with a multi-GPU job yet). QoS multiplier matches the table above
+  exactly (priority 2x, standard/interactive 1x, test/long 0.5x, burst free). SU
+  balance/award isn't visible via Slurm CLI (`sacctmgr` shows no cap) — check Coldfront
+  directly; see `docs/empireai_allocation_award.md`.
   **Containers on Alpha use Apptainer** (`.sif` images, `module load apptainer/1.1.9`,
   `apptainer exec --nv`), a completely different mechanism from Beta's Pyxis/Enroot —
   don't assume one cluster's container recipe works on the other. **Confirmed
