@@ -1,7 +1,7 @@
 # CLAUDE.md — WaveNet-EpicAI
 # Claude Code reads this file automatically at the start of every session.
 # Keep this file current. It is the single source of truth for all AI agents.
-# Last updated: 2026-09-04
+# Last updated: 2026-09-10
 
 ---
 
@@ -122,10 +122,34 @@ Occasionally refuses the TCP connection on first attempt (load balancer flakines
 support@empireai.edu | https://empireai.freshdesk.com/support/home
 
 **Two clusters — do not confuse them:**
-- **Alpha** (what we connect to via `ssh empireai`) — Grace ARM CPU nodes + newly added
-  NVIDIA RTX Pro 6000 GPUs (for single-GPU jobs). **Starting 2026-09-18, institutional
-  partitions retire** — all Alpha job submissions must use `--account ro_tolugboji_planetary`
-  instead. Confirmed live in Alpha's own login banner (partition retirement notice).
+- **Alpha** (what we connect to via `ssh empireai`) — **192 GPUs across 24 nodes, 8/node**:
+  H100 80GB on `alphagpu01`-`18`, H200 141GB on `alphagpu19`-`24` (confirmed 2026-09-10 via
+  Empire AI's own Alpha docs). Also has NVIDIA RTX Pro 6000 GPUs per earlier sysadmin email
+  (added "to assist processing single-GPU jobs") — this specific Alpha-docs source doesn't
+  mention RTX Pro 6000 at all, most likely an additional/newer node group not yet covered
+  by that doc rather than a contradiction, but **unconfirmed** — ask support/office hours
+  rather than assuming. Separate `cpu` (x86_64) and `grace` (**ARM64/aarch64** — needs its
+  own environment, doesn't share binaries/venvs with Alpha/cpu) partitions also exist.
+  **Starting 2026-09-18, institutional partitions retire** — all Alpha job submissions must
+  pair `--account ro_tolugboji_planetary` with an explicit `--qos` (see tiers below), not
+  just the account flag alone. Confirmed live in Alpha's own login banner (partition
+  retirement notice) and in Empire AI's "current vs future pattern" docs.
+
+  **QoS tiers** (pick deliberately — `test`/`long` are half-price, `priority` is 2x):
+  | QoS | Best for | Wall time | GPU limit | SU factor |
+  |---|---|---|---|---|
+  | `test` | Quick validation | 2h | 8 GPUs | 0.5x |
+  | `interactive` | Live GPU debugging | 2h | 4 GPUs | 1.0x |
+  | `standard` | Default production | 48h | 32 GPUs | 1.0x |
+  | `long` | Longer cost-sensitive runs | 7 days | 32 GPUs | 0.5x |
+  | `priority` | Deadline-driven urgent | 24h | 64 GPUs | 2.0x |
+  | `burst` | System overflow | 7 days | 32 GPUs | free |
+
+  SU billing = GPUs x Hours x SU-rate-for-QoS (billing starts 2026-10-01, see below).
+  **Containers on Alpha use Apptainer** (`.sif` images, `module load apptainer/1.1.9`,
+  `apptainer exec --nv`), a completely different mechanism from Beta's Pyxis/Enroot —
+  don't assume one cluster's container recipe works on the other.
+  Full FAQ/tutorial: `docs/empireai_alpha_slurm_faq.md`, `docs/empireai_alpha_slurm_tutorial.md`.
 - **Beta** — separate, newer cluster: NVIDIA GB200 NVL72 SuperPOD (Blackwell B200 GPUs,
   4-rack unified NVLink fabric). **Minimum 4 GPUs per job** — not for single-GPU work.
   SSH: `ssh empireai-beta` (canonical hostname `beta.empireai.edu`), same ControlMaster

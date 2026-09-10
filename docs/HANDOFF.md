@@ -1,7 +1,7 @@
 # WaveNet-EpicAI: Agent Handoff Document
 
 > **Intended Audience:** A new AI agent (Claude Code) with humans in the loop, picking up this project fresh.
-> **Last Updated:** September 4, 2026 (11:20 EDT)
+> **Last Updated:** September 10, 2026
 > **Status of Primary Simulation:** ✅ COMPLETE — 10,000 models each at `sep_km=127.0 km` and `sep_km=100.0 km`.
 > **Next Priority:** Run more training sets on `terravibranium` (nightly) at additional sep_km values. Then expand to multi-separation scan on Bluehive.
 
@@ -65,6 +65,7 @@
 | **2026-09-04** | Empire AI (`alpha1.empireai.edu`) reachable and login confirmed (password + 2FA). Canonical hostname corrected — earlier `alpha.empire-ai.org` alias is a working but non-canonical name for the same host (67.99.173.2) | Conversation log |
 | **2026-09-04** | Persistent access configured via SSH `ControlMaster`/`ControlPersist` (`ssh empireai`) — same pattern as the existing Bluehive setup. Claude Code can drive Empire AI directly for up to 12h after a human completes one interactive 2FA login | Conversation log; verified via `ssh -O check empireai` → `Master running` |
 | **2026-09-04** | Sysadmin emails (6/29, 8/24, 8/28) digested: corrected hardware description (no H100/H200 — Alpha has Grace CPU + new RTX Pro 6000, separate Beta cluster has Blackwell B200 NVL72); recorded project account `ro_tolugboji_planetary` (project 580); flagged 2026-09-18 Alpha project-account deadline and 2026-10-01 billing start | Forwarded sysadmin emails |
+| **2026-09-10** | **Correction to the 2026-09-04 entry above**: Alpha's own documentation (pulled during an NVIDIA Kickstart Workshop) confirms Alpha *does* have a 192-GPU H100/H200 fleet (24 nodes, 8/node) as its base hardware — the "no H100/H200" claim four rows up was itself an overcorrection. RTX Pro 6000 (from the sysadmin email) is most likely an additional, newer node group not yet covered by this Alpha-docs source, not a replacement — still unconfirmed which is authoritative for the *current* full inventory. Also recorded: real QoS tier table (test/interactive/standard/long/priority/burst), the Alpha/`cpu` (x86_64) vs `grace` (ARM64) architecture split, Alpha's Apptainer container mechanism, and a documented PyTorch install recipe (`pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124`). Full writeup: `docs/empireai_alpha_slurm_faq.md`, `docs/empireai_alpha_slurm_tutorial.md`, `docs/memos/2026-09-10-empireai-alpha-workshop-notes.md` | NVIDIA Kickstart Workshop + Empire AI Freshdesk docs |
 
 ### What Has Not Happened Yet (Future Milestones)
 | Milestone | Status |
@@ -237,10 +238,37 @@ manually rsync'd after each simulation run (HANDOFF.md §5.5).
 **Auth:** password + 2FA (authenticator code) — **cannot be automated**, unlike terravibranium/repovibranium.
 
 **Two separate clusters exist under Empire AI — don't conflate them:**
-- **Alpha** (this is what `ssh empireai` connects to) — Grace ARM CPU nodes, plus newly
-  added NVIDIA RTX Pro 6000 GPUs for single-GPU jobs. **As of 2026-09-18, institutional
+- **Alpha** (this is what `ssh empireai` connects to) — **192 GPUs / 24 nodes / 8 per
+  node** (confirmed 2026-09-10 via Empire AI's own Alpha docs, pulled during an NVIDIA
+  Kickstart Workshop): H100 80GB on `alphagpu01`-`18`, H200 141GB on `alphagpu19`-`24`.
+  Also documented (earlier, sysadmin email) as having NVIDIA RTX Pro 6000 GPUs added for
+  single-GPU jobs — not mentioned in the 2026-09-10 Alpha-docs source, likely a newer
+  addition not yet covered there rather than a contradiction, but unconfirmed. Separate
+  `cpu` (x86_64) and `grace` (**ARM64/aarch64**, needs its own environment — no shared
+  binaries/venvs with Alpha/cpu) partitions also exist. **As of 2026-09-18, institutional
   partitions are retired** — job submissions must pass `--account ro_tolugboji_planetary`
-  instead. (Confirmed: Alpha's own login MOTD already carries this retirement notice.)
+  *and* an explicit `--qos` (see tiers below) — not the account flag alone. (Confirmed:
+  Alpha's own login MOTD already carries this retirement notice; Empire AI's own "current
+  vs future pattern" docs confirm the qos-paired form is the intended replacement.)
+
+  **QoS tiers** (`sacctmgr show assoc` to see what your account has):
+  | QoS | Best for | Wall time | GPU limit | SU factor |
+  |---|---|---|---|---|
+  | `test` | Quick validation | 2h | 8 GPUs | 0.5x |
+  | `interactive` | Live GPU debugging | 2h | 4 GPUs | 1.0x |
+  | `standard` | Default production | 48h | 32 GPUs | 1.0x |
+  | `long` | Longer cost-sensitive runs | 7 days | 32 GPUs | 0.5x |
+  | `priority` | Deadline-driven urgent | 24h | 64 GPUs | 2.0x |
+  | `burst` | System overflow | 7 days | 32 GPUs | free |
+
+  SU billing = GPUs x Hours x SU-rate-for-QoS (billing starts 2026-10-01, same as Beta).
+  **Alpha's container mechanism is Apptainer** (`.sif` images, `module load
+  apptainer/1.1.9`, `apptainer exec --nv`) — distinct from Beta's Pyxis/Enroot (below);
+  don't assume one cluster's container recipe transfers to the other. Documented PyTorch
+  install recipe (no container): `module load Python/3.10.15` then `pip install torch
+  torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124` — directly
+  relevant to §7's still-open "no pinned PyTorch/CUDA environment" question. Full
+  reference: `docs/empireai_alpha_slurm_faq.md`, `docs/empireai_alpha_slurm_tutorial.md`.
 - **Beta** — a newer, separate cluster: NVIDIA GB200 NVL72 SuperPOD, Blackwell B200 GPUs,
   4-rack unified NVLink fabric (13.4 TB unified GPU memory, 130 TB/s NVLink bandwidth).
   **Minimum 4 GPUs per job** — not usable for single-GPU work (use Alpha's RTX Pro 6000 for
