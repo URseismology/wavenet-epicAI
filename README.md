@@ -5,6 +5,15 @@ Generates synthetic seismic ambient-noise cross-correlation functions (CCFs) fro
 package, then trains a PyTorch U-Net to extract group-velocity dispersion curves from
 the resulting FTAN images.
 
+This repo is the **classical-baseline** component of a broader research program
+(Empire AI project 580, "Planetary Imaging with AI") that also includes two
+physics-informed sibling repos — **[AkiNet_V1](https://github.com/URseismology/AkiNet_V1)**
+(PINN inverting phase velocity directly from CCFs) and
+**[iRADNet](https://github.com/URseismology/iRADNet)** (algorithm-unrolling network for
+the inverse Radon transform). The plan: benchmark this repo's classical U-Net against
+those frameworks using the synthetic dataset generated here, then extend the
+physics-informed approach further.
+
 ## Start here
 
 - **[CLAUDE.md](CLAUDE.md)** — single source of truth for infrastructure, ground-truth

@@ -68,7 +68,8 @@
 | **2026-09-10** | **Correction to the 2026-09-04 entry above**: Alpha's own documentation (pulled during an NVIDIA Kickstart Workshop) confirms Alpha *does* have a 192-GPU H100/H200 fleet (24 nodes, 8/node) as its base hardware — the "no H100/H200" claim four rows up was itself an overcorrection. RTX Pro 6000 (from the sysadmin email) is most likely an additional, newer node group not yet covered by this Alpha-docs source, not a replacement — still unconfirmed which is authoritative for the *current* full inventory. Also recorded: real QoS tier table (test/interactive/standard/long/priority/burst), the Alpha/`cpu` (x86_64) vs `grace` (ARM64) architecture split, Alpha's Apptainer container mechanism, and a documented PyTorch install recipe (`pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124`). Full writeup: `docs/empireai_alpha_slurm_faq.md`, `docs/empireai_alpha_slurm_tutorial.md`, `docs/memos/2026-09-10-empireai-alpha-workshop-notes.md` | NVIDIA Kickstart Workshop + Empire AI Freshdesk docs |
 | **2026-09-10** | Directly tested Apptainer on Alpha (not just read docs): confirmed `apptainer exec`/`run` fails FATAL on the login node (missing `squashfuse`) but works on an allocated compute node; confirmed building a custom container from a `.def` file works end-to-end with no Docker/registry dependency. See §4.4 | Live testing via `ssh empireai` |
 | **2026-09-10** | **RTX Pro 6000 group fully resolved** (previously "unconfirmed, possible doc conflict" per the two entries above): confirmed live in the workshop Q&A AND independently via `sinfo -N -o "%N %G"` on Alpha itself — 4 nodes (`alphagpu51`-`54`), 8 GPUs/node, 32 total, exact Slurm gres type `rtx_pro_6000_blackwell` (Blackwell generation, resolving a slide/Q&A ambiguity with the older Ampere RTX A6000). Alpha's real total is 224 GPUs / 28 nodes, not 192/24. Also recorded per-hardware SU rates from the Q&A (Alpha 1 SU/GPU-hr, Beta GB200 2 SU/GPU-hr, Grace 0.5 SU/hr — composition with the QoS multiplier not yet verified) | Live workshop Q&A + `sinfo` on Alpha |
-| **2026-09-10** | Official award letter + Coldfront project record obtained (Tolu's own records): project 580 "Planetary Imaging with AI" awarded **3,000 SUs on Empire AI Beta** (1-year allocation, exact dates TBD), no limit currently enforced on Alpha or during the Beta pilot. Fully confirms the SU formula (`SU = Hrs x SU/hr x QoS-multiplier`) against Coldfront's own caption, matching the workshop Q&A. Project description names two AI tools, "Aki-NET" and "iRAD-NET" — relationship to this repo's WaveNet FTAN pipeline not yet clarified. Full record: `docs/empireai_allocation_award.md` | Award letter (Steve Dewhurst, VP Research) + Coldfront dashboard |
+| **2026-09-10** | Official award letter + Coldfront project record obtained (Tolu's own records): project 580 "Planetary Imaging with AI" awarded **3,000 SUs on Empire AI Beta** (1-year allocation, exact dates TBD), no limit currently enforced on Alpha or during the Beta pilot. Fully confirms the SU formula (`SU = Hrs x SU/hr x QoS-multiplier`) against Coldfront's own caption, matching the workshop Q&A. Project description names two AI tools, "Aki-NET" and "iRAD-NET" | Award letter (Steve Dewhurst, VP Research) + Coldfront dashboard |
+| **2026-09-10** | **Aki-NET/iRAD-NET relationship clarified**: separate sibling repos (AkiNet_V1, iRADNet — physics-informed PINN/algorithm-unrolling frameworks), not alternate names for this pipeline. Stated PI goal: benchmark this repo's classical U-Net against them using our CPS synthetic dataset, then extend that framework further. See §1 and `docs/empireai_allocation_award.md` | PI direction |
 
 ### What Has Not Happened Yet (Future Milestones)
 | Milestone | Status |
@@ -108,6 +109,22 @@ WaveNet-EpicAI generates synthetic seismic ambient noise cross-correlation funct
 
 ### Architecture Pivot
 The original architecture used **Instaseis + MPI + Bluehive** to generate `.sac` files. This was **abandoned** due to complexity, fragility, and queue limitations. The current system uses a **self-contained CPS-based Python simulator** (`wvsim_main.py`) running with Python's `multiprocessing.Pool` directly on `terravibranium` (48-core standalone workstation).
+
+### Where this fits in the broader research program (added 2026-09-10)
+WaveNet-EpicAI is the **classical-baseline** component of a larger Empire AI project
+(project 580, "Planetary Imaging with AI") that also includes two sibling,
+physics-informed repos:
+- **[AkiNet_V1](https://github.com/URseismology/AkiNet_V1)** — PINN inverting phase
+  velocity directly from noise cross-correlation functions (paper-submission version
+  already exists).
+- **[iRADNet](https://github.com/URseismology/iRADNet)** — physics-informed,
+  algorithm-unrolling network (LISTA-CP) for the inverse Radon transform (seismic
+  migration / receiver-function imaging).
+
+Stated plan (PI, 2026-09-10): benchmark this repo's classical U-Net against the
+AkiNet/iRADNet framework(s), using the CPS synthetic dataset (ground-truth dispersion
+curves + FTAN images) this repo generates as shared benchmark data, then extend that
+framework further. More detail to follow — see `docs/empireai_allocation_award.md`.
 
 ---
 

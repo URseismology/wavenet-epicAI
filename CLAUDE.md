@@ -16,6 +16,28 @@ Full project state: docs/HANDOFF.md (always check this first)
 
 ---
 
+## Project goals & related frameworks (added 2026-09-10)
+
+WaveNet-EpicAI is the **classical-baseline** component of a broader Empire AI research
+program (project 580, "Planetary Imaging with AI") that also includes two more advanced,
+physics-informed frameworks in sibling repos under the same GitHub org:
+
+- **[AkiNet_V1](https://github.com/URseismology/AkiNet_V1)** — a Physics-Informed
+  Neural Network (PINN) that inverts phase velocity *directly* from noise
+  cross-correlation functions (a paper-submission version already exists).
+- **[iRADNet](https://github.com/URseismology/iRADNet)** — a physics-informed,
+  algorithm-unrolling network (LISTA-CP) that solves the inverse Radon transform for
+  seismic migration / receiver-function imaging.
+
+**Stated goal (PI, 2026-09-10)**: benchmark this repo's classical U-Net
+dispersion-curve-extraction approach against the AkiNet/iRADNet physics-informed
+framework(s), then extend that framework further. This repo's CPS-generated synthetic
+dataset (ground-truth dispersion curves + FTAN images) is the natural shared benchmark
+data for that comparison. More detail on the benchmark plan to follow — treat this as
+directional intent, not a finalized specification, until then.
+
+---
+
 ## Single-machine rule
 
 ALL work originates from axon-1 (10.17.6.243, macOS, urseismoadmin).

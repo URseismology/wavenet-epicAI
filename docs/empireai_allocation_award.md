@@ -73,12 +73,20 @@ broader research program, not necessarily identical in scope/naming to this repo
 > a worldwide collection of ambient noise and earthquake recordings, the approach will
 > deliver a consistent, uncertainty-aware view of Earth's interior.
 
-**Open question, not resolved here**: the registered project names two tools,
-**Aki-NET** and **iRAD-NET** — neither name matches "WaveNet" or the FTAN
-group-velocity U-Net this repo builds. Unclear whether WaveNet-EpicAI's pipeline *is*
-one of these under an internal working name, is a component/precursor of one of them,
-or is separate work sharing the same Empire AI allocation. Worth clarifying with Tolu
-before assuming equivalence in any future documentation.
+**Resolved 2026-09-10** (was an open question here): Aki-NET and iRAD-NET are
+**separate, sibling repos** under the same GitHub org, not alternate names for this
+pipeline:
+- [AkiNet_V1](https://github.com/URseismology/AkiNet_V1) — a Physics-Informed Neural
+  Network (PINN) inverting phase velocity directly from noise cross-correlation
+  functions (paper-submission version already exists).
+- [iRADNet](https://github.com/URseismology/iRADNet) — a physics-informed,
+  algorithm-unrolling network (LISTA-CP) solving the inverse Radon transform for
+  seismic migration / receiver-function imaging.
+
+Per the PI: WaveNet-EpicAI is the **classical-baseline** U-Net, to be benchmarked
+against the AkiNet/iRADNet physics-informed framework(s), which will then be extended
+further. See `CLAUDE.md`'s "Project goals & related frameworks" section. More detail
+on the benchmark plan to follow.
 
 **Project users** (all "Manager" role, all Active):
 | Username | Name | Email |
