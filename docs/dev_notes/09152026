@@ -1,0 +1,45 @@
+Hi Dr. Oh,
+
+Here is my independent review of Stage A/B. I ran both notebooks top to bottom from scratch on axon-1 (Python 3.10, fresh venv).
+
+
+ENVIRONMENT SETUP
+
+Hit the exact numpy 2.x vs torch incompatibility you documented : fix was `pip install "numpy<2"`. Also hit a tornado vs jupyter-server version mismatch causing favicon/theme errors: fixed with `pip install "tornado==6.3.3"`. Both should go into requirements.txt. Everything else installed cleanly.
+
+
+STAGE A — FTAN IMAGES AND MASKS
+
+All cells ran, numbers match. On the scientific question (cell 5):
+
+M01, M02, M03 — masks correctly track the visible energy ridge in the FTAN. Looks good.
+
+M04_0848 — the mask sits as a nearly flat line at high velocity (~bin 250) while the FTAN energy appears concentrated lower. I initially flagged this as a potential mask construction issue, but after reading the stage doc I understand this is likely correct — M04's theoretical dispersion sits at high group velocity and the empirical FTAN energy concentrating lower reflects the real empirical vs theoretical mismatch.
+
+On the QA-gate finding: I agree with your conclusion that 34% flag rate is cross-method CWT variation, not a data quality problem. The 0.05 km/s threshold does seem too tight for real data.
+
+One gap I'd flag: Stage A has only been verified on 100 samples. Running build_ml_cache.py and validate_ftan.py against the full 20,000-sample dataset on terravibranium is the natural next step.
+
+
+
+STAGE B — OVERFIT CONVERGENCE
+
+Numbers match exactly:
+- Sample: M01_0776, positive fraction = 0.0158
+- lr=3e-3, 800 iterations: final IoU=0.9974, Dice=0.9987 — PASSED
+
+On the lr=1e-4 slow convergence: I agree this is a real risk for Stage D. The 4-component CombinedLoss simply converges slower than a single loss — the gradient signal is noisier at low lr. I'd suggest checking the Stage D training schedule against this before committing to lr=1e-4 with a fixed epoch budget, or at minimum testing with a warmup schedule. I'd also suggest verifying the loss weights/pos_weight are well-tuned before Stage D, since the overfit test only confirms the loss is learnable, not that the weights are optimal.
+
+
+SPLIT DESIGN
+
+The 7/2/1 family split is correctly implemented and verified. 
+
+
+SUMMARY
+
+- Environment: two version conflicts documented (numpy 2.x, tornado) — feeds into requirements.txt
+- Stage A masks: M01-M03 correct, M04 noted but likely correct per stage doc
+- QA threshold: raising to ~0.08-0.10 km/s, pending your sign-off
+- Stage B convergence: numbers match, lr risk for Stage D is real
+- Next task I can take on: run build_ml_cache.py + validate_ftan.py on full dataset on terravibranium
