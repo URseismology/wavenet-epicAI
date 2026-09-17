@@ -59,8 +59,8 @@ assuming it was a bug. Same with the environment issues — those are real, repr
 conflicts (not specific to my machine), and they're going straight into
 requirements.txt. And the loss-weights-vs-convergence point on Stage B is a genuinely
 new addition — you're right that the overfit test only proves the loss is learnable,
-not that the weights are tuned well. That's going into Stage D's open questions before
-we start real training.
+not that the weights are tuned well. I'll keep that point on file for whenever Stage D
+actually gets built — see the note on Stage C/D below, since neither exists yet.
 
 Sign-off on the QA threshold: yes, raise it to 0.08-0.10 km/s. Update
 validate_ftan.py's CENTROID_DISCREPANCY_THRESHOLD_KMS and note the change (with your
@@ -71,9 +71,21 @@ isn't extra work stacked on top, it's what turns "I ran the pipeline" into "I un
 the pipeline":
 
 1. PRESENTATION. Put together a short presentation (to me/the team) walking through
-   Stage A and Stage B — the pipeline architecture, the QA-gate finding, the
-   convergence finding. Doesn't need to be polished. The point is demonstrating you
-   understand the whole thing well enough to teach it back, not just that the cells ran.
+   Stage A and Stage B. Doesn't need to be polished, but it needs to cover Stage B as
+   thoroughly as Stage A, not as an afterthought — specifically:
+     - What the Stage A pipeline actually does: FTAN regrid, mask construction from the
+       theoretical curve, the family split, and the QA-gate finding (see item 2 below).
+     - What the 1-sample overfit test in Stage B is actually testing — say explicitly
+       that it verifies the architecture/loss/gradient-flow are wired correctly, NOT
+       that the model is good or that the loss weights are well-tuned. That distinction
+       matters and I want to see you state it, not just cite the numbers.
+     - The actual numbers you reproduced (M01_0776, positive fraction 0.0158, lr=3e-3/
+       800 iters -> IoU 0.9974/Dice 0.9987) and what they do and don't prove.
+     - Your own reasoning on the lr=1e-4 convergence risk for Stage D — why a 4-component
+       loss converges slower, and what you'd actually recommend (warmup schedule?
+       higher initial lr? something else?) before that stage exists and gets built.
+   The point is demonstrating you understand the whole thing well enough to teach it
+   back, not just that the cells ran.
 
 2. QA GATE — EXPLAIN IT, THEN RUN IT, IN THAT ORDER. Before you touch
    validate_ftan.py, write up (can be part of the presentation, or a short section in
@@ -101,6 +113,12 @@ the pipeline":
    full 20k samples. If you hit anything the FAQ/tutorial doesn't cover, that's useful
    too — tell me, don't just work around it silently.
 
-Once all three are done, let's regroup before Stage C.
+One clarification so there's no confusion: Stage C (Input Batching), Stage D
+(Training Process), and Stage E (Prediction/Evaluation) don't exist yet — no code, no
+notebooks, nothing. Only Stage A and B have been built so far. So there's nothing of
+Stage C/D for you to look at right now, and none of the above is asking you to build
+them. Once the three items above are done, let's regroup and decide together whether
+you take on building Stage C next or whether that's a separate thread — I haven't
+decided that yet and didn't mean to imply otherwise.
 
 — Tolu
