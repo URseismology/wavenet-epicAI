@@ -43,3 +43,64 @@ SUMMARY
 - QA threshold: raising to ~0.08-0.10 km/s, pending your sign-off
 - Stage B convergence: numbers match, lr risk for Stage D is real
 - Next task I can take on: run build_ml_cache.py + validate_ftan.py on full dataset on terravibranium
+
+
+---
+
+REPLY (Tolu, 2026-09-17)
+
+Hi Tejaswini,
+
+This is exactly the kind of review I was hoping for — you didn't just re-run the
+notebooks and confirm the numbers, you actually engaged with the science. The M04_0848
+case is the best example: you flagged it, went and checked the stage doc yourself, and
+reasoned your way to the right explanation instead of either rubber-stamping it or
+assuming it was a bug. Same with the environment issues — those are real, reproducible
+conflicts (not specific to my machine), and they're going straight into
+requirements.txt. And the loss-weights-vs-convergence point on Stage B is a genuinely
+new addition — you're right that the overfit test only proves the loss is learnable,
+not that the weights are tuned well. That's going into Stage D's open questions before
+we start real training.
+
+Sign-off on the QA threshold: yes, raise it to 0.08-0.10 km/s. Update
+validate_ftan.py's CENTROID_DISCREPANCY_THRESHOLD_KMS and note the change (with your
+reasoning, not just "PI approved") in stage_a_data_definition.md's Decision field.
+
+Before you run the full-dataset validation, I want two more things from you — this
+isn't extra work stacked on top, it's what turns "I ran the pipeline" into "I understand
+the pipeline":
+
+1. PRESENTATION. Put together a short presentation (to me/the team) walking through
+   Stage A and Stage B — the pipeline architecture, the QA-gate finding, the
+   convergence finding. Doesn't need to be polished. The point is demonstrating you
+   understand the whole thing well enough to teach it back, not just that the cells ran.
+
+2. QA GATE — EXPLAIN IT, THEN RUN IT, IN THAT ORDER. Before you touch
+   validate_ftan.py, write up (can be part of the presentation, or a short section in
+   the stage doc) two things in your own words: (a) what the QA gate actually checks —
+   precomputed FTAN_ZZ vs. an independently recomputed FTAN, and what agreement between
+   two different CWT parameterizations is actually telling us — and (b) why raising the
+   threshold to 0.08-0.10 km/s is the right fix, grounded in the mask's own +-2-bin
+   (~0.02 km/s) resolution and the cross-method CWT variance we measured, not just
+   because I said so. Once that's written, go ahead and run it for real.
+
+3. WHERE YOU RUN IT — CHANGE OF PLAN. Don't use terravibranium for this one. Run the
+   full 20,000-sample build_ml_cache.py + validate_ftan.py pass on Empire AI Alpha
+   instead. This is the next hardware tier in the staged plan anyway
+   (docs/ml_pipeline_stages/PROGRESS.md), and it doubles as your first real Alpha
+   deployment. Everything you need is written up already:
+     - docs/empireai_alpha_slurm_faq.md — Slurm/Apptainer reference, QoS tiers, common
+       errors
+     - docs/empireai_alpha_slurm_tutorial.md — step-by-step walkthrough using our real
+       account
+     - docs/memos/2026-09-04-empireai-persistent-access.md — one-time SSH/2FA setup you
+       need to do first (your own account, your own axon-1 login — this can't be
+       shared)
+   Use --account ro_tolugboji_planetary. Start with --qos=test to make sure the job
+   actually runs end-to-end before committing to a longer --qos=standard run for the
+   full 20k samples. If you hit anything the FAQ/tutorial doesn't cover, that's useful
+   too — tell me, don't just work around it silently.
+
+Once all three are done, let's regroup before Stage C.
+
+— Tolu
