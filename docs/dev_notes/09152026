@@ -59,8 +59,8 @@ assuming it was a bug. Same with the environment issues — those are real, repr
 conflicts (not specific to my machine), and they're going straight into
 requirements.txt. And the loss-weights-vs-convergence point on Stage B is a genuinely
 new addition — you're right that the overfit test only proves the loss is learnable,
-not that the weights are tuned well. I'll keep that point on file for whenever Stage D
-actually gets built — see the note on Stage C/D below, since neither exists yet.
+not that the weights are tuned well. Hang onto that point yourself — you'll want it
+when you get to building Stage D's preliminary version (see below).
 
 Sign-off on the QA threshold: yes, raise it to 0.08-0.10 km/s. Update
 validate_ftan.py's CENTROID_DISCREPANCY_THRESHOLD_KMS and note the change (with your
@@ -113,12 +113,38 @@ the pipeline":
    full 20k samples. If you hit anything the FAQ/tutorial doesn't cover, that's useful
    too — tell me, don't just work around it silently.
 
-One clarification so there's no confusion: Stage C (Input Batching), Stage D
-(Training Process), and Stage E (Prediction/Evaluation) don't exist yet — no code, no
-notebooks, nothing. Only Stage A and B have been built so far. So there's nothing of
-Stage C/D for you to look at right now, and none of the above is asking you to build
-them. Once the three items above are done, let's regroup and decide together whether
-you take on building Stage C next or whether that's a separate thread — I haven't
-decided that yet and didn't mean to imply otherwise.
+Clarification on Stage C/D, and on where all of this is actually coming from:
+Stage C (Input Batching) and Stage D (Training Process) don't exist yet — no code, no
+notebooks. That's not a gap for someone else to fill later — it's your next build.
+Your goal, explicitly: use the understanding and clarity you've now demonstrated on
+Stage A/B to implement a PRELIMINARY solution for Stage C and Stage D yourself. Not a
+polished final version — a working first pass, built with the same rigor you already
+showed (verify things yourself, don't assume inherited/promoted code is correct just
+because it looks reasonable), documented the same way Stage A/B were.
+
+None of what I'm asking above is a personal preference I'm inventing as we go — every
+one of these asks maps directly onto docs/ml_pipeline_stages/PROGRESS.md, which is the
+actual spec for this whole effort, not just a status tracker. Use it as your reference
+for *why*, not just mine:
+  - It's the reason Stage A/B needed local-tier verification before anything else, and
+    why your review had to actually run things rather than read the code and agree.
+  - It's the reason the Alpha tier comes next in sequence (see the stage x tier table)
+    — that's why item 3 above redirects you to Alpha instead of terravibranium.
+  - It's the reason every stage has a doc (stage_a_data_definition.md,
+    stage_b_model_definition.md, and now stage_c_input_batching.md /
+    stage_d_training_process.md once you create them) following the same
+    hypothesis / what-was-tried / results / hardware-tier-log / decision / open-questions
+    template — that's what your presentation and QA-gate write-up should feed into,
+    not a separate thing you're doing just for me.
+  - It's the reason completing a stage/tier means updating three things together in one
+    commit (the PROGRESS.md checklist cell, the stage doc's tier row, and — only at a
+    full-stage pass — HANDOFF.md sec 9) — that rule is spelled out in PROGRESS.md
+    itself, follow it for Stage C/D the same way once you start logging progress there.
+
+Practically: once items 1-3 are done, start stage_c_input_batching.md and
+stage_d_training_process.md from the same template Stage A/B used, get a preliminary
+version of each working locally first (matching the plan's own sequencing — local
+before terravibranium-gpu/Alpha/Beta), and update PROGRESS.md's table as you go so it
+stays true to what's actually built, not what's planned.
 
 — Tolu
