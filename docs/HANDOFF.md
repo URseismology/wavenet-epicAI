@@ -579,6 +579,35 @@ Once multiple HDF5 files exist, the ML pipeline can begin:
 
 ---
 
+## 8.5 NCF Waveform Acquisition Pipeline (real EarthScope data — added 2026-09-23)
+
+A separate workstream from the CPS-synthetic ML pipeline in §7 — downloading real,
+globally-distributed ambient-noise waveforms from EarthScope for cross-correlation (NCF)
+analysis, on the unmerged `add-september-ncf-pipeline` branch
+(`src/wavenet_pipeline/00_waveform_acquisition/`). Full staged tracking (same PI-reviewable format
+as this project's other staged efforts):
+**`docs/ncf_pipeline_stages/PROGRESS.md`**.
+
+Summary as of 2026-09-23: a fixed, farthest-point-sampled 2,000-station global network
+and 9,743 cross-correlation-valid pairs already exist (Stage 0, done). Stage 1 (data
+availability/size/connectivity) confirmed two real, working acquisition paths — AWS
+zero-egress (fast, small real $ cost) and ROVER via plain public FDSN dataselect
+(confirmed zero-cost, zero-auth, but needs ROVER's `download` command instead of the
+now-broken `retrieve`/`list-retrieve`, which depend on a retired `fdsnws-availability`
+service). Stages 2-4 (download/preprocess/package) have a working small-scale
+preparatory implementation and real throughput numbers; full-scale AWS-vs-ROVER
+benchmarking is planned for terravibranium (+ Bluehive if needed), not yet run.
+
+New machine: **mothership** (10.17.7.237) holds the live AWS/EarthScope credentials for
+this workstream — see `CLAUDE.md`'s Infrastructure section.
+
+(Not numbered as this project's reserved "§9" — that slot is for the ML dispersion
+pipeline in §7 once it reaches a full-stage-passing milestone, per that pipeline's own
+`PROGRESS.md` convention, and hasn't been filled in yet. Renumber both properly
+whichever lands first.)
+
+---
+
 ## 8. Quick Reference: Key Commands
 
 ```bash
