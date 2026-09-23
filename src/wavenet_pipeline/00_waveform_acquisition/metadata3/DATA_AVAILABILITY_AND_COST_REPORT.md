@@ -65,7 +65,13 @@ to our fixed, locked 2,000-station network (`fps_stations.csv`) via
 - **78.9 TB raw, full history, deduplicated** — the number that matters for "download everything, ever." Not to be confused with the pair-level figures in §3, which are a *subset* of this by construction.
 - Per-station days: median 496.5, mean 1,385, max 15,050 (~41 years) — highly skewed by design (FPS seeding favored long-running stations first).
 
-See `key_index_summary/daily_coverage_timeline.png` for the visual "map of connected days."
+![Map of connected days -- stations (of our fixed 2,000) with data per day, 1969-2046](key_index_summary/daily_coverage_timeline.png)
+
+*The "map of connected days" — how many of our 2,000 stations had data on any given
+calendar day. Real historical growth (near-zero in the 1970s, ramping through the
+1990s-2000s, plateauing ~300-370 stations from 2010 onward), then a hard drop to zero
+right around 2026/2027 and flat to 2046 — confirming the year-range anomaly in §1 lives
+elsewhere in the 60,125-station universe, not in our own 2,000-station network.*
 
 ---
 
@@ -130,6 +136,14 @@ redundancy tradeoff analyzed in §5. **Not yet resolved** — open decision for 
 Per PI direction: the goal is not to maximize pair *count* — it's global ray-path
 coverage **density and uniformity** with limited redundancy. Computed on the same 2°
 grid `plot_connection_heatmap.py` uses.
+
+![Improved connection heatmap -- 10,626 real pairs at the current 110-1,110km band](key_index_summary/connection_heatmap_improved.png)
+
+*Dense, sensible coverage clusters over North America, Europe, Japan/East Asia, and
+East Africa; real gaps over open ocean, Antarctica, and most of South America/inner
+Africa — the uneven pattern a real global network should show. Uses the full,
+complete 10,626-pair set (supersedes the earlier, slightly-stale
+`connection_heatmap.png`, which used 9,743).*
 
 | Band | Pairs | Coverage | Redundancy (CV) | Marginal efficiency (new cells / 1,000 pairs) |
 |---|---|---|---|---|
