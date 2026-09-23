@@ -19,9 +19,13 @@ to our fixed, locked 2,000-station network (`fps_stations.csv`) via
 | Marginal cost of widening the band | **Small** (~3-7 TB across all bands tested) — cost is not the binding constraint |
 | Stations with zero valid connections today | **367 / 2,000 (18.4%)** — the most actionable finding here |
 | What actually should drive the band choice | **Ray-path coverage density**, not cost or raw pair count (§5) |
-| AWS to process + egress the full packaged dataset | **~$2,083** (illustrative — EC2 pricing not re-verified) |
+| AWS **EC2 processing** cost (full dataset, dominates the total) | **~$1,635** (illustrative — instance-pricing assumption, not re-verified against current AWS pricing) |
+| AWS **egress** cost (packaged output only, ~5 TB) | **~$447** (real formula, $0.09/GB — this part is solid) |
+| AWS total (process + egress + trivial GET requests) | **~$2,083** |
+| Does more parallelization cost more? | **No — same total EC2 dollar cost at any parallelization level (§6), just faster wall-clock.** Standard cloud-elasticity: cost = hours × rate, and the two cancel as you add workers. |
 | Bluehive to do the same | **~$0** marginal (already-allocated compute), similar wall-clock |
 | Decision made this session | ObsPy `MassDownloader` + Bluehive `urseismo`, **not** AWS or ROVER (§7) |
+| **Deployment strategy** (PROGRESS.md) | Not either/or — (1) build and prove out extensively on Bluehive, package as Docker, (2) test AWS on a few stations, (3) deploy on both per this report's cost/time numbers. AWS's case isn't cost, it's **reach** (portable, sharable code) funded by cloud research grants, not lab budget — Bluehive stays the free science workhorse either way. |
 | Decision **not yet** made | Which distance/duration band to commit to (§5), whether to backfill uncovered stations (§9) |
 
 ## Contents
@@ -163,8 +167,26 @@ real per-channel-day figures throughout:
 | Total channel-days (5 channels/station × 2,770,643 station-days) | 13,853,215 |
 | **Packaged size** | **~4.97 TB** (~15.9x reduction from raw) |
 | Serial processing time (10 s/channel-day, middle of confirmed 5-16s range) | ~4.4 years |
-| At 96-way parallel (illustrative) | ~16.7 days |
-| At 120-way parallel (matches `urseismo`'s real core count) | ~13.4 days |
+
+**Parallelization strategies** (same total compute, different instance sizing —
+illustrative `c5`-family on-demand pricing, not re-verified against current AWS rates):
+
+| Workers | Wall-clock | Illustrative instance | Total EC2 cost |
+|---|---|---|---|
+| 8 | ~200 days | `c5.2xlarge` | ~$1,635 |
+| 16 | ~100 days | `c5.4xlarge` | ~$1,635 |
+| 32 | ~50 days | `c5.9xlarge` | ~$1,840 |
+| 64 | ~25 days | `c5.18xlarge` | ~$1,840 |
+| **96** | **~16.7 days** | `c5.24xlarge` | **~$1,635** |
+| 120 (matches `urseismo`'s real core count) | ~13.4 days | — | ~$1,635 |
+| 384 (4x `c5.24xlarge`) | ~4.2 days | 4x `c5.24xlarge` | ~$1,635 |
+
+**Real insight, not just a table**: total dollar cost stays roughly flat (~$1,635-1,840)
+*regardless of parallelization level* — standard cloud-elasticity property (cost =
+hours x rate; rate scales ~linearly with vCPU count while hours scales inversely, so
+they cancel). More parallelism buys **speed**, not savings or penalty, in this
+linear-pricing regime. The minor variance between rows is imprecision in the
+illustrative per-instance-type rate assumptions, not a real cost/parallelism tradeoff.
 
 **AWS dollar cost, zero-egress architecture** (process in `us-east-2`, egress only the
 packaged output):

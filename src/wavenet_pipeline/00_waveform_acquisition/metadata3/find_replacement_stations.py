@@ -14,7 +14,12 @@ earlier this session), so BH?/LH? presence specifically is NOT verified here. De
 to a later, per-candidate live channel check before actually using any replacement.
 """
 import os
+import ssl
 import time
+
+import certifi
+os.environ["SSL_CERT_FILE"] = certifi.where()
+ssl._create_default_https_context = ssl.create_default_context
 
 import numpy as np
 import pandas as pd
@@ -68,7 +73,12 @@ def main():
     our_keys = set(pd.read_csv(os.path.join(META_DIR, "fps_stations.csv"))
                    .assign(key=lambda d: d["network"].astype(str) + "." + d["station"].astype(str))["key"])
 
-    client = Client("EARTHSCOPE")
+    client = Client(base_url="https://service.earthscope.org",
+                    service_mappings={
+                        "station": "https://service.earthscope.org/fdsnws/station/1",
+                        "dataselect": "https://service.earthscope.org/fdsnws/dataselect/1",
+                    },
+                    _discover_services=False)
     rows = []
     for idx, row in uncovered.iterrows():
         lat, lon, orig_key = row["lat"], row["lon"], row["key"]

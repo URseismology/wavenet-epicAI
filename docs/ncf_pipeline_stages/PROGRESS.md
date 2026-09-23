@@ -10,6 +10,32 @@ workstreams under the same project.
 Source code for this pipeline lives at `src/wavenet_pipeline/00_waveform_acquisition/` (currently
 on the unmerged `add-september-ncf-pipeline` branch).
 
+## Deployment strategy (PI, 2026-09-23)
+
+Three-phase rollout, not an either/or choice between Bluehive and AWS:
+
+1. **Test and run extensively on Bluehive first.** It's proven, familiar, and
+   effectively free to us (already-allocated academic compute, `urseismo` partition).
+   Package the pipeline into a **Docker image** once it's solid there — makes the whole
+   thing portable, not just a pile of scripts tied to one cluster's environment quirks
+   (e.g. the `instaseis` conda env / SSL gotchas documented in this session).
+2. **Run and test AWS for a few stations** — the same verify-small-before-scaling
+   discipline already applied throughout this pipeline's development, now applied to
+   comparing platforms, not just comparing scale on one platform.
+3. **Deploy on both AWS and Bluehive**, split by some permissible cost/time model — the
+   real numbers in `DATA_AVAILABILITY_AND_COST_REPORT.md` §6 (speed/time/dollar cost at
+   various parallelization levels) are exactly the comparison basis for that model,
+   directly against the real Bluehive numbers already measured in this same pipeline
+   (single-station, 20-task array, 27-year stress test).
+
+**Why AWS at all, given Bluehive is free**: AWS's value isn't just compute — it's
+**reach**. It makes the code and any improvements available to the world, not locked
+to one university's private HPC systems, and it's realistic to fund that via **cloud
+research/dollar grants** (common for academic work) rather than lab budget — meaning
+the wider distribution benefit can come at effectively no net cost, while Bluehive
+remains the reliable "do the actual science for free" workhorse. Not a contradiction —
+use each for what it's good at.
+
 **Existing data inventory** (don't redownload what's already on a lab machine):
 [EXISTING_DATA_INVENTORY.md](EXISTING_DATA_INVENTORY.md) — catalog of raw SEED and
 processed SAC already sitting on `atos`/`terravibranium`/`Bluehive` from prior projects.
