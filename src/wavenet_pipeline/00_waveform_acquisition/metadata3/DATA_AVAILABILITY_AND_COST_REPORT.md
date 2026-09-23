@@ -250,11 +250,16 @@ fraction does, effective new-download volume could be well below the §2/§4 fig
 Explicitly not done, not silently assumed away:
 
 - **Overlap check** between existing local archives (§8) and our fixed network.
-- **Replacement-station search** for the 367 uncovered stations — find the nearest
-  real alternative (bounded FDSN query) that has confirmed archived data, without
-  touching the locked FPS station selection itself. In progress (see
-  `find_replacement_stations.py`) — checks *any* data presence only; channel-level
-  (`BH?`/`LH?`) confirmation deferred to a later per-candidate check.
+- **Replacement-station search — DONE (2026-09-23), real result**: for the 367
+  uncovered stations, a bounded live FDSN query (see `find_replacement_stations.py`)
+  found a confirmed-has-data nearby alternative for **342/367 (93.2%)**, median
+  replacement distance **20.4 km** (most are essentially co-located substitutes),
+  max **1,385.3 km** (a handful of genuinely hard-to-replace stations in sparse
+  regions). Full results: `key_index_summary/replacement_station_candidates.csv`.
+  Does not touch the locked FPS station selection itself — this is a candidate list
+  for a future decision, not an applied change. Still checks *any* data presence
+  only; channel-level (`BH?`/`LH?`) confirmation remains deferred to a later
+  per-candidate check, per the PI's original scoping.
 - **Final band/duration decision** — this report gives the metadata; §5's coverage-
   density tradeoff plus the domain caveat there is what should actually drive it.
 - **AWS EC2 pricing** in §6 needs live re-verification before being used for a real

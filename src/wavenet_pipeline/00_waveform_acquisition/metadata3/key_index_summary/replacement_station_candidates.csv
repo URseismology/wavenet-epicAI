@@ -1,0 +1,538 @@
+original_station,replacement_station,distance_km,replacement_days_in_key_index,n_candidates_found,n_candidates_with_data,status
+2A.REF03,2A.REF08,0.7,25.0,257.0,250.0,OK
+3A.OBS2,3A.OBS1,42.0,68.0,1080.0,302.0,OK
+1L.TIS1,,,,0.0,0.0,no nearby candidate with confirmed archived data
+IU.PTCN,,,,1.0,0.0,no nearby candidate with confirmed archived data
+IU.MIDW,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlon (format exception):expected a value between -180 and 180 but received(-187.3697)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=18.2154&maxlatitude=38.2154&minlongitude=-187.3697&maxlongitude=-167.3697&level=station
+Request Submitted:
+2026-09-23T20:47:29
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+PS.KOR,XB.ELYHK,340.5,1331.0,17.0,12.0,OK
+G.CRZF,,,,1.0,0.0,no nearby candidate with confirmed archived data
+G.TRIS,IU.TRIS,0.0,2759.0,31.0,29.0,OK
+II.COCO,AU.I06H8,3.9,2589.0,44.0,32.0,OK
+G.AIS,,,,3.0,0.0,no nearby candidate with confirmed archived data
+YR.BANO,YR.DAHO,20.4,332.0,171.0,159.0,OK
+ZL.A21,ZL.A20,25.0,38.0,30.0,29.0,OK
+XA.S15,XB.PM34,947.2,1306.0,1857.0,97.0,OK
+ID.RPN,II.RPN,0.1,12256.0,5.0,3.0,OK
+XI.D55,XI.D16,2.6,278.0,32.0,32.0,OK
+ZU.227,YS.PL47,7.3,390.0,3695.0,1184.0,OK
+XF.E06,XF.E07,18.6,38.0,207.0,181.0,OK
+8A.KONI,AI.SMAI,185.1,6639.0,54.0,47.0,OK
+ID.SEY,II.MSEY,2.0,9599.0,4.0,3.0,OK
+II.SHEL,IM.H10S1,1241.8,949.0,26.0,8.0,OK
+IM.WK31,IM.H11S2,104.7,919.0,21.0,18.0,OK
+YF.CDLV,XJ.0605,307.0,4.0,2308.0,309.0,OK
+IM.I52H2,IM.I52H5,0.6,1100.0,18.0,11.0,OK
+XA.S11,G.BNG,688.6,3313.0,131.0,96.0,OK
+XD.DELB,XD.LBAB,2.0,28.0,90.0,59.0,OK
+IU.FUNA,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid maxlon (format exception):expected a value between -180 and 180 but received(189.1966)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-18.5259&maxlatitude=1.4741&minlongitude=169.1966&maxlongitude=189.1966&level=station
+Request Submitted:
+2026-09-23T20:47:36
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+XU.MACQ,AU.MCQ,0.2,7679.0,39.0,20.0,OK
+PS.SYO,,,,1.0,0.0,no nearby candidate with confirmed archived data
+X9.YA03,X9.YA04,0.7,36.0,342.0,263.0,OK
+4P.RET57,4P.NCT57,0.0,15.0,14509.0,3403.0,OK
+ZV.WKZ09,ZV.WKZ10,79.8,17.0,284.0,243.0,OK
+1J.TI4A,1J.TI1A,9.0,37.0,13.0,11.0,OK
+G.PAF,,,,1.0,0.0,no nearby candidate with confirmed archived data
+IU.JOHN,ZK.KTF1,1181.2,4.0,6.0,4.0,OK
+IU.XMAS,ZA.B08,1283.9,387.0,6.0,5.0,OK
+XT.PNI,XT.TKK,692.8,522.0,23.0,17.0,OK
+IU.KNTN,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlon (format exception):expected a value between -180 and 180 but received(-181.7186)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-12.7744&maxlatitude=7.2256&minlongitude=-181.7186&maxlongitude=-161.7186&level=station
+Request Submitted:
+2026-09-23T20:47:45
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+PS.VIVO,CD.QIZ,438.4,2530.0,570.0,29.0,OK
+G.HYB,YA.BAC1,1076.7,15.0,46.0,45.0,OK
+XN.SARMI,XN.PADA,250.4,23.0,23.0,14.0,OK
+YA.LIQ1,YA.DUD1,28.5,15.0,12.0,11.0,OK
+MH.P0019,XE.EC05,856.4,394.0,17.0,15.0,OK
+ZU.E118,ZU.E117,11.2,10.0,57.0,45.0,OK
+XU.COVA,7D.STEPH,439.5,529.0,282.0,226.0,OK
+4P.MTB15,TA.B15A,8.5,704.0,29022.0,13738.0,OK
+7B.SA02,AU.MTSU,89.0,7878.0,145.0,98.0,OK
+G.SOK,G.MBO,55.0,9714.0,11.0,7.0,OK
+12.OBS21,12.OBS19,2.2,362.0,390.0,323.0,OK
+XA.MM01,TA.L61B,14.9,2003.0,9156.0,2189.0,OK
+Z5.GIMR,Z5.DUFI,56.9,746.0,2035.0,569.0,OK
+IU.DAV,YC.SBC9,762.5,669.0,67.0,46.0,OK
+X4.A07,X4.A03,21.7,35.0,2030.0,1009.0,OK
+PS.TGY,YM.38,839.4,385.0,503.0,331.0,OK
+II.NRIL,,,,1.0,0.0,no nearby candidate with confirmed archived data
+II.NVS,KZ.KUR27,553.6,349.0,161.0,113.0,OK
+G.PCR,ID.PCR,1.5,1702.0,18.0,13.0,OK
+ZU.TXC24,4B.124,11.1,30.0,25765.0,12066.0,OK
+ZU.FLD53,TA.553A,29.2,679.0,9804.0,3362.0,OK
+BL.CRTA,BL.CRTB,0.0,204.0,443.0,70.0,OK
+4P.NDC26,TA.C26A,2.3,684.0,8649.0,5233.0,OK
+7B.SB04,AU.CMSA,253.4,7958.0,249.0,143.0,OK
+A7.CAXIT,NR.NE204,1385.3,1070.0,93.0,5.0,OK
+EM.PA834,EM.PA835,1.6,3.0,3110.0,875.0,OK
+PS.CHUK,XT.TKK,3.9,522.0,100.0,84.0,OK
+DA.URKR,DA.BUJR,82.6,23.0,555.0,359.0,OK
+SR.BCAO,G.BNG,1.3,3313.0,34.0,29.0,OK
+7E.KB03,AU.KNA,62.1,839.0,258.0,152.0,OK
+YY.OBS57,YY.OBS53,104.8,45.0,208.0,183.0,OK
+6H.MAMB,6H.MUXU,101.8,597.0,291.0,214.0,OK
+XE.RAUL,XE.COLO,140.4,11.0,1949.0,517.0,OK
+IM.I18H7,9C.R3A,66.9,16.0,83.0,30.0,OK
+XJ.SHO,4P.IDK13,35.5,25.0,60567.0,28381.0,OK
+PS.MCSJ,Z6.15,483.8,365.0,219.0,198.0,OK
+XW.ESG8,GS.LA02,2.3,198.0,14736.0,6247.0,OK
+ZF.B001,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlat (format exception):expected a value between -90 and 90 but received(-94.374199)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-94.374199&maxlatitude=-74.374199&minlongitude=160.981598&maxlongitude=180.981598&level=station
+Request Submitted:
+2026-09-23T20:48:53
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+GE.SOCY,XW.EERS,35.5,230.0,134.0,123.0,OK
+XF.ET14,XF.ET08,3.1,16.0,929.0,778.0,OK
+XW.SS21A,XW.SS21,0.2,9.0,2165.0,734.0,OK
+4P.WAC06,UW.PLN,11.0,2109.0,33016.0,14290.0,OK
+ZI.2299,ZI.2298,0.5,3.0,21631.0,8620.0,OK
+XU.LUMA,6K.MNDO,36.3,180.0,2543.0,1068.0,OK
+IM.CY602,GE.CSS,128.2,2859.0,2234.0,656.0,OK
+X3.OBS01,X3.OBS24,7.1,16.0,82.0,79.0,OK
+G.NOC,ZI.PAPA,22.5,386.0,55.0,40.0,OK
+MH.P0020,,,,1.0,0.0,no nearby candidate with confirmed archived data
+ZM.D21,ZM.D41,10.7,254.0,87.0,87.0,OK
+BL.GNSA,BL.GNSB,0.0,389.0,330.0,71.0,OK
+ZU.NMV26,TA.V26A,6.6,711.0,26582.0,12113.0,OK
+4P.NEK29,TA.K29A,17.4,677.0,16206.0,7214.0,OK
+7B.SD09,AU.LCRK,115.6,4983.0,195.0,114.0,OK
+3R.A06,TO.MAZH,26.0,582.0,1088.0,891.0,OK
+ZU.TXK37,TA.035Z,77.8,681.0,14541.0,7116.0,OK
+MH.P0025,G.PPT,508.7,7967.0,4.0,1.0,OK
+4P.ILM43,YF.WILS,25.6,21.0,11529.0,4774.0,OK
+XI.CX111,XI.CX110,5.3,40.0,3399.0,1185.0,OK
+YF.STN10,YI.D16,18.2,179.0,1619.0,815.0,OK
+PS.GTC1,JP.JSG,444.6,4553.0,68.0,11.0,OK
+3B.EOC03,3B.EOC01,0.0,49.0,13145.0,6797.0,OK
+ZM.ALYS,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlat (format exception):expected a value between -90 and 90 but received(-94.354897)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-94.354897&maxlatitude=-74.354897&minlongitude=-33.7342&maxlongitude=-13.734200000000001&level=station
+Request Submitted:
+2026-09-23T20:49:48
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+XV.EH,XV.GB,7.3,97.0,6030.0,1081.0,OK
+4P.MNB33,TA.B33A,13.6,597.0,2899.0,2353.0,OK
+A7.LUENA,Z1.Z02K,484.3,553.0,1027.0,87.0,OK
+M8.BK45,AU.FORT,122.8,7659.0,140.0,74.0,OK
+XN.NUMFO,XN.IMBIS,71.6,22.0,30.0,21.0,OK
+XM.HB01,XM.NL01,28.7,51.0,1435.0,694.0,OK
+IU.TBT,XJ.0012,111.7,9.0,164.0,153.0,OK
+ZU.NMW20,TA.W20A,27.0,682.0,44649.0,21264.0,OK
+4P.COP26,TA.P26A,31.0,674.0,26331.0,12298.0,OK
+7B.SC10,7B.SD02,0.1,49.0,248.0,134.0,OK
+7B.SC07,AU.QIS,187.7,7591.0,207.0,110.0,OK
+4P.NVM07,TA.M07A,0.0,789.0,52714.0,25107.0,OK
+G.MATO,BL.PP1B,420.6,943.0,1352.0,307.0,OK
+G.TAM,YF.GHAR,1276.9,227.0,336.0,9.0,OK
+7B.SD10,AU.BBOO,3.8,7981.0,149.0,84.0,OK
+9G.SA235,9G.SA230,43.2,28.0,11392.0,5074.0,OK
+9G.BC410,9G.BC409,39.9,11.0,25347.0,13341.0,OK
+7D.KA08,AU.KIM02,51.7,1505.0,250.0,140.0,OK
+2P.OBS01,2P.OBS03,24.1,118.0,67.0,49.0,OK
+XM.1026,XM.1023,2.1,55.0,1993.0,535.0,OK
+ZT.ALST0,ZS.W01,68.4,219.0,8664.0,1864.0,OK
+BL.CCUB,BL.JATB,66.2,731.0,142.0,69.0,OK
+4P.WIG42,TA.G42A,26.0,614.0,7288.0,4049.0,OK
+XI.TAIF,XI.BISH,286.7,7.0,506.0,266.0,OK
+XF.MA66,XF.MA06,14.0,403.0,552.0,445.0,OK
+G.SEY,XJ.UHR,693.2,285.0,41.0,37.0,OK
+ZO.A07,ZO.A08,2.8,139.0,161.0,109.0,OK
+ZU.101,ZU.102,15.0,31.0,3695.0,1184.0,OK
+4P.MTB21,TA.B21A,8.9,682.0,11867.0,5982.0,OK
+7B.SD07,AU.DNDOZ,206.0,1288.0,168.0,89.0,OK
+7B.SB10,S1.AULRC,131.7,4834.0,212.0,122.0,OK
+ZB.MLKN,ZB.ATTB,241.0,301.0,202.0,167.0,OK
+EM.PA970,EM.PA965,29.3,14.0,2078.0,837.0,OK
+SR.NWAO,AU.NWAO,0.5,5392.0,103.0,57.0,OK
+7F.A15,7F.A09,0.0,23.0,135.0,131.0,OK
+4P.UTO15,TA.O15A,18.0,651.0,58714.0,27328.0,OK
+7B.SC09,AU.AS17,274.6,7547.0,229.0,120.0,OK
+XB.ELYH0,XB.ELYHK,0.0,1331.0,28.0,21.0,OK
+RS.RSNT,CN.YKAB4,1.2,4989.0,1038.0,504.0,OK
+ZU.AZB19,ZU.REB19,17.2,23.0,36626.0,18155.0,OK
+4P.MTG16,TA.G16A,15.0,625.0,27423.0,11302.0,OK
+YM.UCM,XE.GNR,9.6,427.0,3083.0,1569.0,OK
+8L.MG58,CN.PMB,14.8,975.0,22588.0,11110.0,OK
+YY.OBS55,XF.B15,99.0,370.0,211.0,185.0,OK
+DW.LEM,XK.L57,321.7,37.0,182.0,147.0,OK
+EM.TB750,EM.TB755,21.5,66.0,2024.0,1050.0,OK
+4P.SDG32,TA.G32A,16.8,697.0,8180.0,4185.0,OK
+7B.SB01,AU.INKA,245.2,4578.0,272.0,151.0,OK
+XU.CHTA,AU.I05H7,315.3,2673.0,130.0,78.0,OK
+ZV.WKZ07,YL.WKZ17,60.9,369.0,268.0,227.0,OK
+4P.SDH25,TA.H25A,29.2,796.0,15671.0,6690.0,OK
+8P.CAW11,CI.GMR,34.7,7289.0,51139.0,21090.0,OK
+4P.WYM22,TA.M22A,6.2,903.0,35867.0,18343.0,OK
+ZU.TXF39,ZU.TXG39,34.3,50.0,12196.0,6350.0,OK
+IU.MBWA,AU.PSAD1,34.5,3727.0,120.0,58.0,OK
+YT.GM05,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlat (format exception):expected a value between -90 and 90 but received(-91.1841)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-91.1841&maxlatitude=-71.1841&minlongitude=41.1587&maxlongitude=61.1587&level=station
+Request Submitted:
+2026-09-23T20:52:49
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+4P.TNU48,NM.CLTN,12.8,5084.0,14739.0,4054.0,OK
+ZU.ARY43,TA.Y43A,28.5,684.0,15157.0,6497.0,OK
+ZV.WKZ05,ZV.WKZ03,87.6,17.0,480.0,400.0,OK
+4P.OHN52,MU.EARS,15.1,2784.0,16223.0,4864.0,OK
+4P.IDC11,TA.C11A,1.3,608.0,36663.0,16948.0,OK
+4P.NJL60,TA.O61A,11.2,729.0,13085.0,2506.0,OK
+4P.MED63,TA.I64A,45.0,712.0,8320.0,1660.0,OK
+7E.KB06,7D.KA03,71.8,79.0,260.0,153.0,OK
+EM.GT003,EM.GT015,16.9,28.0,61701.0,29429.0,OK
+XC.FL006,Z9.E01,11.8,657.0,9147.0,3075.0,OK
+XM.1346,YJ.ADEE,1.1,436.0,2030.0,566.0,OK
+4P.IAL39,TA.L39A,10.1,721.0,13402.0,7339.0,OK
+4P.OHM48,OH.JAOH,12.1,529.0,15277.0,4948.0,OK
+ZU.ALD48,TA.447A,36.3,637.0,11923.0,3680.0,OK
+IM.CY101,3K.POLI,110.5,728.0,2199.0,633.0,OK
+4P.MIJ45,TA.J45A,33.9,643.0,11367.0,4526.0,OK
+YL.ONRN,YL.LAZE,38.3,99.0,1963.0,1001.0,OK
+4P.TNT53,Z4.RGR,6.0,364.0,15263.0,4068.0,OK
+BL.UNIA,BL.PRCB,115.5,132.0,146.0,71.0,OK
+7B.SB05,AU.STKA,0.4,8288.0,250.0,149.0,OK
+Y3.NWM01,Y3.PLM01,46.0,29.0,550.0,429.0,OK
+17.S20,17.S21,12.2,33.0,1748.0,639.0,OK
+4P.NDD30,TA.D30A,17.9,688.0,5255.0,4315.0,OK
+XE.CC12,XE.CC11,48.1,396.0,23.0,22.0,OK
+XM.ASB06,XM.ASB18,5.5,366.0,1962.0,942.0,OK
+XV.C16D,XV.C16C,74.2,43.0,979.0,370.0,OK
+MH.P0007,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlon (format exception):expected a value between -180 and 180 but received(-186.492667)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-23.51175&maxlatitude=-3.5117499999999993&minlongitude=-186.492667&maxlongitude=-166.492667&level=station
+Request Submitted:
+2026-09-23T20:54:24
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+RS.RSON,CN.EPLO,131.8,6100.0,2108.0,1806.0,OK
+EM.PA878,EM.PA880,11.7,15.0,1993.0,542.0,OK
+2C.GS18,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlat (format exception):expected a value between -90 and 90 but received(-93.767303)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-93.767303&maxlatitude=-73.767303&minlongitude=-170.796906&maxlongitude=-150.796906&level=station
+Request Submitted:
+2026-09-23T20:54:26
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+ZU.TXH36,TA.835A,6.6,693.0,18063.0,7964.0,OK
+XR.BB23,XR.BB20,26.9,143.0,2002.0,1033.0,OK
+MU.OXNC,MU.OXPL,79.6,31.0,890.0,803.0,OK
+Y2.IFM03,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlon (format exception):expected a value between -180 and 180 but received(-180.063)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=42.763&maxlatitude=62.763&minlongitude=-180.063&maxlongitude=-160.063&level=station
+Request Submitted:
+2026-09-23T20:54:34
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+SP.DFORK,CO.JSC,15.3,6516.0,14963.0,3785.0,OK
+ZU.COS28,ZU.RES28,0.0,10.0,26373.0,12082.0,OK
+EM.PA765,EM.PA760,10.4,10.0,3466.0,1091.0,OK
+YI.ISDE,XH.RS14,203.9,782.0,21.0,21.0,OK
+7S.RR06,7S.RR09,8.7,45.0,45365.0,22385.0,OK
+IM.WK30,IM.H11C1,80.3,915.0,18.0,17.0,OK
+4P.NEN31,TA.N31A,29.1,707.0,21317.0,11245.0,OK
+X2.PG1,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid maxlon (format exception):expected a value between -180 and 180 but received(186.038101)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-51.137699&maxlatitude=-31.137698999999998&minlongitude=166.038101&maxlongitude=186.038101&level=station
+Request Submitted:
+2026-09-23T20:55:11
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+4P.VAQ55,TA.S56A,31.2,758.0,14883.0,3679.0,OK
+7B.SC05,2O.BTL10,67.7,1310.0,201.0,110.0,OK
+7B.SD06,AU.OOD,80.8,4507.0,224.0,126.0,OK
+8P.CAV08,XJ.CHP,22.8,64.0,43457.0,17195.0,OK
+4P.MAH64,TA.L65A,31.6,728.0,8651.0,1851.0,OK
+X9.T2S4A,X9.T2S4B,1.3,82.0,259.0,251.0,OK
+4P.NEL26,TA.L26A,19.3,681.0,23870.0,11678.0,OK
+PS.JAY,XN.PADA,479.1,23.0,62.0,47.0,OK
+8E.03023,8E.03018,0.0,24.0,336.0,324.0,OK
+4P.WII40,N4.I40B,4.0,1263.0,8046.0,4103.0,OK
+YY.OBS10,YY.OBS11,70.5,49.0,205.0,180.0,OK
+BL.JNRB,BL.CRTB,226.5,204.0,150.0,72.0,OK
+XN.A01,XN.B01,11.7,685.0,3180.0,988.0,OK
+XN.BABAY,XN.SERUI,53.8,23.0,22.0,14.0,OK
+XF.STC5,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlat (format exception):expected a value between -90 and 90 but received(-92.396378)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-92.396378&maxlatitude=-72.396378&minlongitude=-144.74556&maxlongitude=-124.74556000000001&level=station
+Request Submitted:
+2026-09-23T20:55:50
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+9G.SA015,9G.AB313,3.7,17.0,27450.0,14795.0,OK
+BL.BRSB,BL.PARB,89.4,184.0,147.0,72.0,OK
+9G.AB317,9G.SA175,26.7,31.0,15180.0,6664.0,OK
+ZU.TXE30,TA.530A,11.3,695.0,18844.0,7627.0,OK
+7B.SB03,AU.INKA,106.5,4578.0,285.0,165.0,OK
+ZU.MSB45,TA.245A,20.4,673.0,12381.0,3675.0,OK
+GY.A11,GY.A12,0.0,345.0,185.0,160.0,OK
+BL.CAMB,ON.CAM01,24.0,3328.0,134.0,68.0,OK
+ZA.A20,ZA.B17,3.9,401.0,51.0,51.0,OK
+SN.WG02,XA.AZ09,0.2,3.0,60593.0,28444.0,OK
+X1.LW2,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlat (format exception):expected a value between -90 and 90 but received(-90.972198)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-90.972198&maxlatitude=-70.972198&minlongitude=138.032104&maxlongitude=158.032104&level=station
+Request Submitted:
+2026-09-23T20:56:35
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+ZU.ALB50,TA.350A,14.9,572.0,14108.0,3579.0,OK
+2F.S04,2F.S03,2.2,76.0,606.0,417.0,OK
+4P.WIF39,TA.F39A,16.4,673.0,6295.0,3414.0,OK
+4P.ALY50,TA.Z50A,16.3,861.0,14587.0,3774.0,OK
+XA.S16,Z1.Z02K,982.5,553.0,238.0,25.0,OK
+YR.S021,YR.S022,12.1,33.0,34465.0,15099.0,OK
+4P.MTE22,US.LAO,13.6,7734.0,13676.0,6678.0,OK
+XB.NRT6,XB.NRT7,14.5,20.0,1026.0,796.0,OK
+5C.IL17,5C.IL23,0.2,294.0,3408.0,1058.0,OK
+YY.TABO,ZF.YAYE,2.5,213.0,556.0,500.0,OK
+4P.NCT60,TA.W61A,33.7,697.0,13830.0,2819.0,OK
+NP.7210,MB.MSO,7.9,130.0,39062.0,18171.0,OK
+ZU.ARY40,TA.Y40A,23.0,651.0,13455.0,6482.0,OK
+YH.G03,3H.G59,58.3,453.0,111.0,102.0,OK
+4P.UTN19,TA.N19A,6.3,616.0,46353.0,22274.0,OK
+4P.KSQ35,US.KSU1,1.5,8386.0,15115.0,7845.0,OK
+XG.WSG,TA.S25A,13.3,676.0,27120.0,12366.0,OK
+YM.NTW4,CN.BVCY,30.6,5594.0,2403.0,1391.0,OK
+QC.00877,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid maxlon (format exception):expected a value between -180 and 180 but received(182.565002)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-53.489498&maxlatitude=-33.489498&minlongitude=162.565002&maxlongitude=182.565002&level=station
+Request Submitted:
+2026-09-23T20:58:00
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+7D.KA05,AU.KIM08,57.1,1657.0,258.0,152.0,OK
+4P.MTB18,TA.B18A,5.7,661.0,19089.0,7452.0,OK
+4P.MIC41,4P.MID41,72.3,22.0,7750.0,2734.0,OK
+ZC.TIN1,XO.TIN3,0.0,356.0,202.0,180.0,OK
+PS.TSK,JP.JYT,7.6,4553.0,110.0,48.0,OK
+XG.CES,TA.P29A,25.9,691.0,23923.0,11700.0,OK
+ZU.214,ZU.215,15.2,33.0,3695.0,1184.0,OK
+XF.L02,XF.B07,17.1,376.0,207.0,181.0,OK
+4P.NHC60,TA.G61A,30.3,672.0,8160.0,1373.0,OK
+ZU.MSW46,ZL.B03X,24.8,695.0,12422.0,3996.0,OK
+XC.FL014,TA.058A,50.2,609.0,8228.0,2546.0,OK
+4P.UTQ13,XH.GAR,6.5,215.0,61944.0,29480.0,OK
+HG.EIL,GE.EIL,13.3,10376.0,1905.0,364.0,OK
+XW.SS20,XW.SS19,14.8,42.0,2126.0,704.0,OK
+4P.WYJ23,TA.J23A,6.1,694.0,21644.0,8681.0,OK
+XY.BONG,YZ.ACHA,9.4,1053.0,1757.0,766.0,OK
+8P.CAS04,YU.PLA,18.4,1730.0,48293.0,22999.0,OK
+4P.UTQ17,UU.OPUT,8.2,105.0,47929.0,21012.0,OK
+ZL.JYCE,ZL.TRIO,35.9,65.0,871.0,362.0,OK
+N4.ABTX,TA.ABTX,0.0,3461.0,19035.0,8145.0,OK
+ZU.TXJ34,TA.933A,68.2,679.0,17357.0,7459.0,OK
+4P.WYK20,XC.Y35,14.3,282.0,38747.0,19929.0,OK
+X6.RB1,X6.RB2,0.0,25.0,996.0,805.0,OK
+ZV.OBS02,AV.AUL,9.8,4468.0,2968.0,1495.0,OK
+C8.LR4Q,C8.LR3Q,24.6,71.0,1244.0,352.0,OK
+MU.OXET,MU.OXSV,92.1,31.0,860.0,757.0,OK
+XF.NJANA,YL.JANA,0.0,203.0,1848.0,959.0,OK
+ZU.REY18,ZU.AZY18,0.2,31.0,39789.0,17020.0,OK
+ZO.HVU2,UU.HVU,0.1,15162.0,58432.0,28061.0,OK
+CS.GUM,II.KIV,41.8,13593.0,1056.0,466.0,OK
+XC.FL022,TA.061Z,59.1,635.0,6355.0,1886.0,OK
+HV.HSSD,HV.PLAD,8.6,5627.0,3697.0,1186.0,OK
+4P.KSR37,TA.R37A,7.9,711.0,13298.0,7078.0,OK
+ZA.A11,ZA.A12,20.2,22.0,108.0,72.0,OK
+YY.OBS43,YY.OBS44,25.2,326.0,208.0,182.0,OK
+XL.KITT2,XL.KITT1,3.1,222.0,37230.0,16327.0,OK
+4P.NEN28,US.OGNE,37.1,7107.0,24093.0,11715.0,OK
+XJ.E40,YJ.MELE,6.0,427.0,2009.0,549.0,OK
+8P.AZV14,TA.V14A,30.5,608.0,51363.0,21457.0,OK
+4P.MNF34,TA.F34A,22.0,685.0,6359.0,3380.0,OK
+ID.ALE,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid maxlat (format exception):expected a value between -90 and 90 but received(92.483597)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=72.483597&maxlatitude=92.483597&minlongitude=-72.400002&maxlongitude=-52.400002&level=station
+Request Submitted:
+2026-09-23T21:01:15
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+4P.NVM10,TA.M10A,7.5,837.0,60226.0,29029.0,OK
+4P.MIE44,TA.F44A,49.8,633.0,9180.0,3260.0,OK
+4P.MNB36,4P.MNB35,56.4,25.0,2720.0,2225.0,OK
+7D.KA07,AU.KIM05,24.3,1710.0,185.0,110.0,OK
+ZU.TXE33,TA.532A,31.3,681.0,18621.0,7849.0,OK
+9G.BC009,TA.A10A,35.1,590.0,31590.0,14586.0,OK
+2A.28,2A.29,82.1,358.0,28.0,10.0,OK
+XO.SCCC,4P.NYI59,29.3,13.0,11403.0,2464.0,OK
+Y3.MEL01,YJ.MEL01,0.0,162.0,1468.0,620.0,OK
+DW.GDH,DK.GDH,0.0,855.0,125.0,105.0,OK
+ZU.LAD42,TA.441A,33.3,665.0,13634.0,6236.0,OK
+XW.SS61,XW.SS68,14.4,34.0,2191.0,760.0,OK
+NJ.KAD,AF.KAD,0.5,562.0,65.0,36.0,OK
+ZU.NMA25,SC.HOP,14.4,243.0,22052.0,8933.0,OK
+3R.E05,ZB.B10,31.2,142.0,1136.0,901.0,OK
+YL.LBA60,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlon (format exception):expected a value between -180 and 180 but received(-186.297806)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-30.306999&maxlatitude=-10.306999000000001&minlongitude=-186.297806&maxlongitude=-166.297806&level=station
+Request Submitted:
+2026-09-23T21:02:16
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+7B.SD04,S1.AUOKV,197.1,95.0,218.0,120.0,OK
+DW.BER,YY.SN33,210.4,339.0,370.0,292.0,OK
+IM.CY301,3K.LOUI,169.5,731.0,2179.0,617.0,OK
+4P.NYG58,4P.REG58,5.7,34.0,9708.0,2266.0,OK
+YN.OBS27,YN.OBS26,8.3,19.0,20310.0,11029.0,OK
+4P.MOO36,TA.O36A,26.0,667.0,13879.0,7904.0,OK
+7D.KA09,7D.KA10,132.1,79.0,263.0,153.0,OK
+XT.ST119,XT.ST120,7.4,15.0,6083.0,1111.0,OK
+NQ.SANFE,TA.V23A,30.2,704.0,31208.0,15422.0,OK
+8P.CAX09,CI.SBPX,18.6,414.0,38912.0,16075.0,OK
+9G.SA155,9G.SA165,27.2,18.0,16999.0,9064.0,OK
+PS.PSI,ZB.F70S,136.6,276.0,168.0,135.0,OK
+ZU.LAB43,TA.243A,26.9,651.0,14888.0,6352.0,OK
+ZU.TXD38,TA.438A,16.1,665.0,12713.0,6536.0,OK
+ZU.TXF37,2T.EF65,20.3,566.0,16097.0,7459.0,OK
+XB.KDVU,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid maxlon (format exception):expected a value between -180 and 180 but received(188.162888)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-29.099176&maxlatitude=-9.099176&minlongitude=168.162888&maxlongitude=188.162888&level=station
+Request Submitted:
+2026-09-23T21:03:20
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+4P.NYJ61,4P.REJ61,8.5,19.0,10920.0,2257.0,OK
+4P.SDJ31,TA.J31A,20.4,658.0,15155.0,7089.0,OK
+OW.PHRD,CN.PHC,5.8,6056.0,18861.0,10381.0,OK
+4P.MIK47,N4.L48A,39.1,1071.0,12681.0,4736.0,OK
+ZU.ARV39,TA.V39A,11.3,641.0,13548.0,6725.0,OK
+nan.SABA,NA.SABA,0.0,5804.0,5646.0,957.0,OK
+PN.PPRMH,XG.BTO,19.2,127.0,27201.0,12654.0,OK
+YF.STN05,3B.S71,31.9,6.0,2438.0,958.0,OK
+AL.A032,8J.PKF17,13.4,77.0,2992.0,1499.0,OK
+8P.CAU10,8P.REU10,8.5,25.0,56206.0,25576.0,OK
+4P.SCX58,TA.Z58A,19.7,693.0,13702.0,3271.0,OK
+EM.TS414,EM.TS412,31.9,32.0,3247.0,388.0,OK
+GS.WWHL,GS.WCDR,3.9,63.0,62274.0,29729.0,OK
+4P.COO21,TA.O21A,5.1,727.0,39911.0,20260.0,OK
+4P.SDI28,TA.I28A,14.9,714.0,15213.0,6882.0,OK
+4P.IDI11,TA.I11A,0.7,613.0,52395.0,22030.0,OK
+1R.BHP8,1R.BHP7,0.0,78.0,8505.0,2772.0,OK
+4P.SDJ26,TA.J26A,28.1,665.0,20044.0,8052.0,OK
+4P.GAW50,ET.FPAL,27.3,6143.0,14862.0,3968.0,OK
+4P.NDB29,TA.B29A,17.8,698.0,5128.0,4054.0,OK
+ZU.134,ZU.133,12.9,23.0,3698.0,1185.0,OK
+4P.UTO17,TA.O17A,19.4,605.0,47849.0,20984.0,OK
+XI.NDEI,XI.KIBO,68.8,18.0,1830.0,385.0,OK
+4P.MTB13,MB.WFMT,1.0,884.0,34171.0,16684.0,OK
+4P.MII47,TA.J48A,36.6,624.0,11461.0,4586.0,OK
+YB.CUST,TA.G22A,9.9,627.0,16455.0,7438.0,OK
+4P.KYS51,TA.T51A,24.8,688.0,15130.0,4147.0,OK
+7D.RIMM,7D.MIKE,26.1,662.0,1707.0,925.0,OK
+ZU.NMY20,2D.W24SE,30.8,3.0,38024.0,18281.0,OK
+MU.OXBV,MX.TLIG,83.7,4541.0,917.0,813.0,OK
+4P.IAJ36,TA.J36A,7.3,711.0,8710.0,4178.0,OK
+XA.O07H,XA.O07L,0.0,259.0,3388.0,1056.0,OK
+4P.WVO55,TA.Q56A,16.9,713.0,15610.0,4489.0,OK
+ZU.MSY45,TA.Z45A,26.0,658.0,12611.0,3822.0,OK
+4P.WAC09,UW.DPW,5.5,9161.0,34858.0,14858.0,OK
+XF.DN3W,,,,,,"FDSN query failed: FDSNBadRequestException: Bad request. If you think your request was valid please contact the developers.
+HTTP Status code: 400
+Detailed response of server:
+
+Error 400 BAD_REQUEST: Invalid minlat (format exception):expected a value between -90 and 90 but received(-92.82045)
+Request:
+https://service.earthscope.org/fdsnws/station/1/query?minlatitude=-92.82045&maxlatitude=-72.82045&minlongitude=-162.881699&maxlongitude=-142.881699&level=station
+Request Submitted:
+2026-09-23T21:06:53
+Service version:1.1.57
+          build:0.0.0-SNAPSHOT"
+YC.MATA,YC.PUDO,16.9,54.0,1781.0,783.0,OK
+4P.NEL31,TA.L31A,3.6,712.0,19380.0,10753.0,OK
+XB.HT12,XB.HT11,13.5,22.0,1136.0,812.0,OK
+4P.IAL41,TA.L41A,16.0,705.0,10266.0,4560.0,OK
+9G.AB717,9G.RC085,28.7,18.0,12988.0,6861.0,OK
+4P.NDE32,TA.E32A,8.8,669.0,6310.0,3134.0,OK
+ZU.OKU37,TA.U37A,7.7,613.0,13253.0,6896.0,OK
+XZ.S11,YR.AYDO,21.8,337.0,181.0,168.0,OK
+4P.MTG18,TA.G18A,3.7,689.0,22429.0,9199.0,OK
+ZU.TXC31,ZU.REC31,0.1,12.0,19022.0,7882.0,OK
+4P.MIE41,TA.E41A,36.1,638.0,6096.0,3226.0,OK
+7E.KB08,AU.KIM10,53.3,710.0,262.0,153.0,OK
+9G.RC030,9G.RC020,25.0,14.0,19816.0,12670.0,OK
+YQ.109,YQ.108,10.7,53.0,404.0,332.0,OK
+ZU.NMX25,TA.X25A,15.0,693.0,25550.0,11030.0,OK
+4P.TTL24,4P.WYL24,3.4,15.0,24726.0,11924.0,OK
