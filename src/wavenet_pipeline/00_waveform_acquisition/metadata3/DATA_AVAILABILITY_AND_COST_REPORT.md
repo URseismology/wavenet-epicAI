@@ -245,6 +245,29 @@ Explicitly not done, not silently assumed away:
   density tradeoff plus the domain caveat there is what should actually drive it.
 - **AWS EC2 pricing** in §6 needs live re-verification before being used for a real
   budget decision.
+- **The real Bluehive-vs-AWS differentiator is likely download bandwidth, not
+  processing speed — not yet confirmed at the scale that matters (PI question,
+  2026-09-23)**. Preprocessing is CPU-bound and confirmed identical on both platforms.
+  Download crosses different infrastructure: Bluehive over the public internet
+  (bounded by the University's own egress capacity and EarthScope's public FDSN
+  service's own rate limits — both shared, finite resources outside our control), AWS
+  within `us-east-2` over the internal S3-EC2 backbone (the entire point of the
+  zero-egress architecture). **Confirmed only at 20-way concurrency so far**: download
+  time showed zero degradation (G.SSB 65s, G.ROCAM 133s, II.HOPE 56s, II.NIL 35s,
+  IU.PTCN 67s, JP.JGF 70s, all comparable running concurrently) — not yet tested at the
+  96-384-way concurrency the AWS comparison in §6 assumes. **Concrete next step**: rerun
+  the SLURM array at ~96-way concurrency on Bluehive and isolate download time
+  specifically (not preprocessing, already confirmed linear) to see if it degrades —
+  a real test, not an extrapolation, before trusting either platform's numbers at that
+  scale.
+- **AWS pilot station selection (PI, 2026-09-23)**: when testing AWS on "a few
+  stations" (deployment strategy phase 2, PROGRESS.md), deliberately choose stations
+  for maximum *continental* diversity — prioritizing regions not yet exercised by this
+  session's tests (Canada, Arctic/Antarctic, Australia, broader Eurasia) rather than
+  reusing the same US/Africa-heavy stations already tested. The point is exercising
+  genuinely different real-world archive conditions (different networks, different
+  data quirks like the sampling-rate mismatch found in `II.EFI`), not just re-testing
+  familiar ground.
 
 ---
 

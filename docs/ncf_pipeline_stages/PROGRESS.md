@@ -21,7 +21,11 @@ Three-phase rollout, not an either/or choice between Bluehive and AWS:
    (e.g. the `instaseis` conda env / SSL gotchas documented in this session).
 2. **Run and test AWS for a few stations** — the same verify-small-before-scaling
    discipline already applied throughout this pipeline's development, now applied to
-   comparing platforms, not just comparing scale on one platform.
+   comparing platforms, not just comparing scale on one platform. **Station selection
+   for this pilot should maximize continental diversity** — prioritize regions not yet
+   exercised this session (Canada, Arctic/Antarctic, Australia, broader Eurasia) over
+   re-testing the same US/Africa-heavy stations already used, to genuinely exercise
+   different real-world archive conditions, not just re-confirm familiar ground.
 3. **Deploy on both AWS and Bluehive**, split by some permissible cost/time model — the
    real numbers in `DATA_AVAILABILITY_AND_COST_REPORT.md` §6 (speed/time/dollar cost at
    various parallelization levels) are exactly the comparison basis for that model,
