@@ -38,7 +38,7 @@ import h5py
 import numpy as np
 import pandas as pd
 
-from lockutil import acquire_singleton_lock
+from lockutil import acquire_singleton_lock, open_h5_retry
 
 
 def load_state(state_path):
@@ -65,7 +65,7 @@ def append_csv(path, header, row):
 
 def verify_station(master_path, station_key, expected_channel_meta):
     """Returns (ok: bool, reason: str)."""
-    with h5py.File(master_path, "r") as master:
+    with open_h5_retry(master_path, "r") as master:
         if station_key not in master:
             return False, "station group missing from master"
         grp = master[station_key]
@@ -134,7 +134,15 @@ def main():
             channel_meta = r.get("channel_meta", {})
             station_key = f"{row['network']}.{row['station']}"
 
-            ok, reason = verify_station(master_path, station_key, channel_meta)
+            try:
+                ok, reason = verify_station(master_path, station_key, channel_meta)
+            except Exception as e:
+                # Not marked verified OR flagged -- a real data problem shouldn't be
+                # confused with an environment hiccup (e.g. open_h5_retry exhausting all
+                # attempts). Left for the next poll cycle to retry from scratch.
+                print(f"[inspector] idx={idx} {station_key} -> transient error, "
+                      f"will retry next poll: {e}", flush=True)
+                continue
             did_work = True
             if ok:
                 raw_dir = r.get("raw_seed_kept_at")

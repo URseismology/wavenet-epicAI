@@ -31,7 +31,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rover_download"))
 from build_master_h5 import merge_channel  # reuse the exact verified append/gap logic
-from lockutil import acquire_singleton_lock
+from lockutil import acquire_singleton_lock, open_h5_retry
 
 
 def load_state(state_path):
@@ -98,7 +98,10 @@ def main():
                 continue  # orchestrator result says ok but shard vanished -- skip, don't crash the loop
 
             station_key = f"{r['network']}.{r['station']}"
-            with h5py.File(master_path, "a") as master, h5py.File(h5_path, "r") as src:
+            # inspector.py opens this same master file for READ concurrently -- retry
+            # on the resulting HDF5 file-lock conflict rather than crash the whole loop
+            # (mirrors inspector.py's own protection, see lockutil.open_h5_retry).
+            with open_h5_retry(master_path, "a") as master, h5py.File(h5_path, "r") as src:
                 src_grp = src[station_key]
                 master_grp = master.require_group(station_key)
                 for attr in ("network", "station", "latitude", "longitude"):

@@ -581,10 +581,12 @@ source /scratch/tolugboj_lab/softwares/anaconda/anaconda3/2021.05/etc/profile.d/
 conda activate instaseis
 export WAVENET_PROD_ROOT={root}
 for attempt in 1 2 3 4; do
-    python3 {here}/orchestrator.py $SLURM_ARRAY_TASK_ID && break
+    python3 {here}/orchestrator.py $SLURM_ARRAY_TASK_ID && exit 0
     echo "[orchestrator.slurm] attempt $attempt failed (transient import race), retrying..." >&2
     sleep $(( RANDOM % 15 + 5 ))
 done
+echo "[orchestrator.slurm] gave up after 4 attempts -- this is a real failure, not transient." >&2
+exit 1
 """
 
 LOGGER_SLURM = """#!/bin/bash
@@ -602,10 +604,12 @@ conda activate instaseis
 # Same transient shared-env import race as orchestrator.slurm can crash this job before
 # its loop even starts -- retry a few times rather than leaving the whole run un-merged.
 for attempt in 1 2 3 4; do
-    python3 {here}/logger.py --root {root} --poll-interval 30 && break
+    python3 {here}/logger.py --root {root} --poll-interval 30 && exit 0
     echo "[logger.slurm] attempt $attempt failed (transient import race), retrying..." >&2
     sleep $(( RANDOM % 15 + 5 ))
 done
+echo "[logger.slurm] gave up after 4 attempts -- this is a real failure, not transient." >&2
+exit 1
 """
 
 INSPECTOR_SLURM = """#!/bin/bash
@@ -621,10 +625,12 @@ export XDG_CACHE_HOME={root}/.cache
 source /scratch/tolugboj_lab/softwares/anaconda/anaconda3/2021.05/etc/profile.d/conda.sh
 conda activate instaseis
 for attempt in 1 2 3 4; do
-    python3 {here}/inspector.py --root {root} --poll-interval 30 && break
+    python3 {here}/inspector.py --root {root} --poll-interval 30 && exit 0
     echo "[inspector.slurm] attempt $attempt failed (transient import race), retrying..." >&2
     sleep $(( RANDOM % 15 + 5 ))
 done
+echo "[inspector.slurm] gave up after 4 attempts -- this is a real failure, not transient." >&2
+exit 1
 """
 
 
