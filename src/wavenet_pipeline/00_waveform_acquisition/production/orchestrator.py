@@ -27,13 +27,16 @@ import os
 import sys
 import time
 import json
-import shutil
+from collections import defaultdict
 
 import h5py
 import numpy as np
 import pandas as pd
 from obspy import UTCDateTime, read, read_inventory
 from obspy.clients.fdsn.mass_downloader import Restrictions, MassDownloader, RectangularDomain
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rover_download"))
+from build_master_h5 import append_channel_data  # shared gap-fill/append logic
 
 ROOT = os.environ["WAVENET_PROD_ROOT"]
 STATIONS_CSV = os.environ.get("WAVENET_STATIONS_CSV", os.path.join(ROOT, "manifest", "fps_stations.csv"))
@@ -136,89 +139,171 @@ try:
 except Exception as e:
     result.update(download_elapsed_s=time.time() - t0, download_error=f"{type(e).__name__}: {e}")
 
-# ---- preprocess ----
+# ---- preprocess + package, ONE CALENDAR DAY AT A TIME, CHECKPOINTED ----
+# Rewritten 2026-09-24 after a real OOM finding on the exact station this bug hit
+# hardest: reading + merging under half a year of this station's data into one
+# in-memory Stream (the previous design, matching mdl_bluehive_quicktest.py) used 7.3GB
+# RSS and got OOM-killed at an 8GB ceiling before processing even started -- and that
+# was well short of a full year, let alone full history. Full-history-per-station (this
+# pipeline's actual requirement as of 2026-09-24) makes the old whole-station-at-once
+# design untenable regardless of how much memory it's given.
+#
+# PI decision (2026-09-24): day-by-day, matching the already-proven-safe design from
+# preprocess_existing_archive.py (551MB RSS regardless of history length, confirmed on
+# a real 27-year archive, because it never holds more than one day's data across all
+# channels at once) -- "compute time is expensive, this should be robust, even though
+# it means more read-write time... it is what it is." Each day is detrended/response-
+# removed/filtered/decimated/tapered on its own, then appended DIRECTLY into the
+# per-station HDF5 shard via append_channel_data() (the same gap-fill/append logic
+# logger.py already uses to merge shards into the master file -- reused, not
+# reimplemented). A day-completion checkpoint file tracks which days are already in the
+# shard, so a crash/timeout/preemption loses at most the single day in flight, not the
+# whole station -- and a resumed run skips straight to where it left off instead of
+# reprocessing from scratch.
 t0 = time.time()
-processed = []
+n_days_processed = 0
+day_errors = {}
 if result["download_ok"]:
+    h5_path = os.path.join(H5_DIR, f"{network}.{station}.h5")
+    day_state_path = h5_path + ".daystate.json"
+    done_days = set()
+    if os.path.exists(day_state_path):
+        with open(day_state_path) as f:
+            done_days = set(json.load(f))
+
+    def save_day_state():
+        tmp = day_state_path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(sorted(done_days), f)
+        os.replace(tmp, day_state_path)  # atomic -- a resumed run never sees a partial list
+
+    # Filenames are NET.STA.LOC.CHAN__STARTISO__ENDISO.mseed (MassDownloader's own
+    # naming, chunklength_in_sec=86400 in the Restrictions above means one file per
+    # channel per calendar day already) -- group by the calendar day encoded in the
+    # start timestamp so each group is exactly one day's files across all channels.
+    files_by_day = defaultdict(list)
+    for mf in mseed_files:
+        base = os.path.basename(mf)
+        parts = base.split("__")
+        if len(parts) >= 2 and len(parts[1]) >= 8:
+            files_by_day[parts[1][:8]].append(mf)
+
+    # channel_meta is just a small per-channel tally (n_samples, sampling_rate) kept in
+    # memory across the day loop -- bounded by channel count (<=6 here), not by how
+    # many days/years are processed, so it doesn't reintroduce the history-length-
+    # scaling memory problem this rewrite exists to fix.
+    channel_meta = {}
     try:
         inv = read_inventory(os.path.join(xml_dir, "*.xml")) if xml_files else None
-        combined = None
-        for mf in mseed_files:
-            st_part = read(mf)
-            combined = st_part if combined is None else combined + st_part
-        combined.merge(fill_value=0)
-        for tr in combined:
-            tr.detrend("linear")
-            tr.detrend("demean")
-            response_removed = False
-            azimuth, dip = None, None
-            if inv is not None:
-                try:
-                    tr.remove_response(inventory=inv, output="DISP", water_level=60,
-                                        pre_filt=(0.001, 0.005, 0.4, 0.5))
-                    response_removed = True
-                except Exception:
-                    pass
-                try:
-                    meta = inv.get_channel_metadata(tr.id, tr.stats.starttime)
-                    azimuth, dip = meta["azimuth"], meta["dip"]
-                except Exception:
-                    pass
-            if tr.stats.sampling_rate > 0.8:
-                tr.filter("lowpass", freq=0.4, corners=4, zerophase=True)
-            tr.filter("highpass", freq=1.0 / 3600.0, corners=4, zerophase=True)
-            if tr.stats.sampling_rate >= 2:
-                tr.decimate(factor=int(round(tr.stats.sampling_rate)), no_filter=True)
-            tr.detrend("demean")
-            tr.taper(max_percentage=0.05)
-            processed.append(dict(channel=tr.stats.channel, data=tr.data.astype(np.float32),
-                                   sampling_rate=tr.stats.sampling_rate, starttime=str(tr.stats.starttime),
-                                   response_removed=response_removed, azimuth=azimuth, dip=dip))
-        result.update(preprocess_ok=len(processed) > 0, preprocess_elapsed_s=time.time() - t0,
-                       n_processed=len(processed))
-    except Exception as e:
-        result.update(preprocess_elapsed_s=time.time() - t0, preprocess_error=f"{type(e).__name__}: {e}")
 
-# ---- package ----
-t0 = time.time()
-if result["preprocess_ok"]:
-    try:
-        h5_path = os.path.join(H5_DIR, f"{network}.{station}.h5")
-        channel_meta = {}
-        with h5py.File(h5_path, "w") as f:
-            grp = f.require_group(f"{network}.{station}")
-            grp.attrs["network"] = network
-            grp.attrs["station"] = station
-            grp.attrs["latitude"] = float(lat)
-            grp.attrs["longitude"] = float(lon)
-            if xml_files:
-                with open(xml_files[0], "rb") as xf:
-                    grp.create_dataset("_stationxml_raw", data=np.void(xf.read()))
-            for p in processed:
-                ds = grp.create_dataset(p["channel"], data=p["data"], compression="gzip", compression_opts=4)
-                ds.attrs["sampling_rate"] = p["sampling_rate"]
-                ds.attrs["start_time"] = p["starttime"]
-                ds.attrs["units"] = "m" if p.get("response_removed") else "counts"
-                if p.get("azimuth") is not None:
-                    ds.attrs["azimuth"] = p["azimuth"]
-                if p.get("dip") is not None:
-                    ds.attrs["dip"] = p["dip"]
-                # Recorded so the inspector can cross-check the master-h5 copy's length
-                # against what THIS shard actually wrote, without needing to keep the
-                # per-station shard file around after the logger merges it.
-                channel_meta[p["channel"]] = dict(n_samples=int(len(p["data"])),
-                                                    sampling_rate=p["sampling_rate"])
-        result.update(package_ok=True, package_elapsed_s=time.time() - t0,
-                       h5_size_bytes=os.path.getsize(h5_path), channel_meta=channel_meta,
+        for day_str in sorted(files_by_day):
+            if day_str in done_days:
+                continue
+            try:
+                # ---- process ONE day, entirely OUTSIDE any open HDF5 file handle ----
+                day_stream = None
+                for mf in files_by_day[day_str]:
+                    st_part = read(mf)
+                    day_stream = st_part if day_stream is None else day_stream + st_part
+                day_stream.merge(fill_value=0)  # scoped to ONE day now -- cheap, not the 7.3GB version
+
+                day_traces = []
+                for tr in day_stream:
+                    tr.detrend("linear")
+                    tr.detrend("demean")
+                    response_removed = False
+                    azimuth, dip = None, None
+                    if inv is not None:
+                        try:
+                            tr.remove_response(inventory=inv, output="DISP", water_level=60,
+                                                pre_filt=(0.001, 0.005, 0.4, 0.5))
+                            response_removed = True
+                        except Exception:
+                            pass
+                        try:
+                            meta = inv.get_channel_metadata(tr.id, tr.stats.starttime)
+                            azimuth, dip = meta["azimuth"], meta["dip"]
+                        except Exception:
+                            pass
+                    if tr.stats.sampling_rate > 0.8:
+                        tr.filter("lowpass", freq=0.4, corners=4, zerophase=True)
+                    tr.filter("highpass", freq=1.0 / 3600.0, corners=4, zerophase=True)
+                    if tr.stats.sampling_rate >= 2:
+                        tr.decimate(factor=int(round(tr.stats.sampling_rate)), no_filter=True)
+                    tr.detrend("demean")
+                    tr.taper(max_percentage=0.05)
+                    day_traces.append((tr, response_removed, azimuth, dip))
+
+                # ---- open the shard ONLY to append this one day, then close it again.
+                # HDF5 has no journal/crash-safety against a hard kill (OOM SIGKILL,
+                # scancel, node failure) mid-write -- keeping the file open across the
+                # WHOLE station's history (the original design) meant a kill at any
+                # point could corrupt the shard, defeating the point of checkpointing.
+                # Minimizing the open window to one day's worth of appends means a kill
+                # either lands cleanly between days (file valid, day_state accurate) or,
+                # worst case, corrupts only the current shard -- caught by the inspector
+                # later regardless, but far less likely than with the file open for a
+                # station's whole multi-year run. ----
+                with h5py.File(h5_path, "a") as f:
+                    grp = f.require_group(f"{network}.{station}")
+                    grp.attrs["network"] = network
+                    grp.attrs["station"] = station
+                    grp.attrs["latitude"] = float(lat)
+                    grp.attrs["longitude"] = float(lon)
+                    if xml_files and "_stationxml_raw" not in grp:
+                        with open(xml_files[0], "rb") as xf:
+                            grp.create_dataset("_stationxml_raw", data=np.void(xf.read()))
+
+                    for tr, response_removed, azimuth, dip in day_traces:
+                        channel = tr.stats.channel
+                        data = tr.data.astype(np.float32)
+                        units = "m" if response_removed else "counts"
+                        status = append_channel_data(grp, channel, data, tr.stats.sampling_rate,
+                                                      tr.stats.starttime, units, azimuth=azimuth, dip=dip)
+                        if status.startswith("REFUSED"):
+                            # A real anomaly (e.g. overlapping timestamps from a
+                            # provider) -- skip this trace, don't crash the whole day,
+                            # but don't silently pretend it succeeded either.
+                            day_errors[f"{day_str}/{channel}"] = status
+                            continue
+                        meta_entry = channel_meta.setdefault(
+                            channel, dict(n_samples=0, sampling_rate=tr.stats.sampling_rate))
+                        meta_entry["n_samples"] += len(data)
+                # File is now safely closed -- only mark the day done AFTER that, so
+                # day_state can never claim a day is in the shard when it isn't.
+                done_days.add(day_str)
+                save_day_state()  # checkpoint after EVERY day, not just at the end
+                n_days_processed += 1
+            except Exception as de:
+                # One bad day doesn't sink the whole station -- move on, keep the
+                # checkpoint where it is (this day is NOT marked done, so a
+                # resubmit will retry it), record what happened.
+                day_errors[day_str] = f"{type(de).__name__}: {de}"
+
+        result.update(preprocess_ok=n_days_processed > 0, package_ok=n_days_processed > 0,
+                       preprocess_elapsed_s=time.time() - t0, n_days_processed=n_days_processed,
+                       n_processed=len(channel_meta), channel_meta=channel_meta,
+                       h5_size_bytes=os.path.getsize(h5_path) if os.path.exists(h5_path) else 0,
                        packaged_h5_path=h5_path)
+        if day_errors:
+            result["day_errors"] = day_errors
     except Exception as e:
-        result.update(package_elapsed_s=time.time() - t0, package_error=f"{type(e).__name__}: {e}")
+        result.update(preprocess_elapsed_s=time.time() - t0, preprocess_error=f"{type(e).__name__}: {e}",
+                       n_days_processed=n_days_processed)
 
 # Raw SEED is deliberately NOT purged here -- the inspector purges it once it has
 # independently confirmed the master-h5 copy is intact (docs/ncf_pipeline_stages/
 # PROGRESS.md's discard-after-proof principle, applied per-station).
 result["raw_seed_kept_at"] = work_dir
 
-with open(result_path, "w") as f:
+# Atomic write (temp file + rename), matching the pattern already used for state files
+# elsewhere in this framework (logger.py/inspector.py's save_state) -- a plain
+# `open(...).write()` here leaves a window where `master.py progress`, run frequently by
+# more than one person now, could read a half-written file and crash on invalid JSON.
+# rename() is atomic on the same filesystem, so a reader always sees either the old
+# content or the complete new content, never a partial write.
+tmp_path = result_path + ".tmp"
+with open(tmp_path, "w") as f:
     json.dump(result, f)
+os.replace(tmp_path, result_path)
 print(json.dumps(result))

@@ -291,7 +291,8 @@ def _sbatch(argv, extra_env=None):
 def cmd_status(args):
     n_rows = len(pd.read_csv(os.path.join(args.root, "manifest", "fps_stations.csv")))
     results_dir = os.path.join(args.root, "results")
-    n_reported = len(os.listdir(results_dir)) if os.path.isdir(results_dir) else 0
+    n_reported = len([f for f in os.listdir(results_dir) if f.endswith(".json")]) \
+        if os.path.isdir(results_dir) else 0
 
     master_log = os.path.join(args.root, "master_log.csv")
     n_merged = len(pd.read_csv(master_log)) if os.path.exists(master_log) else 0
@@ -322,15 +323,29 @@ def cmd_progress(args):
     point-in-time report, call it again later to refresh."""
     n_rows = len(pd.read_csv(os.path.join(args.root, "manifest", "fps_stations.csv")))
     results_dir = os.path.join(args.root, "results")
-    result_files = [os.path.join(results_dir, f) for f in os.listdir(results_dir)] if os.path.isdir(results_dir) else []
+    # Only *.json -- orchestrator.py now writes via a temp file + atomic rename
+    # (result_path + ".tmp", then os.replace), so a genuinely complete *.json file is
+    # never visible mid-write; excluding the .tmp extension here closes the read race
+    # a naive full-directory listdir would otherwise reopen on the temp name instead.
+    result_files = sorted(f for f in os.listdir(results_dir) if f.endswith(".json")) \
+        if os.path.isdir(results_dir) else []
+    result_files = [os.path.join(results_dir, f) for f in result_files]
 
-    n_reported = len(result_files)
+    n_reported = 0
     download_bytes = 0
     packaged_bytes = 0
     n_with_data = 0
+    n_unreadable = 0
     for rf in result_files:
-        with open(rf) as f:
-            r = json.load(f)
+        try:
+            with open(rf) as f:
+                r = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            # Belt-and-suspenders: even with the atomic-write fix above, don't let one
+            # bad file crash the whole report -- count it and keep going.
+            n_unreadable += 1
+            continue
+        n_reported += 1
         download_bytes += r.get("download_bytes") or 0
         packaged_bytes += r.get("h5_size_bytes") or 0
         if r.get("package_ok"):
@@ -360,6 +375,9 @@ def cmd_progress(args):
     filled = int(bar_width * n_reported / n_rows) if n_rows else 0
     bar = "#" * filled + "-" * (bar_width - filled)
     print(f"[{bar}] {n_reported}/{n_rows} ({pct:.1f}%) orchestrator tasks reported")
+    if n_unreadable:
+        print(f"  (skipped {n_unreadable} unreadable result file(s) -- transient, ignore "
+              f"unless this count keeps growing on repeat checks)")
     print(f"  with real data     : {n_with_data}")
     print(f"  merged to master   : {n_merged}")
     print(f"  verified + purged  : {n_purged}")

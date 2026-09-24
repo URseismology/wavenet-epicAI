@@ -22,44 +22,49 @@ import numpy as np
 from obspy import UTCDateTime
 
 
-def merge_channel(master_grp, channel, src_ds):
-    """Append src_ds's data into master_grp[channel], creating it if new, refusing
-    (logging, not overwriting) on time-range overlap. Returns a short status string."""
-    data = src_ds[()]
-    sampling_rate = src_ds.attrs["sampling_rate"]
-    # accept both spellings -- earlier test runs wrote "starttime" (no underscore)
-    # before the schema doc standardized on "start_time"
-    raw_start = src_ds.attrs.get("start_time", src_ds.attrs.get("starttime"))
-    if raw_start is None:
-        return "REFUSED (no start_time/starttime attr found)"
-    start_time = UTCDateTime(raw_start)
-    units = src_ds.attrs.get("units", "unknown")
+def append_channel_data(grp, channel, data, sampling_rate, start_time, units,
+                         azimuth=None, dip=None):
+    """Core gap-fill/append logic, shared by merge_channel (below, used by logger.py to
+    merge a completed per-station shard into the master file) and orchestrator.py's
+    day-by-day checkpointing (added 2026-09-24 -- appends one calendar day's processed
+    trace directly into the per-station shard as it's produced, instead of building a
+    station's whole history in memory first; see orchestrator.py's module docstring for
+    why). Both call sites need the exact same create-or-append-with-gap-fill behavior,
+    so it lives in one place rather than two independently-maintained copies.
 
-    if channel not in master_grp:
+    `start_time` may be a UTCDateTime or anything UTCDateTime() accepts. Creates the
+    dataset if `channel` doesn't exist yet, refuses (returns a status string, doesn't
+    raise or overwrite) on a time-range overlap. Returns a short status string."""
+    start_time = UTCDateTime(start_time)
+
+    if channel not in grp:
         # Chunk size is a FIXED constant (one day at the 1Hz target rate this pipeline
         # always decimates to), never derived from the first batch's length -- a bug
         # caught during schema review (2026-09-23): deriving it from len(data) would
-        # lock in a misaligned chunk size forever if a station's first-ever merge
+        # lock in a misaligned chunk size forever if a station's first-ever write
         # happened to bring in less than a full day. HDF5 allows a chunk shape larger
         # than the initial data (it pads internally), so this is safe even for a
         # smaller-than-one-day first batch.
-        ds = master_grp.create_dataset(
+        ds = grp.create_dataset(
             channel, data=data, maxshape=(None,), chunks=(86400,),
             compression="gzip", compression_opts=4, dtype="float32",
         )
         ds.attrs["sampling_rate"] = sampling_rate
         ds.attrs["start_time"] = str(start_time)
         ds.attrs["units"] = units
+        if azimuth is not None:
+            ds.attrs["azimuth"] = azimuth
+        if dip is not None:
+            ds.attrs["dip"] = dip
         return "created"
 
-    ds = master_grp[channel]
+    ds = grp[channel]
     existing_start = UTCDateTime(ds.attrs["start_time"])
     existing_sr = ds.attrs["sampling_rate"]
     if abs(existing_sr - sampling_rate) > 1e-6:
         return f"REFUSED (sampling_rate mismatch: existing={existing_sr}, new={sampling_rate})"
 
     existing_end = existing_start + (len(ds) - 1) / existing_sr
-    new_end = start_time + (len(data) - 1) / sampling_rate
 
     if start_time <= existing_end:
         return (f"REFUSED (overlap: new data starts {start_time}, existing data runs "
@@ -71,9 +76,46 @@ def merge_channel(master_grp, channel, src_ds):
     new_len = old_len + gap_samples + len(data)
     ds.resize((new_len,))
     if gap_samples:
-        ds[old_len:old_len + gap_samples] = 0.0
+        # Filled in bounded chunks, not one `ds[a:b] = 0.0` assignment covering the
+        # whole gap -- found by direct testing (2026-09-24): a real, not hypothetical,
+        # multi-decade gap between two data-bearing spans (a station re-deployed years
+        # later is a real scenario, not just a test artifact) meant a single gap-fill
+        # of ~633 million samples, which is exactly the kind of unbounded-by-history-
+        # length memory spike this whole day-by-day rewrite exists to eliminate. Chunk
+        # size matches the dataset's own chunk size (86400 = one day at 1Hz) so this
+        # doesn't introduce a new tuning parameter.
+        GAP_FILL_CHUNK = 86400
+        pos = old_len
+        gap_end = old_len + gap_samples
+        while pos < gap_end:
+            n = min(GAP_FILL_CHUNK, gap_end - pos)
+            ds[pos:pos + n] = 0.0
+            pos += n
     ds[old_len + gap_samples:new_len] = data
+    # azimuth/dip are set once at creation -- a channel's orientation doesn't change
+    # between appends of the same channel, so there's nothing to update here.
     return f"appended ({len(data):,} samples, gap={gap_samples} samples)"
+
+
+def merge_channel(master_grp, channel, src_ds):
+    """Append src_ds's data into master_grp[channel] -- thin wrapper around
+    append_channel_data() that pulls the needed values out of a source h5py Dataset
+    (the shape logger.py has them in: a completed per-station shard's own dataset)."""
+    data = src_ds[()]
+    sampling_rate = src_ds.attrs["sampling_rate"]
+    # accept both spellings -- earlier test runs wrote "starttime" (no underscore)
+    # before the schema doc standardized on "start_time"
+    raw_start = src_ds.attrs.get("start_time", src_ds.attrs.get("starttime"))
+    if raw_start is None:
+        return "REFUSED (no start_time/starttime attr found)"
+    units = src_ds.attrs.get("units", "unknown")
+    # Previously dropped on merge into the master file (a real gap, fixed 2026-09-24
+    # alongside this refactor) -- orchestrator.py writes these per-channel, but the
+    # master file never carried them past the per-station shard until now.
+    azimuth = src_ds.attrs.get("azimuth")
+    dip = src_ds.attrs.get("dip")
+    return append_channel_data(master_grp, channel, data, sampling_rate, raw_start,
+                                units, azimuth=azimuth, dip=dip)
 
 
 def main():
