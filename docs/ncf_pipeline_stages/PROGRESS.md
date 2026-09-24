@@ -62,6 +62,77 @@ list of what's NOT yet verified.
 `[x]` = complete and reviewed, `[~]` = in progress, `[ ]` = not started, `—` = not
 applicable for that tier, `n/a` = tier doesn't apply to this stage at all.
 
+## Production framework (built + verified 2026-09-24)
+
+`src/wavenet_pipeline/00_waveform_acquisition/production/` is the real, run-at-scale
+implementation of Stages 2-4 for all 2,000 stations -- a master/orchestrator/logger/
+inspector split (PI's design, 2026-09-23), built on top of the exact verified
+download/preprocess/package logic from `rover_download/mdl_bluehive_quicktest.py`:
+
+- **`orchestrator.py`** -- one SLURM array task per station: download -> preprocess ->
+  package to a per-station HDF5 shard. Idempotent (skips a station whose result JSON
+  already shows `package_ok`), so a partial/failed range can be resubmitted safely.
+- **`logger.py`** -- single long-lived process, the only writer to the shared master
+  HDF5 ("parallel production, serial merge" -- reuses `build_master_h5.py`'s
+  `merge_channel`). Appends a row per merged station to `master_log.csv`.
+- **`inspector.py`** -- single long-lived process, independently re-verifies each merged
+  station against the master file (channel presence, length, not all-zero/NaN) and only
+  THEN purges that station's raw SEED scratch dir -- the per-station mechanism for this
+  doc's "discard only once proven solid" principle.
+- **`master.py`** -- `init`/`submit`/`status`/`progress`/`stop` CLI that renders and
+  submits the three SLURM scripts.
+
+**Verified via a real 15-station end-to-end run (2026-09-24)**: full cycle
+download -> merge -> independent verify -> purge confirmed correct (merged=5,
+verified+purged=5, matching exactly).
+
+**Real infra issues found and fixed during verification** (all confirmed by direct
+testing, not guessed):
+1. `master.py` itself runs inside an activated conda env (needs pandas); `sbatch`
+   propagates the submitting shell's environment by default, so every job it submitted
+   was double-activating `conda activate instaseis` (once inherited, once inside the
+   script) -- this reproducibly broke `pkg_resources`'s vendored `packaging` submodule
+   resolution (`ImportError: cannot import name '_manylinux'` at `from obspy import
+   ...`), 5 separate trials, regardless of jitter/retries/a concurrency throttle/
+   precompiled bytecode. Fixed with `sbatch --export=NONE`.
+2. Two live `logger`/`inspector` processes against the same root race on their own
+   in-memory state and can double-process a station (found via a leftover job from an
+   earlier failed test that was never `scancel`'d). Fixed with a PID lock
+   (`lockutil.py`) -- a second instance now refuses to start instead of racing.
+3. `inspector.py`'s exit condition originally only checked "the orchestrator finished
+   and everything CURRENTLY in the ledger is handled" -- which can be true before the
+   logger has actually merged the last successful station, causing an early exit that
+   left a fully-successful station unverified/unpurged. Fixed to also require the
+   ledger row count to match the actual success count from `results/`.
+
+**This cluster requires `--qos` to match `-p` 1:1 by partition name** (`sbatch -p
+standard` alone fails "Invalid qos specification"; `-p standard --qos=standard`
+succeeds) -- confirmed directly, and a single sbatch call can't mix partitions with
+different implied QOS. So "use every partition, not just `urseismo`" (PI, 2026-09-23) is
+implemented as **splitting the array across separate sbatch submissions, one per
+partition with its own matching `--qos`** (`master.py submit`'s default:
+`urseismo,standard,preempt,debug,interactive` -- confirmed working across all five in
+the same verification run, including a `standard`-partition chunk that was transparently
+preempted and requeued mid-run, which orchestrator.py's idempotency handled with no
+manual intervention).
+
+**Storage**: every path used by this framework lives under `/scratch/tolugboj_lab`,
+never `$HOME` -- confirmed via `circ-quota` that `$HOME` is already at 14.4/20 GB soft
+limit from pre-existing personal package installs (`~/.local` 5.5GB, `~/.cache` 2.4GB,
+neither created by this framework), real headroom to protect. `MPLCONFIGDIR`/
+`XDG_CACHE_HOME` are redirected to the run's own `{root}/.cache/` in every SLURM
+template as an extra guard against incidental cache writes landing in `$HOME`.
+
+**Progress tracking**: `master.py progress --root ROOT` prints a text progress bar
+(orchestrator tasks reported / manifest total), GB downloaded and packaged so far, and
+-- once called at least twice -- a rate (stations/hr, GB/hr) and ETA to completion,
+computed from a snapshot log it appends to on each call.
+
+**Not yet run at full 2,000-station scale** -- the 15-station run above is the
+verification step; scaling up is the next action (`master.py init` with no
+`--n-stations` + `submit`), still gated on the same "final band/duration decision"
+already flagged as an open PI call earlier in this doc.
+
 **Fixed decision, do not revisit without explicit PI approval**: the 2,000-station set
 in `metadata3/fps_stations.csv` (farthest-point-sampled for even global coverage) is
 **not to be changed** by any later stage. Only connection *length* (distance band) and
