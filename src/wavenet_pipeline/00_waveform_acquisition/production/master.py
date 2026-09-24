@@ -104,6 +104,28 @@ PARTITION_WEIGHT = {
     "debug": 10,
 }
 
+# Two-tier strategy (PI, 2026-09-24), replacing a single size-sorted split. Rationale:
+# this network is farthest-point-sampled, so a station's GEOGRAPHIC footprint value is
+# already fully captured the moment it has any reasonable data -- decades more history
+# at an already-covered location deepens time coverage, not spatial diversity. A pure
+# size-sorted split (biggest stations first, on the longest-walltime partition) was
+# backwards for "maximize global footprint fast": it tied up urseismo on exactly the
+# ~40 stations that matter least for footprint speed. Confirmed by direct investigation
+# (2026-09-24, debug partition) that these same ~40 stations are also genuinely
+# expensive -- modern instrumentation records at far higher native rates than a
+# decades-old station's early years, so recent-year data dominates their real cost.
+#
+# So: split into a FAST tier (~1,950+ stations) that gets ALL footprint-building
+# capacity (standard/preempt/interactive, sorted smallest-first for fastest coverage
+# growth), and a SLOW tier (the real multi-decade outliers) that runs exclusively and
+# independently on urseismo -- not sequenced after the fast tier (they take so long
+# regardless that delaying their start has no benefit), just kept off the fast tier's
+# capacity and off the shared/contended partitions where a multi-day job risks more
+# preemption cycles.
+OUTLIER_TOTAL_DAYS_THRESHOLD = 8000  # matches the real cutoff found in station_summary.csv (2026-09-23): only 43 of 1984 stations with a known range exceed this
+OUTLIER_PARTITION = "urseismo"
+FAST_TIER_PARTITIONS_DEFAULT = "standard,preempt,interactive"
+
 # Confirmed via `scontrol show config` (2026-09-24): sbatch rejects a job array whose
 # highest index is >= this, independent of how many tasks are actually in the array.
 MAX_ARRAY_INDEX = 1001
@@ -120,29 +142,31 @@ def cmd_init(args):
         # computed against the full 2,000 rows would be nonsense for a small test slice.
         manifest = manifest.iloc[: args.n_stations].reset_index(drop=True)
 
-    # Sort largest-history-first (station_summary.csv's total_days, from the Stage 1 key
-    # index scan) so cmd_submit's partition chunking naturally pairs the biggest, slowest
-    # stations with the longest-walltime partitions instead of a random mix landing on
-    # whichever partition happens to run out of walltime first. Stations missing from the
-    # summary (shouldn't happen for the locked 2,000-network, but not assumed) sort last,
-    # not first -- unknown size is treated as small, not as "biggest, needs urseismo."
+    # Two-tier split (see the constants block above for the full rationale): fast tier
+    # (footprint-building majority, sorted SMALLEST-first) gets standard/preempt/
+    # interactive; the real multi-decade outliers get their own chunk, exclusively on
+    # urseismo. Stations missing from the summary sort into the fast tier (unknown size
+    # treated as small, not as "outlier, needs urseismo").
     summary_path = args.station_summary or STATION_SUMMARY_DEFAULT
-    chunk_bounds = None  # list of (partition, lo, hi) index ranges, computed below if possible
+    chunk_bounds = None  # list of (partition, lo, hi, est_work) index ranges, computed below if possible
     if os.path.exists(summary_path) and not args.no_size_sort:
         summary = pd.read_csv(summary_path)[["network", "station", "total_days"]]
         manifest = manifest.merge(summary, on=["network", "station"], how="left")
         manifest["total_days"] = manifest["total_days"].fillna(0)
-        manifest = manifest.sort_values("total_days", ascending=False).reset_index(drop=True)
-        print(f"[master] sorted manifest by history length (largest first) using {summary_path}")
 
-        # Work-balance chunk boundaries across ORCHESTRATOR_PARTITIONS_DEFAULT instead of
-        # an equal station-COUNT split. Found by direct modeling (2026-09-24): an
-        # equal-count split puts ~78% of total estimated work in the first (largest-
-        # history) quarter alone -- the other 3 partitions would finish in a few days and
-        # then sit idle while that one chunk still has over a week left. Cost proxy here
-        # mirrors the same rough model used for the campaign-level time estimate
-        # (download ~1MB/s/connection + ~8s/channel-day preprocessing, 3 channels avg) --
-        # not exact, but directionally correct, which is all a boundary cut needs.
+        is_outlier = manifest["total_days"] > OUTLIER_TOTAL_DAYS_THRESHOLD
+        fast = manifest[~is_outlier].sort_values("total_days", ascending=True)
+        outliers = manifest[is_outlier].sort_values("total_days", ascending=True)
+        manifest = pd.concat([fast, outliers], ignore_index=True)
+        n_fast = len(fast)
+        print(f"[master] two-tier split: {n_fast} fast-tier stations (smallest-first, "
+              f"footprint priority) + {len(outliers)} outlier stations "
+              f"(>{OUTLIER_TOTAL_DAYS_THRESHOLD} real days, urseismo-only) "
+              f"using {summary_path}")
+
+        # Cost proxy mirrors the campaign-level time estimate (download ~1MB/s/
+        # connection + ~8s/channel-day preprocessing, 3 channels avg) -- not exact, but
+        # directionally correct, which is all a boundary cut needs.
         DL_RATE_MBps, CHANNELS_AVG, PREP_S_PER_CHDAY = 1.0, 3.0, 8.0
         summary_bytes = pd.read_csv(summary_path)[["network", "station", "total_bytes"]]
         m2 = manifest.merge(summary_bytes, on=["network", "station"], how="left")
@@ -150,33 +174,39 @@ def cmd_init(args):
         work_days = (m2["total_bytes"] / 1e6 / DL_RATE_MBps
                      + manifest["total_days"] * CHANNELS_AVG * PREP_S_PER_CHDAY) / 86400
 
-        partitions = (args.orchestrator_partitions or ORCHESTRATOR_PARTITIONS_DEFAULT).split(",")
-        weights = [PARTITION_WEIGHT.get(p, 10) for p in partitions]
+        # Fast tier: work-balance idx[0 .. n_fast-1] across the fast-tier partitions.
+        fast_partitions = (args.orchestrator_partitions or FAST_TIER_PARTITIONS_DEFAULT).split(",")
+        weights = [PARTITION_WEIGHT.get(p, 10) for p in fast_partitions]
         total_weight = sum(weights)
-        total_work = work_days.sum()
+        fast_work = work_days.iloc[:n_fast]
+        total_work = fast_work.sum()
         targets = [total_work * w / total_weight for w in weights]
 
         chunk_bounds = []
         lo = 0
-        cum = 0.0
-        n_rows_now = len(manifest)
-        for i, (partition, target) in enumerate(zip(partitions, targets)):
-            if lo >= n_rows_now:
+        for i, (partition, target) in enumerate(zip(fast_partitions, targets)):
+            if lo >= n_fast:
                 break
-            if i == len(partitions) - 1:
-                hi = n_rows_now - 1  # last partition takes whatever remains -- no rounding gap
+            if i == len(fast_partitions) - 1:
+                hi = n_fast - 1  # last fast-tier partition takes whatever remains -- no rounding gap
             else:
                 hi = lo
                 acc = 0.0
-                while hi < n_rows_now and acc < target:
+                while hi < n_fast and acc < target:
                     acc += work_days.iloc[hi]
                     hi += 1
                 hi -= 1
-                hi = max(hi, lo)  # always give every listed partition at least 1 station if any remain
+                hi = max(hi, lo)
             chunk_work = work_days.iloc[lo:hi + 1].sum()
             chunk_bounds.append((partition, lo, hi, round(chunk_work, 1)))
             lo = hi + 1
-        print("[master] work-balanced chunk boundaries: " +
+
+        # Outlier tier: one chunk, all on urseismo, regardless of --orchestrator-partitions.
+        if len(outliers):
+            outlier_work = round(work_days.iloc[n_fast:].sum(), 1)
+            chunk_bounds.append((OUTLIER_PARTITION, n_fast, len(manifest) - 1, outlier_work))
+
+        print("[master] chunk boundaries: " +
               ", ".join(f"{p}=idx[{lo}-{hi}]({w}CPU-days)" for p, lo, hi, w in chunk_bounds))
 
         manifest = manifest.drop(columns=["total_days"])
@@ -186,6 +216,44 @@ def cmd_init(args):
     manifest_out = os.path.join(args.root, "manifest", "fps_stations.csv")
     manifest.to_csv(manifest_out, index=False)
     print(f"[master] wrote {len(manifest)}-row manifest to {manifest_out}")
+
+    # Carry forward already-completed stations from a prior run (e.g. the canary) so
+    # they're not redownloaded/reprocessed -- PI (2026-09-24). Writes a results/*.json
+    # for each manifest row whose (network, station) has a package_ok=True result in
+    # the source root, under this run's NEW idx (idx changes under the two-tier
+    # resort), so orchestrator.py's existing idempotency check just naturally skips it.
+    # packaged_h5/, master/, master_log.csv etc. are untouched here -- they're keyed by
+    # network.station, not idx, so nothing needs to move for those to already be correct.
+    if args.carry_forward_from:
+        src_results_dir = os.path.join(args.carry_forward_from, "results")
+        completed = {}
+        for fn in os.listdir(src_results_dir) if os.path.isdir(src_results_dir) else []:
+            if not fn.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(src_results_dir, fn)) as f:
+                    r = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+            if r.get("package_ok"):
+                completed[(r.get("network"), r.get("station"))] = r
+
+        results_dir = os.path.join(args.root, "results")
+        n_carried = 0
+        for new_idx, row in manifest.iterrows():
+            key = (row["network"], row["station"])
+            if key in completed:
+                r = dict(completed[key])
+                r["idx"] = int(new_idx)
+                r["carried_forward_from"] = args.carry_forward_from
+                out_path = os.path.join(results_dir, f"{new_idx:04d}_{row['network']}_{row['station']}.json")
+                tmp = out_path + ".tmp"
+                with open(tmp, "w") as f:
+                    json.dump(r, f)
+                os.replace(tmp, out_path)
+                n_carried += 1
+        print(f"[master] carried forward {n_carried} already-completed station(s) from "
+              f"{args.carry_forward_from} -- these will be skipped, not redownloaded")
 
     stop_path = os.path.join(args.root, "state", "STOP")
     if os.path.exists(stop_path):
@@ -565,13 +633,19 @@ def main():
     p.add_argument("--manifest", default=None, help="defaults to metadata3/fps_stations.csv")
     p.add_argument("--n-stations", type=int, default=None, help="first N rows only (sanity-check runs)")
     p.add_argument("--orchestrator-partitions", default=None,
-                    help=f"comma list, array is SPLIT across these (default: {ORCHESTRATOR_PARTITIONS_DEFAULT})")
+                    help=f"comma list for the FAST TIER (default: {FAST_TIER_PARTITIONS_DEFAULT}; "
+                         f"outliers always go to {OUTLIER_PARTITION} regardless of this flag; "
+                         f"falls back to {ORCHESTRATOR_PARTITIONS_DEFAULT} if --no-size-sort)")
     p.add_argument("--service-partition", default=None,
                     help=f"single partition for logger/inspector (default: {SERVICE_PARTITION_DEFAULT})")
     p.add_argument("--station-summary", default=None,
                     help="defaults to metadata3/key_index_summary/station_summary.csv (for size-sort)")
     p.add_argument("--no-size-sort", action="store_true",
-                    help="skip sorting by history length (default sorts largest-first)")
+                    help="skip the two-tier size sort entirely (equal-count split across all partitions)")
+    p.add_argument("--carry-forward-from", default=None,
+                    help="an earlier run's ROOT (e.g. a canary) -- its already-completed "
+                         "stations are marked done here too, under their new idx, so they "
+                         "are not redownloaded/reprocessed")
     p.set_defaults(func=cmd_init)
 
     p = sub.add_parser("submit", help="sbatch the orchestrator array (split across partitions) + logger + inspector")
