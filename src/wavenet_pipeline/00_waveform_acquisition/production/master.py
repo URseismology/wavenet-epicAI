@@ -34,6 +34,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FPS_STATIONS_DEFAULT = os.path.join(HERE, "..", "metadata3", "fps_stations.csv")
 STATION_SUMMARY_DEFAULT = os.path.join(HERE, "..", "metadata3", "key_index_summary", "station_summary.csv")
 
+
+def format_eta(hr):
+    """Render an ETA in whichever unit keeps the number in a readable 1-24/1-7/1-4/1-12
+    range (hours/days/weeks/months), falling back to years beyond a year -- PI request:
+    a raw hours figure for a multi-week estimate (e.g. "412.3 hr") is technically
+    correct but not something anyone can size up at a glance."""
+    if hr < 24:
+        return f"{hr:.1f} hr"
+    days = hr / 24
+    if days < 7:
+        return f"{days:.1f} days"
+    weeks = days / 7
+    if weeks < 4:
+        return f"{weeks:.1f} weeks"
+    months = days / 30.44  # average month length -- fine for an estimate, not a calendar
+    if months < 12:
+        return f"{months:.1f} months"
+    return f"{months / 12:.1f} years"
+
 # All partitions confirmed available to the tolugboj_lab account (sacctmgr, 2026-09-23),
 # restricted to ones actually useful for this CPU/IO-bound, low-memory workload (skips
 # gpu/gpu-debug/gpu-interactive/phi/highmem/visual/fastx/spec-nodes/reserved -- no benefit
@@ -440,7 +459,7 @@ def cmd_progress(args):
         if rate_days_per_hr > 0 and total_expected_days:
             remaining_days = total_expected_days - n_days_checkpointed
             eta_hr = remaining_days / rate_days_per_hr
-            print(f"  rate: {rate_days_per_hr:.0f} days/hr -> ETA ~{eta_hr:.1f} hr "
+            print(f"  rate: {rate_days_per_hr:.0f} days/hr -> ETA ~{format_eta(eta_hr)} "
                   f"({dt/60:.0f} min since last check)")
         else:
             print(f"  rate: no new days checkpointed in the last {dt/60:.0f} min -- can't estimate yet")
