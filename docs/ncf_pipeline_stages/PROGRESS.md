@@ -223,6 +223,26 @@ give a clean read.
 (the 60-station canary is the current verification step for the combined fix set).
 `master.py init` (no `--n-stations`) + `submit` once the canary confirms clean.
 
+**Real per-station cost is heavily back-loaded toward recent years, confirmed by direct
+investigation (2026-09-24, debug partition)**: `G.SSB` (the single largest station,
+44-year real span) was still in its download phase after 3+ hours with zero checkpoints
+-- worrying at first (this is the exact station that caused the original OOM), but a
+real hang was ruled out directly: files were still accumulating steadily (15,640 files
+over 4h33m real wall-clock, genuine progress). Isolated single-year download tests (one
+each for 1990, 2005, 2020, run in parallel on `debug`) found the actual mechanism:
+average file size grows sharply across eras -- ~150 KB/file (1990) vs. ~1.5 MB/file
+(2005) vs. ~2.1 MB/file (2020), a ~14x difference. Modern broadband instrumentation
+records at much higher native sample rates than the equipment a decades-old station
+started with, and this pipeline downloads raw (undecimated) data before packaging -- so
+a long-running station's most recent years cost far more download time than its early
+years, independent of calendar-day count. Not a bug: real data volume, mechanistically
+understood, not a hang or a hidden inefficiency. Implication for full-scale timing: the
+~40 multi-decade outlier stations (mostly landing in `urseismo`'s work-balanced chunk)
+will be more back-loaded/expensive than the current CPU-day model assumes, since that
+model treats bytes/day as roughly uniform per station -- a real, not yet quantified,
+upward revision to the full-campaign time estimate once more of these stations progress
+further into their recent-year (expensive) data.
+
 **`master.py progress` understated real progress by ~3x, fixed with a scale-aware
 design worth remembering**: "packaged so far" only summed completed stations' result
 JSONs, missing all in-progress stations' substantial checkpointed data (confirmed
