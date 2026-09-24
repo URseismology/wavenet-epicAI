@@ -315,6 +315,42 @@ Rule (mirrors `docs/ml_pipeline_stages/PROGRESS.md`): whoever completes a stage/
 update updates two things in the same commit — the cell here, and that stage's Hardware
 Tier Log row in the detailed doc.
 
-Last updated: 2026-09-24 (production framework built, verified, and hardened against
-three real full-scale bugs this session; 60-station canary re-running now with all
-fixes applied).
+## Full 2,000-station production launch (2026-09-24)
+
+**Two-tier deployment strategy (PI-directed)**: rather than running all 2,000 stations as
+one work-balanced split, `master.py init` now separates stations into a **fast tier**
+(1,957 stations, `total_days <= 8000`, sorted smallest-first for fastest global-footprint
+growth) and an **outlier tier** (43 stations, `total_days > 8000` — the same real cutoff
+already visible in `station_summary.csv`), which runs **in parallel with**, not after, the
+fast tier, exclusively on `urseismo`. Rationale: the ~40 genuinely multi-decade stations
+are valuable but slow regardless of scheduling order (see the recent-years-cost-more
+finding above) and only add incremental footprint/path-density per station, so sequencing
+them after the fast tier would gain nothing and only delay them further.
+
+**Carry-forward**: `master.py init --carry-forward-from <canary root>` migrates already-
+`package_ok=True` canary results into the freshly re-initialized manifest under each
+station's new idx (idx changes on re-sort) — the existing idempotency check in
+`orchestrator.py` (skip if `prior.get("package_ok")`) then naturally recognizes and skips
+them. No data files move: `packaged_h5/*.h5` and `*.daystate.json` are keyed by
+`network.station`, not idx. 10 canary completions carried forward cleanly into the full
+run.
+
+**New bug found and fixed: `MaxArraySize` chunk-splitting.** The two-tier split produces a
+much larger per-partition fast-tier chunk than the old single-tier split did (only 3
+fast-tier partitions now share 1,957 stations, vs. 4 partitions sharing all 2,000 before).
+The `standard` partition's chunk (idx 0-1775, size 1,776) exceeded Bluehive's
+`MaxArraySize=1001` and failed with `sbatch: error: ... Invalid job array specification`.
+The existing rebase-by-offset fix (from the earlier single-tier bug) only handled a chunk
+that *starts* at a high index — it didn't handle a chunk that's simply too big, since
+`offset = lo` is a no-op when `lo=0`. Fixed properly this time: `cmd_submit` now splits any
+chunk whose size exceeds `MAX_ARRAY_INDEX` into multiple independent sub-array `sbatch`
+calls (same partition/qos/walltime), each rebased to `0-(sub_size-1)` with its own true
+starting row passed via `WAVENET_IDX_OFFSET`. Verified live: `standard`'s chunk correctly
+split into two sub-arrays (idx 0-1000 and 1001-1775, jobs `31372579`/`31372580`), and the
+full 2,000-station run is confirmed queued/running on Bluehive (`squeue`) across all 5
+partition chunks plus logger/inspector on `urseismo`.
+
+Last updated: 2026-09-24 (full 2,000-station production run launched: two-tier
+fast/outlier split, canary carry-forward, and a new MaxArraySize chunk-splitting bug found
+and fixed along the way — all verified live via `squeue`, not just assumed from a clean
+`sbatch` exit).
