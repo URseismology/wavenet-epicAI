@@ -204,109 +204,133 @@ once this was decided: **78.9 TB total**, spanning from a few dozen days up to *
 years** for the longest-running stations (median far smaller — most of that volume and
 time sits in a long tail of ~40 outlier stations).
 
-A production framework now exists to actually run this at scale — master/orchestrator/
-logger/inspector, `src/wavenet_pipeline/00_waveform_acquisition/production/`, full
-detail in `docs/ncf_pipeline_stages/PROGRESS.md`'s "Production framework" section:
-  - `orchestrator.py` — one SLURM array task per station (download -> preprocess ->
-    package), idempotent so a resubmit doesn't redo finished work
-  - `logger.py` — the single process that merges finished stations into the shared
-    master HDF5
-  - `inspector.py` — independently re-verifies each merge, only THEN deletes the raw
-    SEED for that station
-  - `master.py` — `init`/`submit`/`status`/`progress`/`stop` CLI, splits the array
-    across `urseismo`/`standard`/`preempt`/`interactive` by estimated WORK (not station
-    count — the biggest ~11% of stations carry ~78% of total cost, so an equal split
-    would leave three partitions idle for days while one was still grinding)
+I built a production framework to actually run this at scale — a master/orchestrator/
+logger/inspector split, living at
+`src/wavenet_pipeline/00_waveform_acquisition/production/` on the `add-september-ncf-pipeline`
+branch. I won't make you read code to understand it: one SLURM job per station downloads
+and packages it, one process merges finished stations into a shared file, one process
+double-checks each merge and only then deletes the raw download, and one script drives
+all of that. Full design detail is in `docs/ncf_pipeline_stages/PROGRESS.md` if you ever
+want it, but you don't need it for what I'm asking below.
 
-Real infra bugs found and fixed while building this (all in PROGRESS.md if you want the
-detail): a conda double-activation race that broke `pkg_resources` under `sbatch`, a
-duplicate-processing race from an orphaned test job, an inspector exit-condition bug,
-and a SLURM `MaxArraySize` limit that rejected two of four partition chunks outright.
-All fixed and verified on a real 15-station end-to-end run before touching the full
-2,000.
+While I was building this I hit and fixed four real infrastructure bugs (a conda
+environment conflict, a race condition between two copies of the same monitoring
+process, an early-exit bug, and a SLURM job-numbering limit). I verified all of that on
+a small 15-station test before I ever touched the full 2,000. I'm telling you this so
+you understand the framework itself was solid before today — what went wrong next was
+a different kind of problem entirely, and it's exactly why I want you involved now.
 
 WHAT HAPPENED AT FULL SCALE (the part that matters for you)
 
-I launched all 2,000 stations today. At ~800 stations reported, **zero** had
-successfully packaged. Digging in: ObsPy's MassDownloader has a real internal bug —
-querying IRIS's "availability" endpoint over a many-decade span sometimes crashes
-outright (`TypeError: sequence item 0: expected str instance, tuple found`, ~28% of
-completions) and sometimes gets silently swallowed and reported as "IRIS has no data"
-(the rest) — meaning a real chunk of that 0% wasn't stations genuinely lacking data,
-it was us silently losing IRIS-hosted data without any error at all. I've cancelled the
-run and am testing a fix (splitting each station's request into yearly sub-windows,
-which every prior test already proves is safe — the bug only shows up on very wide
-single requests).
+I launched all 2,000 stations today. After about 800 of them finished, I checked the
+progress and found that zero — not some, zero — had actually succeeded. I dug in and
+found the real cause: ObsPy (the Python library our whole pipeline is built on) has a
+bug in it. When I ask it for a station's full history spanning many decades, it
+sometimes crashes outright, and sometimes it fails silently and just tells us "no data
+here" when the station actually has plenty of data. I proved this myself by re-running
+two of the broken stations by hand after my fix — both came back with real, correct
+data. I've since fixed it (I now ask for the data one year at a time instead of all 56
+years in one request) and I have a small 60-station test batch running right now to
+confirm the fix holds before I trust it with the full 2,000 again.
 
-Why this matters beyond "we found a bug": every test I ran before today's full-history
-switch used a 1-week window (see the "OBSPY / BLUEHIVE" numbers above) — none of that
-testing could have exposed a bug that only triggers on multi-decade spans. What I DID
-check before launching — watching one station start downloading correctly — proved the
-mechanism worked, not that it worked at scale across many real stations and providers.
-That gap is the actual lesson: a live production rollout needs someone watching
-*aggregate* behavior (success rates, error patterns) while it runs, not just a
-pre-launch spot check. That's a distinct job from building the pipeline, and it's one
-I was doing badly single-handedly, because I was heads-down on the fix, not the watch.
+Here's the part I want you to sit with: every test I ran before today used a narrow
+one-week window, so none of my testing could have ever hit a bug that only shows up on
+a multi-decade request. What I checked right before launching — watching one station
+start downloading correctly — told me the mechanism worked. It did not tell me it would
+keep working across hundreds of different real stations and data providers. That's the
+actual gap: I was watching for "does it crash," not "does the SUCCESS RATE across many
+stations look right," and those are genuinely different checks. I was doing both jobs
+myself — building the pipeline and watching it run — and I did the second one badly
+because my attention was on the first one. That's not a one-person problem to keep
+having. It's why I want you on this.
 
-YOUR ROLE, GOING FORWARD: PRODUCTION TESTER, NOT JUST A ONE-OFF VERIFIER
+YOUR ROLE FROM HERE: YOU ARE THE SECOND SET OF EYES ON EVERY LIVE RUN
 
-This builds on what you're already doing (Tasks 1/2), formalized as an ongoing role,
-using standard software-testing practice rather than ad hoc checking:
+I'm not asking you to do busywork. If you'd been watching the numbers this morning the
+way I'm about to ask you to, I believe you would have caught "zero successes out of
+800" faster than I did, because you wouldn't have been distracted trying to fix
+anything — you'd just have been watching the number. That is a real, distinct,
+necessary job on a project this size, and starting now, it's yours. Here is exactly
+what I want you to do, step by step, with the exact commands to run — I'm not going to
+make you guess at anything.
 
-  1. SMOKE TEST (before I hand you a run to watch) — I'll always confirm a run starts
-     without immediate crashes before you get involved; that's on me, not a new ask.
+1. CHECK PROGRESS ON A LIVE RUN. This is the single most important thing you'll do.
+   Log into Bluehive the way you normally do, then run this one line exactly as written
+   (it activates the right Python environment and prints a live status report):
 
-  2. LIVE MONITORING DURING ROLLOUT (this is the new, important one) — while a
-     production run is active, periodically run
-       `python3 .../production/master.py progress --root <ROOT>`
-     and watch for anything outside expected range, not just "did it crash":
-       - success rate ("with real data" / "orchestrator tasks reported") dropping to
-         near-zero or swinging wildly is a red flag on its own, independent of any
-         error message — that's exactly the signal that would have caught today's bug
-         hours earlier than I did
-       - error messages repeating identically across many different stations (like
-         today's TypeError) means an infrastructure/code bug, not per-station data
-         absence — worth flagging immediately, not batching into a later report
-       - `squeue` showing a partition's tasks stuck PENDING far longer than expected,
-         or a partition's tasks all finishing suspiciously fast (usually means they're
-         all failing fast, not succeeding fast)
+   source /scratch/tolugboj_lab/softwares/anaconda/anaconda3/2021.05/etc/profile.d/conda.sh && conda activate instaseis && python3 /scratch/tolugboj_lab/wavenet_ncf_framework/production/master.py progress --root /scratch/tolugboj_lab/wavenet_ncf_canary
 
-  3. DATA QUALITY SPOT-CHECKS (extends what Task 1 already has you doing) — once a run
-     is producing real merged stations, periodically pull a small random sample from
-     the growing master HDF5 and sanity-check it the way you'll already know how to
-     from Task 1: non-empty, no all-zero/NaN channels, plausible amplitude range,
-     `units` attr matches what you'd expect. This is sampling-based QA, not a full
-     re-verification of every station — the inspector already does an automated version
-     of this per-station; your spot checks are the independent human check on top of it.
+   (That path — `wavenet_ncf_canary` — is the 60-station test batch running right now.
+   Once I scale up to the real full run, I'll give you the new path — it'll be the same
+   command with a different `--root` at the end.)
 
-  4. STRUCTURED BUG REPORTS — when something looks wrong, capture it so it's actionable
-     without back-and-forth: which station(s) (network.station, or the idx from
-     results/*.json), the exact error text if there is one, roughly how many other
-     stations show the same pattern, and what you were running when you saw it. "Several
-     stations near idx 500-600 are all failing with the same TypeError" is immediately
-     useful; "downloads look broken" isn't.
+   That command prints a progress bar, how much data has downloaded and packaged, and a
+   line that says "with real data: N". Here's what I need you watching for:
+     - If "with real data" is 0, or stays suspiciously low while "orchestrator tasks
+       reported" keeps climbing, that is exactly the red flag I missed this morning.
+       Don't wait for me to notice — message me right away.
+     - Run that same command again a few hours later. If the numbers haven't moved at
+       all, something is stuck.
 
-  5. CANARY BEFORE FULL SCALE — for the relaunch (and any future one): once my
-     year-chunking fix is verified on the specific stations that broke today, I'm going
-     to relaunch a small canary batch first (a few dozen stations spread across all four
-     partitions, including some of the multi-decade ones that triggered today's bug) and
-     let it run for a defined window before scaling to the rest — not jump straight back
-     to all 2,000. I'd like you watching that canary window specifically: confirm the
-     success rate looks sane and no repeated error pattern shows up before I scale
-     further. This is standard practice for any risky rollout (canary/phased release) —
-     we're applying it here because today is the second time this project has learned
-     that lesson the expensive way.
+2. IF SOMETHING LOOKS WRONG, LOOK AT THE ACTUAL ERRORS. Run this one line to check
+   whether the same error is repeating across many different stations (a repeating
+   identical error means a real bug, not just one unlucky station):
+
+   grep -l "Error" /scratch/tolugboj_lab/wavenet_ncf_canary/logs/*.err | wc -l
+
+   That tells you how many log files mention an error. If you want to actually read a
+   few of them, run:
+
+   for f in $(ls /scratch/tolugboj_lab/wavenet_ncf_canary/results/ | head -5); do echo "--- $f ---"; cat /scratch/tolugboj_lab/wavenet_ncf_canary/results/$f; echo; done
+
+   That prints the first 5 completed stations' results, plain and readable. Don't worry
+   about the exact fields — just read it like a sentence. If you see the same
+   error-message text showing up in more than one of them, that's the pattern to report.
+
+3. CHECK THE SLURM QUEUE ITSELF. This one line shows you what's actually running:
+
+   squeue -A tolugboj_lab -o '%.12i %.20j %.10P %.8T %.10M'
+
+   Look for anything stuck in "PENDING" for a very long time, or a batch of tasks that
+   all finish within seconds of each other — that second one usually means they're all
+   failing fast, not succeeding fast.
+
+4. ONCE THE RUN IS FAR ENOUGH ALONG TO HAVE REAL PACKAGED STATIONS, SPOT-CHECK A FEW OF
+   THEM. This is the same kind of check you're already doing for Task 1 above, just
+   applied to whatever the live run has produced instead of a fixed reference file. I'll
+   walk you through the exact load-and-check commands once there's real merged data to
+   look at — for now, steps 1-3 above are what I need.
+
+5. WHEN YOU REPORT BACK TO ME, TELL ME THIS: which station(s) you were looking at
+   (network and station code, e.g. "II.NNA"), the exact error text if there was one, and
+   roughly how many other stations showed the same thing. "Stations around idx 500-600
+   are all failing with the same error text" is something I can act on immediately.
+   "Some downloads look broken" is not — I'll just have to ask you the same follow-up
+   questions I'm asking myself right now. And just as important: "I checked at 2pm and
+   3pm, numbers look healthy, no repeating errors" is a completely valid, useful report.
+   Silence is the only wrong answer.
+
+I want to be direct about why I'm asking you to do this rather than just doing it
+myself: this is real, necessary work on a project that's now moving real data at real
+scale, and today is proof that it needs a second person doing it, not one person doing
+everything. You're not checking my homework as a formality — you're the check that was
+missing this morning, and it would have saved us real time and real compute if it had
+been in place. Own this the same way you've owned Tasks 1 and 2: if my numbers are
+right, tell me so plainly. If something looks wrong, say so plainly and immediately,
+even if you're not sure it's really a problem. I would much rather you flag ten things
+that turn out fine than stay quiet about the one that doesn't.
 
 WHAT I NEED FROM YOU NOW
 
-  □ Read this section and PROGRESS.md's "Production framework" section so the pieces
-    (orchestrator/logger/inspector/master) aren't a black box to you.
-  □ When I relaunch the canary batch (I'll ping the team), run `master.py progress`
-    against it every hour or so for the first few hours and report what you see —
-    including "looks fine, success rate matches expectations" as a valid report, same
-    as Task 1/2 above.
-  □ Keep Tasks 1 and 2 above on your plate too — this doesn't replace them, it's the
-    same kind of independent-verification instinct applied to a live system instead of
-    a one-off check.
+  □ Read this section once, twice if you need to — there's no code to read first, just
+    run the commands above.
+  □ Starting today, run the progress command in step 1 against the canary batch
+    (`/scratch/tolugboj_lab/wavenet_ncf_canary`) every hour or two and tell me what you
+    see, good or bad.
+  □ Once I scale up to the real 2,000-station run (I'll message the team when I do), I
+    want you doing the same thing against that run, for the first several hours at
+    minimum, the same way.
+  □ Keep Tasks 1 and 2 from earlier in this memo on your plate too — this is in
+    addition to those, not instead of them.
 
 — Tolu
