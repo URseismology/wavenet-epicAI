@@ -19,9 +19,11 @@ small sanity-check root and the eventual full-2000 production root):
 
 Download window (PI, 2026-09-24): full available history for every station, not a
 connectivity-gated subset -- "the goal is to get all the data." DOWNLOAD_START/END below
-span the full plausible modern seismic-archive era; MassDownloader only fetches what
-actually exists per station within that window, so this needs no per-station lookup
-against the key index. Channel selection (BH?/LH?) is unchanged from verification.
+are the outer bound (the full plausible modern seismic-archive era); the actual
+per-station year LOOP is bounded to that station's own real deployment span from the
+key index (station_summary.csv), not the full 1970-2026 range for every station --
+see "download" section below for why this was a real, not theoretical, fix. Channel
+selection (BH?/LH?) is unchanged from verification.
 """
 import os
 import sys
@@ -69,6 +71,30 @@ manifest = pd.read_csv(STATIONS_CSV)
 sta = manifest.iloc[idx]
 network, station, lat, lon = sta["network"], sta["station"], sta["lat"], sta["lon"]
 
+# Per-station year bound, not the full 1970-2026 range for every station. Found by
+# direct evidence, not guessing (2026-09-24, real canary run): a full 56-year loop for
+# EVERY station regardless of actual deployment span means a station that really only
+# ever recorded 1-2 years still pays 56 rounds of multi-provider availability
+# negotiation -- the real observed download rate on the canary run was ~40x slower
+# than earlier assumed, and the average real station year-span in the key index is only
+# 5.55 years (station_summary.csv, 1984 stations with a valid range) vs the 56-year
+# loop every station was actually running -- a ~10x average overhead multiplier, worse
+# for short-deployment stations (all but 2 of 1984 span under 50 years). A missing
+# summary entry (shouldn't happen for the locked 2,000-network, but not assumed) falls
+# back to the full DOWNLOAD_START/END range rather than skipping the station.
+STATION_SUMMARY_PATH = os.path.join(os.path.dirname(__file__), "..", "metadata3",
+                                     "key_index_summary", "station_summary.csv")
+station_year_start, station_year_end = None, None
+if os.path.exists(STATION_SUMMARY_PATH):
+    summary = pd.read_csv(STATION_SUMMARY_PATH)
+    match = summary[(summary["network"] == network) & (summary["station"] == station)]
+    if len(match) and pd.notna(match.iloc[0].get("year_min")) and pd.notna(match.iloc[0].get("year_max")):
+        # +/-1 year margin -- the key index's year boundaries come from an S3 prefix
+        # scan, not a guaranteed-exact deployment date, so a one-year buffer avoids
+        # clipping a station whose first/last real byte lands right at a year edge.
+        station_year_start = int(match.iloc[0]["year_min"]) - 1
+        station_year_end = int(match.iloc[0]["year_max"]) + 1
+
 result_path = os.path.join(RESULT_DIR, f"{idx:04d}_{network}_{station}.json")
 
 # Idempotent resume: a prior run that already packaged this station successfully is not
@@ -110,7 +136,9 @@ try:
     domain = RectangularDomain(minlatitude=lat - 0.5, maxlatitude=lat + 0.5,
                                 minlongitude=lon - 0.5, maxlongitude=lon + 0.5)
     mdl = MassDownloader()  # one client-discovery pass reused across all years below
-    for year in range(DOWNLOAD_START.year, DOWNLOAD_END.year + 1):
+    loop_year_start = station_year_start if station_year_start is not None else DOWNLOAD_START.year
+    loop_year_end = station_year_end if station_year_end is not None else DOWNLOAD_END.year
+    for year in range(loop_year_start, loop_year_end + 1):
         year_start = max(DOWNLOAD_START, UTCDateTime(year, 1, 1))
         year_end = min(DOWNLOAD_END, UTCDateTime(year, 12, 31, 23, 59, 59))
         if year_start > year_end:
@@ -133,7 +161,8 @@ try:
     xml_files = [os.path.join(xml_dir, f) for f in os.listdir(xml_dir)]
     download_bytes = sum(os.path.getsize(f) for f in mseed_files)
     result.update(download_ok=len(mseed_files) > 0, download_bytes=download_bytes,
-                   download_elapsed_s=time.time() - t0, n_channels=len(mseed_files))
+                   download_elapsed_s=time.time() - t0, n_channels=len(mseed_files),
+                   download_year_range=[loop_year_start, loop_year_end])
     if year_errors:
         result["year_errors"] = year_errors
 except Exception as e:

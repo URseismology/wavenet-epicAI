@@ -318,26 +318,30 @@ def cmd_submit(args):
         chunk_size = hi - lo + 1
         if chunk_size <= 0:
             continue
-        # SLURM's MaxArraySize (1001, confirmed 2026-09-24) caps the max array INDEX, not
-        # the task count -- a chunk starting at or spanning past that can't be submitted
-        # with its raw global indices ("Invalid job array specification"). Rebase to
-        # 0-(chunk_size-1) and pass the true starting row via WAVENET_IDX_OFFSET
-        # (orchestrator.py adds it back); chunks already under the cap get offset=0 and
-        # are otherwise unaffected.
-        offset = lo if hi >= MAX_ARRAY_INDEX else 0
-        array_lo, array_hi = (0, hi - lo) if offset else (lo, hi)
-        array_spec = f"{array_lo}-{array_hi}"
-        if args.array_limit:
-            array_spec += f"%{min(args.array_limit, chunk_size)}"
         walltime = PARTITION_WALLTIME.get(partition, "0-00:30:00")
-        job_id = _sbatch(["--array", array_spec, "-p", partition, "--qos", partition,
-                           "-t", walltime, os.path.join(args.root, "orchestrator.slurm")],
-                          extra_env={"WAVENET_IDX_OFFSET": str(offset)} if offset else None)
-        orch_ids.append(job_id)
         work_note = f", ~{est_work} CPU-days est." if est_work is not None else ""
-        offset_note = f", rebased with offset={offset}" if offset else ""
-        print(f"[master] orchestrator chunk on '{partition}' (walltime={walltime}): idx {lo}-{hi} "
-              f"({chunk_size} tasks, limit={args.array_limit}{work_note}{offset_note}) -> job {job_id}")
+        # SLURM's MaxArraySize (1001, confirmed 2026-09-24) caps the max array INDEX,
+        # not the task count -- a chunk that's simply too BIG (the two-tier fast-tier
+        # chunks can be 1000+ stations, found by direct testing 2026-09-24) or that
+        # STARTS at a high index (the older single-tier chunks' problem) both produce
+        # "Invalid job array specification" the same way. Fix covers both: split into
+        # sub-chunks of at most MAX_ARRAY_INDEX rows, each rebased to 0-(size-1) with
+        # its true starting row passed via WAVENET_IDX_OFFSET (orchestrator.py adds it
+        # back).
+        sub_lo = lo
+        while sub_lo <= hi:
+            sub_hi = min(sub_lo + MAX_ARRAY_INDEX - 1, hi)
+            sub_size = sub_hi - sub_lo + 1
+            array_spec = f"0-{sub_hi - sub_lo}"
+            if args.array_limit:
+                array_spec += f"%{min(args.array_limit, sub_size)}"
+            job_id = _sbatch(["--array", array_spec, "-p", partition, "--qos", partition,
+                               "-t", walltime, os.path.join(args.root, "orchestrator.slurm")],
+                              extra_env={"WAVENET_IDX_OFFSET": str(sub_lo)})
+            orch_ids.append(job_id)
+            print(f"[master] orchestrator chunk on '{partition}' (walltime={walltime}): idx {sub_lo}-{sub_hi} "
+                  f"({sub_size} tasks, limit={args.array_limit}{work_note}, offset={sub_lo}) -> job {job_id}")
+            sub_lo = sub_hi + 1
     print(f"[master] orchestrator fully submitted across {len(orch_ids)} partitions: {orch_ids}")
 
     if not args.no_logger:
