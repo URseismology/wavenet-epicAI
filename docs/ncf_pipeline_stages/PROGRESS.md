@@ -223,6 +223,22 @@ give a clean read.
 (the 60-station canary is the current verification step for the combined fix set).
 `master.py init` (no `--n-stations`) + `submit` once the canary confirms clean.
 
+**`master.py progress` understated real progress by ~3x, fixed with a scale-aware
+design worth remembering**: "packaged so far" only summed completed stations' result
+JSONs, missing all in-progress stations' substantial checkpointed data (confirmed
+directly: real on-disk packaged total was 34GB when the report said 10.94GB, because
+big stations like `II.HOPE` at 8.7GB weren't done yet). Fixed to scan `packaged_h5/`
+live -- safe because that directory is bounded at one `.h5` + one `.daystate.json` per
+station (<=2,000 files regardless of run size). Deliberately did **not** extend the
+same live-scan treatment to downloaded-bytes (`scratch_work/`, raw SEED): a single
+station's raw files can already number 10,000+, so at full scale that directory could
+hold millions of files, and walking it on every check would risk real load on the
+shared filesystem metadata server this session already saw misbehave under concurrent
+pressure. General principle for any future addition to this framework's monitoring:
+before adding a live-disk-scan metric, check whether the thing being scanned is bounded
+by *station count* (safe) or by *data volume/history length* (not safe at 2,000-station
+scale) -- `packaged_h5/` is the former, `scratch_work/` is the latter.
+
 **Fixed decision, do not revisit without explicit PI approval**: the 2,000-station set
 in `metadata3/fps_stations.csv` (farthest-point-sampled for even global coverage) is
 **not to be changed** by any later stage. Only connection *length* (distance band) and
