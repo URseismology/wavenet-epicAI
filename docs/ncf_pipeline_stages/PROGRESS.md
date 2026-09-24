@@ -350,7 +350,46 @@ split into two sub-arrays (idx 0-1000 and 1001-1775, jobs `31372579`/`31372580`)
 full 2,000-station run is confirmed queued/running on Bluehive (`squeue`) across all 5
 partition chunks plus logger/inspector on `urseismo`.
 
+## Inspector silently never verified/purged anything (found + fixed 2026-09-24, hours into the full launch)
+
+Caught by the PI noticing `verified+purged` staying at 0 in `master.py progress` while
+`with data`/`merged` climbed normally — **not** visible from `squeue`/`sacct` alone, which
+reported the inspector job as a clean `COMPLETED, exit 0`.
+
+**Root cause**: `inspector.py` opens the single shared master HDF5 (`verify_station()`,
+read mode) with no retry, but `logger.py` (the sole writer) briefly holds that exact same
+file open during every station merge. Any inspector poll landing in that window hit
+`BlockingIOError: unable to lock file` — a real, recurring race between two independent
+30s-polling processes touching the same file, not a one-off. That exception propagated
+all the way out of `main()` and killed the whole long-running service outright.
+
+**Why `sacct` didn't catch it**: `inspector.slurm`'s retry wrapper (borrowed from
+`orchestrator.slurm`, built for an unrelated transient shared-env import race at process
+startup) retried the whole process 4 times, then simply reached the end of the script with
+no explicit exit code — so SLURM reported `COMPLETED, exit 0` even though inspector never
+verified a single station in ~2 minutes of real wall-clock time. A real lesson: a
+"succeeded" SLURM state is not the same as "did its job" for a script that swallows
+failures in a retry loop — always cross-check against the thing the service is actually
+supposed to produce (here, `verified+purged` in `master.py progress`), not just job state.
+
+**Fix**: new `lockutil.open_h5_retry()` retries an `h5py.File` open a few times with
+backoff on `BlockingIOError`/`OSError`, used by both `inspector.py`'s `verify_station()`
+(the reader) and `logger.py`'s own master-file open (the writer, for symmetric
+protection against the same race from the other direction). `inspector.py`'s main loop
+also now catches any residual per-station failure and retries it on the next poll cycle
+instead of crashing the entire service over one station. Separately, the
+orchestrator/logger/inspector SLURM templates now `exit 1` after a genuinely exhausted
+retry loop instead of silently falling through to exit 0, so a real unrecoverable failure
+is visible as `FAILED` in `sacct` going forward, not indistinguishable from success.
+
+**Verified, not just patched and hoped**: a standalone lock-contention test (one process
+holds a write-lock for 4s, another calls `open_h5_retry` for read) confirmed the retry
+recovers once the writer releases the file. Resubmitted inspector directly against the
+live production run (without touching the already-running orchestrator array or logger)
+and confirmed `verified+purged` climbing for real (0 -> 26+ within about a minute) via
+`master.py progress`.
+
 Last updated: 2026-09-24 (full 2,000-station production run launched: two-tier
-fast/outlier split, canary carry-forward, and a new MaxArraySize chunk-splitting bug found
-and fixed along the way — all verified live via `squeue`, not just assumed from a clean
-`sbatch` exit).
+fast/outlier split, canary carry-forward, a MaxArraySize chunk-splitting bug, and an
+inspector HDF5-lock-race bug — all found and fixed the same session, each verified live
+against the real running deployment rather than assumed from a clean exit/job state).
