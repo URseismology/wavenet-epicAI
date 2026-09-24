@@ -17,11 +17,11 @@ small sanity-check root and the eventual full-2000 production root):
     WAVENET_PROD_ROOT     scratch root, e.g. /scratch/tolugboj_lab/wavenet_ncf_production
     WAVENET_STATIONS_CSV  path to the station manifest (defaults to ROOT/manifest/fps_stations.csv)
 
-Download window / channel selection are still the same placeholders used throughout
-verification (1 week, 2018-01-01 to 2018-01-08, BH?/LH?) -- the "final band/duration
-decision" is explicitly an open PI call (docs/ncf_pipeline_stages/PROGRESS.md), not
-something to resolve here. Change DOWNLOAD_START/DOWNLOAD_END in ONE place below once
-that decision lands; nothing else in this framework depends on the specific dates.
+Download window (PI, 2026-09-24): full available history for every station, not a
+connectivity-gated subset -- "the goal is to get all the data." DOWNLOAD_START/END below
+span the full plausible modern seismic-archive era; MassDownloader only fetches what
+actually exists per station within that window, so this needs no per-station lookup
+against the key index. Channel selection (BH?/LH?) is unchanged from verification.
 """
 import os
 import sys
@@ -38,10 +38,14 @@ from obspy.clients.fdsn.mass_downloader import Restrictions, MassDownloader, Rec
 ROOT = os.environ["WAVENET_PROD_ROOT"]
 STATIONS_CSV = os.environ.get("WAVENET_STATIONS_CSV", os.path.join(ROOT, "manifest", "fps_stations.csv"))
 
-# Placeholder pending PI's final band/duration decision (PROGRESS.md) -- same window
-# already verified correct end-to-end, not yet the production-scale choice.
-DOWNLOAD_START = UTCDateTime(2018, 1, 1)
-DOWNLOAD_END = UTCDateTime(2018, 1, 8)
+# Full available history (PI, 2026-09-24) -- 1970 predates any station in the real key
+# index (earliest confirmed start 1982, station_summary.csv), so this is a safe lower
+# bound, not a guess. Upper bound is capped to the END of yesterday, not the literal
+# current instant (PI, 2026-09-24) -- avoids requesting a partial "today" that most
+# providers haven't finished ingesting/replicating yet, which would just come back empty
+# or truncated rather than actually getting today's data.
+DOWNLOAD_START = UTCDateTime(1970, 1, 1)
+DOWNLOAD_END = UTCDateTime(UTCDateTime.now().date) - 1  # midnight today, minus 1s -> end of yesterday
 
 # Discard raw SEED after packaging is NOT done here -- that's the inspector's job, gated
 # on verifying the merged master-h5 copy is good (docs/ncf_pipeline_stages/PROGRESS.md's
@@ -52,7 +56,12 @@ H5_DIR = os.path.join(ROOT, "packaged_h5")
 os.makedirs(RESULT_DIR, exist_ok=True)
 os.makedirs(H5_DIR, exist_ok=True)
 
-idx = int(sys.argv[1])
+# SLURM's MaxArraySize (1001, confirmed 2026-09-24) caps the max array INDEX, not the
+# task count -- a chunk whose global manifest rows start above that (e.g. idx 1131-1999)
+# can't be submitted directly as $SLURM_ARRAY_TASK_ID. master.py works around this by
+# submitting such chunks REBASED to 0-(chunk_size-1) and passing the true starting row
+# via WAVENET_IDX_OFFSET; chunks that already fit under the cap just get offset=0.
+idx = int(sys.argv[1]) + int(os.environ.get("WAVENET_IDX_OFFSET", 0))
 manifest = pd.read_csv(STATIONS_CSV)
 sta = manifest.iloc[idx]
 network, station, lat, lon = sta["network"], sta["station"], sta["lat"], sta["lon"]

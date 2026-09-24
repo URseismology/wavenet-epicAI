@@ -32,13 +32,12 @@ import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FPS_STATIONS_DEFAULT = os.path.join(HERE, "..", "metadata3", "fps_stations.csv")
+STATION_SUMMARY_DEFAULT = os.path.join(HERE, "..", "metadata3", "key_index_summary", "station_summary.csv")
 
 # All partitions confirmed available to the tolugboj_lab account (sacctmgr, 2026-09-23),
 # restricted to ones actually useful for this CPU/IO-bound, low-memory workload (skips
 # gpu/gpu-debug/gpu-interactive/phi/highmem/visual/fastx/spec-nodes/reserved -- no benefit
 # to this task, and no point competing for GPU-holding nodes another job might need).
-# `debug` has only a 1h walltime cap, which is fine for orchestrator's ~30min tasks but
-# too short for logger/inspector's long-lived polling loops -- so it's orchestrator-only.
 #
 # IMPORTANT (confirmed by direct testing, 2026-09-24): this cluster requires `--qos` to
 # match `-p` 1:1 by name (`sbatch -p standard` alone fails with "Invalid qos
@@ -47,8 +46,48 @@ FPS_STATIONS_DEFAULT = os.path.join(HERE, "..", "metadata3", "fps_stations.csv")
 # means SPLITTING the array across several separate sbatch submissions (one per
 # partition, each with its own matching --qos), not one `-p a,b,c` call -- see
 # cmd_submit's per-partition chunking.
-ORCHESTRATOR_PARTITIONS_DEFAULT = "urseismo,standard,preempt,debug,interactive"
+#
+# `debug` (1h cap) is EXCLUDED by default now that the download window is full station
+# history (PI, 2026-09-24), not a 1-week placeholder -- a real per-station estimate from
+# the key index (station_summary.csv: avg 1,385 station-days, worst case 15,050) puts
+# even a "typical" station's combined download+preprocess time well past 1h, so debug
+# would just fail almost everything on timeout. Still selectable via --orchestrator-
+# partitions for short/test runs against a narrow date range.
+ORCHESTRATOR_PARTITIONS_DEFAULT = "urseismo,standard,preempt,interactive"
 SERVICE_PARTITION_DEFAULT = "urseismo"
+
+# Safe walltime per partition, kept under each one's own TIMELIMIT (sinfo, 2026-09-23:
+# urseismo 15-00:00:00, standard 5-00:00:00, preempt 2-00:00:00, interactive 12:00:00).
+# Manifest rows are sorted by history length (largest first, see cmd_init) and chunked in
+# that order across ORCHESTRATOR_PARTITIONS_DEFAULT, so the partition listed first should
+# be the one with the most walltime headroom -- pairs the biggest, slowest stations with
+# the longest-running partition on purpose, not by accident of dict ordering.
+PARTITION_WALLTIME = {
+    "urseismo": "9-00:00:00",
+    "standard": "4-00:00:00",
+    "preempt": "1-12:00:00",
+    "interactive": "0-11:00:00",
+    "debug": "0-00:55:00",
+}
+
+# Relative concurrency assumption per partition, used only to WORK-BALANCE chunk
+# boundaries (see cmd_init) -- urseismo's 120 cores are dedicated (sinfo, 2026-09-23:
+# 5 nodes, confirmed no contention at 96-way concurrency this session); standard/preempt/
+# interactive are shared with other lab users (directly observed: 6+ concurrent jobs from
+# another user on standard/preempt during this session) so their realistic SUSTAINED
+# concurrency for us is well under their raw node counts -- these are working estimates,
+# not measured, and can be corrected once a real run's actual throughput is observed.
+PARTITION_WEIGHT = {
+    "urseismo": 120,
+    "standard": 70,
+    "preempt": 35,
+    "interactive": 15,
+    "debug": 10,
+}
+
+# Confirmed via `scontrol show config` (2026-09-24): sbatch rejects a job array whose
+# highest index is >= this, independent of how many tasks are actually in the array.
+MAX_ARRAY_INDEX = 1001
 
 
 def cmd_init(args):
@@ -58,7 +97,73 @@ def cmd_init(args):
 
     manifest = pd.read_csv(args.manifest or FPS_STATIONS_DEFAULT)
     if args.n_stations:
-        manifest = manifest.iloc[: args.n_stations]
+        # Truncate BEFORE size-sort/chunk-boundary computation, not after -- boundaries
+        # computed against the full 2,000 rows would be nonsense for a small test slice.
+        manifest = manifest.iloc[: args.n_stations].reset_index(drop=True)
+
+    # Sort largest-history-first (station_summary.csv's total_days, from the Stage 1 key
+    # index scan) so cmd_submit's partition chunking naturally pairs the biggest, slowest
+    # stations with the longest-walltime partitions instead of a random mix landing on
+    # whichever partition happens to run out of walltime first. Stations missing from the
+    # summary (shouldn't happen for the locked 2,000-network, but not assumed) sort last,
+    # not first -- unknown size is treated as small, not as "biggest, needs urseismo."
+    summary_path = args.station_summary or STATION_SUMMARY_DEFAULT
+    chunk_bounds = None  # list of (partition, lo, hi) index ranges, computed below if possible
+    if os.path.exists(summary_path) and not args.no_size_sort:
+        summary = pd.read_csv(summary_path)[["network", "station", "total_days"]]
+        manifest = manifest.merge(summary, on=["network", "station"], how="left")
+        manifest["total_days"] = manifest["total_days"].fillna(0)
+        manifest = manifest.sort_values("total_days", ascending=False).reset_index(drop=True)
+        print(f"[master] sorted manifest by history length (largest first) using {summary_path}")
+
+        # Work-balance chunk boundaries across ORCHESTRATOR_PARTITIONS_DEFAULT instead of
+        # an equal station-COUNT split. Found by direct modeling (2026-09-24): an
+        # equal-count split puts ~78% of total estimated work in the first (largest-
+        # history) quarter alone -- the other 3 partitions would finish in a few days and
+        # then sit idle while that one chunk still has over a week left. Cost proxy here
+        # mirrors the same rough model used for the campaign-level time estimate
+        # (download ~1MB/s/connection + ~8s/channel-day preprocessing, 3 channels avg) --
+        # not exact, but directionally correct, which is all a boundary cut needs.
+        DL_RATE_MBps, CHANNELS_AVG, PREP_S_PER_CHDAY = 1.0, 3.0, 8.0
+        summary_bytes = pd.read_csv(summary_path)[["network", "station", "total_bytes"]]
+        m2 = manifest.merge(summary_bytes, on=["network", "station"], how="left")
+        m2["total_bytes"] = m2["total_bytes"].fillna(0)
+        work_days = (m2["total_bytes"] / 1e6 / DL_RATE_MBps
+                     + manifest["total_days"] * CHANNELS_AVG * PREP_S_PER_CHDAY) / 86400
+
+        partitions = (args.orchestrator_partitions or ORCHESTRATOR_PARTITIONS_DEFAULT).split(",")
+        weights = [PARTITION_WEIGHT.get(p, 10) for p in partitions]
+        total_weight = sum(weights)
+        total_work = work_days.sum()
+        targets = [total_work * w / total_weight for w in weights]
+
+        chunk_bounds = []
+        lo = 0
+        cum = 0.0
+        n_rows_now = len(manifest)
+        for i, (partition, target) in enumerate(zip(partitions, targets)):
+            if lo >= n_rows_now:
+                break
+            if i == len(partitions) - 1:
+                hi = n_rows_now - 1  # last partition takes whatever remains -- no rounding gap
+            else:
+                hi = lo
+                acc = 0.0
+                while hi < n_rows_now and acc < target:
+                    acc += work_days.iloc[hi]
+                    hi += 1
+                hi -= 1
+                hi = max(hi, lo)  # always give every listed partition at least 1 station if any remain
+            chunk_work = work_days.iloc[lo:hi + 1].sum()
+            chunk_bounds.append((partition, lo, hi, round(chunk_work, 1)))
+            lo = hi + 1
+        print("[master] work-balanced chunk boundaries: " +
+              ", ".join(f"{p}=idx[{lo}-{hi}]({w}CPU-days)" for p, lo, hi, w in chunk_bounds))
+
+        manifest = manifest.drop(columns=["total_days"])
+    else:
+        print(f"[master] no size-sort applied (summary not found or --no-size-sort)")
+
     manifest_out = os.path.join(args.root, "manifest", "fps_stations.csv")
     manifest.to_csv(manifest_out, index=False)
     print(f"[master] wrote {len(manifest)}-row manifest to {manifest_out}")
@@ -81,6 +186,10 @@ def cmd_init(args):
         json.dump(dict(
             orchestrator_partitions=args.orchestrator_partitions or ORCHESTRATOR_PARTITIONS_DEFAULT,
             service_partition=args.service_partition or SERVICE_PARTITION_DEFAULT,
+            # [partition, lo, hi, estimated_cpu_days] per chunk, work-balanced (see
+            # above) -- None if size-sort was skipped, in which case cmd_submit falls
+            # back to a plain equal-count split.
+            chunk_bounds=chunk_bounds,
         ), f)
 
 
@@ -89,32 +198,59 @@ def cmd_submit(args):
 
     defaults_path = os.path.join(args.root, "state", "partition_defaults.json")
     defaults = json.load(open(defaults_path)) if os.path.exists(defaults_path) else {}
-    orch_partitions = (args.orchestrator_partitions or defaults.get("orchestrator_partitions")
-                       or ORCHESTRATOR_PARTITIONS_DEFAULT).split(",")
     service_partition = args.service_partition or defaults.get("service_partition") or SERVICE_PARTITION_DEFAULT
 
-    # Split the station range into one contiguous chunk per partition (remainder rows go
-    # to the first chunks) -- each chunk is its own sbatch call with -p/--qos matched by
-    # name (see ORCHESTRATOR_PARTITIONS_DEFAULT's comment for why: this cluster rejects a
-    # single `-p a,b,c` list with "Invalid qos specification").
-    n_parts = len(orch_partitions)
-    base, extra = divmod(n_rows, n_parts)
-    lo = 0
+    # Prefer the work-balanced boundaries computed at `init` time (see cmd_init) -- only
+    # valid if the partition list wasn't overridden here, since the boundaries were
+    # computed against a specific partition/weight set. An override falls back to a
+    # plain equal-count split rather than silently using stale boundaries.
+    chunk_bounds = defaults.get("chunk_bounds") if not args.orchestrator_partitions else None
+    if chunk_bounds:
+        print("[master] using work-balanced chunk boundaries from init")
+    else:
+        orch_partitions = (args.orchestrator_partitions or defaults.get("orchestrator_partitions")
+                           or ORCHESTRATOR_PARTITIONS_DEFAULT).split(",")
+        n_parts = len(orch_partitions)
+        base, extra = divmod(n_rows, n_parts)
+        lo = 0
+        chunk_bounds = []
+        for i, partition in enumerate(orch_partitions):
+            chunk_size = base + (1 if i < extra else 0)
+            if chunk_size == 0:
+                continue
+            hi = lo + chunk_size - 1
+            chunk_bounds.append((partition, lo, hi, None))
+            lo = hi + 1
+        print("[master] no work-balanced boundaries available -- using a plain equal-count split")
+
+    # Each chunk is its own sbatch call with -p/--qos matched by name (see
+    # ORCHESTRATOR_PARTITIONS_DEFAULT's comment for why: this cluster rejects a single
+    # `-p a,b,c` list with "Invalid qos specification").
     orch_ids = []
-    for i, partition in enumerate(orch_partitions):
-        chunk_size = base + (1 if i < extra else 0)
-        if chunk_size == 0:
+    for partition, lo, hi, est_work in chunk_bounds:
+        chunk_size = hi - lo + 1
+        if chunk_size <= 0:
             continue
-        hi = lo + chunk_size - 1
-        array_spec = f"{lo}-{hi}"
+        # SLURM's MaxArraySize (1001, confirmed 2026-09-24) caps the max array INDEX, not
+        # the task count -- a chunk starting at or spanning past that can't be submitted
+        # with its raw global indices ("Invalid job array specification"). Rebase to
+        # 0-(chunk_size-1) and pass the true starting row via WAVENET_IDX_OFFSET
+        # (orchestrator.py adds it back); chunks already under the cap get offset=0 and
+        # are otherwise unaffected.
+        offset = lo if hi >= MAX_ARRAY_INDEX else 0
+        array_lo, array_hi = (0, hi - lo) if offset else (lo, hi)
+        array_spec = f"{array_lo}-{array_hi}"
         if args.array_limit:
             array_spec += f"%{min(args.array_limit, chunk_size)}"
+        walltime = PARTITION_WALLTIME.get(partition, "0-00:30:00")
         job_id = _sbatch(["--array", array_spec, "-p", partition, "--qos", partition,
-                           os.path.join(args.root, "orchestrator.slurm")])
+                           "-t", walltime, os.path.join(args.root, "orchestrator.slurm")],
+                          extra_env={"WAVENET_IDX_OFFSET": str(offset)} if offset else None)
         orch_ids.append(job_id)
-        print(f"[master] orchestrator chunk on '{partition}': idx {lo}-{hi} "
-              f"({chunk_size} tasks, limit={args.array_limit}) -> job {job_id}")
-        lo = hi + 1
+        work_note = f", ~{est_work} CPU-days est." if est_work is not None else ""
+        offset_note = f", rebased with offset={offset}" if offset else ""
+        print(f"[master] orchestrator chunk on '{partition}' (walltime={walltime}): idx {lo}-{hi} "
+              f"({chunk_size} tasks, limit={args.array_limit}{work_note}{offset_note}) -> job {job_id}")
     print(f"[master] orchestrator fully submitted across {len(orch_ids)} partitions: {orch_ids}")
 
     if not args.no_logger:
@@ -127,7 +263,7 @@ def cmd_submit(args):
         print(f"[master] inspector submitted on '{service_partition}': {inspector_id}")
 
 
-def _sbatch(argv):
+def _sbatch(argv, extra_env=None):
     # --export=NONE: found by direct testing (2026-09-23) to be load-bearing, not
     # cosmetic. master.py itself runs inside an activated `instaseis` conda env (it needs
     # pandas); sbatch's default is to propagate the SUBMITTING shell's environment into
@@ -141,7 +277,13 @@ def _sbatch(argv):
     # plain (non-activated) shell -- including this exact same orchestrator.slurm run
     # standalone -- succeeded every time. --export=NONE gives the batch job a clean
     # environment so its own `source conda.sh && conda activate` is the only activation.
-    out = subprocess.run(["sbatch", "--export=NONE"] + argv, capture_output=True, text=True, check=True)
+    # extra_env rides along on the same flag (`--export=NONE,VAR=value`, valid SLURM
+    # syntax) rather than a separate flag, so it doesn't reopen the environment-inheritance
+    # hole this was fixed for.
+    export_arg = "--export=NONE"
+    if extra_env:
+        export_arg += "," + ",".join(f"{k}={v}" for k, v in extra_env.items())
+    out = subprocess.run(["sbatch", export_arg] + argv, capture_output=True, text=True, check=True)
     # sbatch prints "Submitted batch job <id>"
     return out.stdout.strip().split()[-1]
 
@@ -256,8 +398,8 @@ ORCHESTRATOR_SLURM = """#!/bin/bash
 #SBATCH -t 00:30:00
 #SBATCH --mem-per-cpu=2G
 #SBATCH -n 1
-#SBATCH -o {root}/logs/orchestrator_%a.out
-#SBATCH -e {root}/logs/orchestrator_%a.err
+#SBATCH -o {root}/logs/orchestrator_%A_%a.out
+#SBATCH -e {root}/logs/orchestrator_%A_%a.err
 
 # Every path here is under /scratch/tolugboj_lab -- never $HOME (real storage-quota
 # constraint: tolugboj's $HOME already carries ~8GB of pre-existing personal package
@@ -343,6 +485,10 @@ def main():
                     help=f"comma list, array is SPLIT across these (default: {ORCHESTRATOR_PARTITIONS_DEFAULT})")
     p.add_argument("--service-partition", default=None,
                     help=f"single partition for logger/inspector (default: {SERVICE_PARTITION_DEFAULT})")
+    p.add_argument("--station-summary", default=None,
+                    help="defaults to metadata3/key_index_summary/station_summary.csv (for size-sort)")
+    p.add_argument("--no-size-sort", action="store_true",
+                    help="skip sorting by history length (default sorts largest-first)")
     p.set_defaults(func=cmd_init)
 
     p = sub.add_parser("submit", help="sbatch the orchestrator array (split across partitions) + logger + inspector")
