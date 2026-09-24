@@ -317,18 +317,15 @@ def cmd_status(args):
 
 def cmd_progress(args):
     """Progress bar + throughput/ETA for a full deployment. Rate is computed from a
-    snapshot log (state/progress_snapshots.jsonl) this command appends to on every call
-    -- so the first call of a session has no rate/ETA yet (nothing to compare against),
-    and accuracy improves the more often it's checked. Not a running daemon: this is a
+    snapshot log (state/progress_snapshots.jsonl) this command appends to on every call,
+    so the first call of a session has no rate/ETA yet. Not a running daemon: this is a
     point-in-time report, call it again later to refresh.
 
-    Packaged bytes and days-checkpointed are LIVE (include still-running stations, not
-    just fully-finished ones) -- found by direct testing (2026-09-24) that counting only
-    finished stations understated real on-disk progress by ~3x while big stations were
-    still mid-run. Downloaded bytes deliberately stays completed-stations-only: raw SEED
-    scratch_work/ can hold 10,000+ files per station, so a live scan there doesn't have
-    packaged_h5/'s nice "one bounded-cost file per station" property and isn't safe to
-    do on every check at full 2,000-station scale -- see the printed note."""
+    Packaged bytes and days-checkpointed are true live totals (scanning packaged_h5/ is
+    safe at any scale -- bounded by station count, not data volume; see PROGRESS.md).
+    Downloaded bytes is an ESTIMATE (avg bytes/day from finished stations x live days
+    checkpointed) rather than a live disk scan, since raw scratch_work/ can hold
+    10,000+ files per station -- not safe to walk on every check at full scale."""
     n_rows = len(pd.read_csv(os.path.join(args.root, "manifest", "fps_stations.csv")))
     results_dir = os.path.join(args.root, "results")
     # Only *.json -- orchestrator.py now writes via a temp file + atomic rename
@@ -340,11 +337,12 @@ def cmd_progress(args):
     result_files = [os.path.join(results_dir, f) for f in result_files]
 
     n_reported = 0
-    download_bytes = 0  # completed stations only -- see the live packaged-bytes note below for why
-    completed_packaged_bytes = 0
     n_with_data = 0
     n_unreadable = 0
     completed_stations = set()
+    completed_packaged_bytes = 0
+    finished_download_bytes = 0   # sum over finished stations, used only to derive an avg $/day
+    finished_days_processed = 0   # ditto
     for rf in result_files:
         try:
             with open(rf) as f:
@@ -355,28 +353,18 @@ def cmd_progress(args):
             n_unreadable += 1
             continue
         n_reported += 1
-        download_bytes += r.get("download_bytes") or 0
         completed_packaged_bytes += r.get("h5_size_bytes") or 0
         if r.get("package_ok"):
             n_with_data += 1
             completed_stations.add((r.get("network"), r.get("station")))
+            finished_download_bytes += r.get("download_bytes") or 0
+            finished_days_processed += r.get("n_days_processed") or 0
 
-    # LIVE packaged bytes + days-checkpointed, not just completed stations. Deliberately
-    # NOT done the same way for download_bytes (raw scratch_work/) -- found by direct
-    # testing this session that a single big station's raw SEED can already be 10,000+
-    # individual small files; at full 2,000-station scale that directory could hold
-    # millions of files, and walking it on every progress check (however it's done --
-    # listdir+stat, `du`, anything that has to touch every inode) would put real load on
-    # the same shared filesystem metadata server this session already saw misbehave
-    # under concurrent pressure (the conda-import flakiness, the SLURM controller
-    # timeouts). packaged_h5/ has no such problem: it's exactly one file (plus one small
-    # .daystate.json) per station, so its size is bounded by STATION COUNT (<=2,000),
-    # never by how much data ends up inside each file -- a live stat-only scan there
-    # costs a fixed, small number of syscalls regardless of run size. Reading the
-    # .daystate.json CONTENTS (not just their size) to count real days does cost
-    # proportional to total JSON text, but that total is bounded too (~2.77M real
-    # station-days network-wide at full completion, ~11 bytes/entry -- well under 50MB
-    # of text even at the very end of a full 2,000-station run).
+    # Packaged bytes + days-checkpointed are TRUE live totals (not just finished
+    # stations) -- safe because packaged_h5/ is bounded by station count (<=2,000 files,
+    # one shard + one small .daystate.json each), never by data volume. See
+    # PROGRESS.md for why this is NOT done the same way for raw scratch_work/ (could be
+    # millions of files at full scale -- not safe to live-scan on every check).
     packaged_bytes = completed_packaged_bytes
     n_days_checkpointed = 0
     packaged_h5_dir = os.path.join(args.root, "packaged_h5")
@@ -396,6 +384,23 @@ def cmd_progress(args):
                 except (json.JSONDecodeError, OSError):
                     pass
 
+    # Downloaded bytes: ESTIMATED from live days-checkpointed x an avg bytes/day ratio
+    # measured from finished stations (your suggestion) -- avoids scanning
+    # scratch_work/ at all, so it's both live-feeling AND safe at full scale.
+    avg_bytes_per_day = (finished_download_bytes / finished_days_processed
+                         ) if finished_days_processed else None
+    est_download_bytes = avg_bytes_per_day * n_days_checkpointed if avg_bytes_per_day else None
+
+    # Total expected days for THIS run's stations (one cheap read of station_summary.csv,
+    # joined against the manifest) -- gives a day-based ETA that doesn't go silent
+    # between whole-station completions, unlike the old station-completion-only ETA.
+    total_expected_days = None
+    if os.path.exists(STATION_SUMMARY_DEFAULT):
+        manifest_df = pd.read_csv(os.path.join(args.root, "manifest", "fps_stations.csv"))
+        summary_df = pd.read_csv(STATION_SUMMARY_DEFAULT)[["network", "station", "total_days"]]
+        joined = manifest_df.merge(summary_df, on=["network", "station"], how="left")
+        total_expected_days = int(joined["total_days"].fillna(0).sum())
+
     master_log = os.path.join(args.root, "master_log.csv")
     n_merged = len(pd.read_csv(master_log)) if os.path.exists(master_log) else 0
     inspector_log = os.path.join(args.root, "inspector_log.csv")
@@ -412,54 +417,33 @@ def cmd_progress(args):
         if lines:
             prev = json.loads(lines[-1])
     with open(snapshot_path, "a") as f:
-        f.write(json.dumps(dict(t=now, n_reported=n_reported, download_bytes=download_bytes,
-                                 packaged_bytes=packaged_bytes,
+        f.write(json.dumps(dict(t=now, n_reported=n_reported, packaged_bytes=packaged_bytes,
                                  n_days_checkpointed=n_days_checkpointed)) + "\n")
 
     pct = 100.0 * n_reported / n_rows if n_rows else 0.0
     bar_width = 40
     filled = int(bar_width * n_reported / n_rows) if n_rows else 0
     bar = "#" * filled + "-" * (bar_width - filled)
-    print(f"[{bar}] {n_reported}/{n_rows} ({pct:.1f}%) orchestrator tasks reported")
-    if n_unreadable:
-        print(f"  (skipped {n_unreadable} unreadable result file(s) -- transient, ignore "
-              f"unless this count keeps growing on repeat checks)")
-    print(f"  with real data     : {n_with_data}")
-    print(f"  merged to master   : {n_merged}")
-    print(f"  verified + purged  : {n_purged}")
-    print(f"  days checkpointed  : {n_days_checkpointed:,}  (live -- all stations, including still-running ones)")
-    print(f"  packaged so far    : {packaged_bytes / 1e9:.2f} GB  (live -- all stations, including still-running ones)")
-    print(f"  downloaded so far  : {download_bytes / 1e9:.2f} GB  (COMPLETED stations only -- see note)")
-    print(f"  note: downloaded-so-far only counts fully-finished stations, not still-running")
-    print(f"        ones -- unlike packaged-so-far above, it is NOT a live total, so don't")
-    print(f"        read the two as a compression ratio against each other. Deliberate: raw")
-    print(f"        SEED can be 10,000+ small files per station, so a live scan there (unlike")
-    print(f"        packaged_h5/'s bounded one-file-per-station layout) would risk real load")
-    print(f"        on the shared filesystem at full 2,000-station scale.")
+    days_frac = f" / {total_expected_days:,} ({100*n_days_checkpointed/total_expected_days:.1f}%)" \
+        if total_expected_days else ""
+    dl_str = f"~{est_download_bytes / 1e9:.2f} GB (est.)" if est_download_bytes is not None else "n/a yet"
 
-    if prev and now > prev["t"]:
-        dt = now - prev["t"]
-        d_reported = n_reported - prev["n_reported"]
-        # Live metrics (packaged bytes, days checkpointed) make a far more meaningful
-        # rate than the completed-only download_bytes delta -- that one only moves when
-        # a whole station finishes, so it understates real throughput on any check where
-        # big stations are still mid-run (exactly the case that prompted this fix).
-        d_packaged = packaged_bytes - prev.get("packaged_bytes", 0)
+    print(f"[{bar}] {n_reported}/{n_rows} stations reported ({pct:.1f}%)"
+          + (f"  [{n_unreadable} unreadable, transient]" if n_unreadable else ""))
+    print(f"  with data / merged / verified+purged : {n_with_data} / {n_merged} / {n_purged}")
+    print(f"  days checkpointed  : {n_days_checkpointed:,}{days_frac}")
+    print(f"  downloaded         : {dl_str}   packaged: {packaged_bytes / 1e9:.2f} GB")
+
+    if prev and now > prev["t"] and (dt := now - prev["t"]) > 0:
         d_days = n_days_checkpointed - prev.get("n_days_checkpointed", 0)
-        if dt > 0:
-            rate_gb_per_hr = (d_packaged / 1e9) / dt * 3600
-            rate_days_per_hr = d_days / dt * 3600
-            print(f"  rate (since last check, {dt/60:.1f} min ago): "
-                  f"{rate_gb_per_hr:.2f} GB/hr packaged (live), {rate_days_per_hr:.0f} days/hr checkpointed (live)")
-        if d_reported > 0 and dt > 0:
-            rate_stations_per_hr = d_reported / dt * 3600
-            remaining = n_rows - n_reported
-            eta_hr = remaining / rate_stations_per_hr if rate_stations_per_hr > 0 else float("inf")
-            print(f"  station-completion rate: {rate_stations_per_hr:.1f} stations/hr "
-                  f"-> ETA for remaining {remaining} stations to FULLY finish: ~{eta_hr:.1f} hr "
-                  f"(a rough signal only -- station sizes vary enormously, see PROGRESS.md)")
+        rate_days_per_hr = d_days / dt * 3600
+        if rate_days_per_hr > 0 and total_expected_days:
+            remaining_days = total_expected_days - n_days_checkpointed
+            eta_hr = remaining_days / rate_days_per_hr
+            print(f"  rate: {rate_days_per_hr:.0f} days/hr -> ETA ~{eta_hr:.1f} hr "
+                  f"({dt/60:.0f} min since last check)")
         else:
-            print("  station-completion rate: no station fully finished since last check yet")
+            print(f"  rate: no new days checkpointed in the last {dt/60:.0f} min -- can't estimate yet")
     else:
         print("  rate: no prior snapshot yet -- run `progress` again later for a rate/ETA")
     print()
