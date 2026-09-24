@@ -88,25 +88,51 @@ result = dict(idx=idx, network=network, station=station,
               download_ok=False, preprocess_ok=False, package_ok=False)
 
 # ---- download ----
+# Chunked by YEAR, not one single call spanning the whole DOWNLOAD_START-DOWNLOAD_END
+# range. Found by direct testing (2026-09-24, real production run on all 2,000
+# stations): a single MassDownloader call spanning many decades reproducibly triggers
+# an internal ObsPy bug when it queries IRIS's availability endpoint over that wide a
+# span (`TypeError: sequence item 0: expected str instance, tuple found`) -- sometimes
+# raised (crashing the whole station), sometimes silently swallowed inside ObsPy and
+# reported as "IRIS has no data" (a SILENT data-loss failure mode, not just a crash).
+# A real full-scale launch hit 0% success across ~800 completed stations before this
+# was caught. Confirmed fix by direct re-test: three separate single-year windows
+# (1988, 2000, 2010) against the same station that crashed on the full span all
+# succeeded cleanly, zero TypeErrors -- every prior verification test (1-week windows)
+# already proved a narrow span is safe; year-chunking just applies that same proven
+# scope to the new full-history requirement instead of one all-or-nothing request.
 t0 = time.time()
+year_errors = {}
 try:
     domain = RectangularDomain(minlatitude=lat - 0.5, maxlatitude=lat + 0.5,
                                 minlongitude=lon - 0.5, maxlongitude=lon + 0.5)
-    restrictions = Restrictions(
-        starttime=DOWNLOAD_START, endtime=DOWNLOAD_END,
-        chunklength_in_sec=86400, network=network, station=station,
-        channel="BH?,LH?",
-        reject_channels_with_gaps=False, minimum_length=0.0,
-        channel_priorities=["LH?", "BH?"],
-        location_priorities=["", "00", "10"],
-    )
-    mdl = MassDownloader()
-    mdl.download(domain, restrictions, mseed_storage=mseed_dir, stationxml_storage=xml_dir)
+    mdl = MassDownloader()  # one client-discovery pass reused across all years below
+    for year in range(DOWNLOAD_START.year, DOWNLOAD_END.year + 1):
+        year_start = max(DOWNLOAD_START, UTCDateTime(year, 1, 1))
+        year_end = min(DOWNLOAD_END, UTCDateTime(year, 12, 31, 23, 59, 59))
+        if year_start > year_end:
+            continue
+        restrictions = Restrictions(
+            starttime=year_start, endtime=year_end,
+            chunklength_in_sec=86400, network=network, station=station,
+            channel="BH?,LH?",
+            reject_channels_with_gaps=False, minimum_length=0.0,
+            channel_priorities=["LH?", "BH?"],
+            location_priorities=["", "00", "10"],
+        )
+        try:
+            mdl.download(domain, restrictions, mseed_storage=mseed_dir, stationxml_storage=xml_dir)
+        except Exception as ye:
+            # One bad year doesn't sink the whole station -- keep whatever other years
+            # succeeded. Recorded, not silently dropped (see result["year_errors"]).
+            year_errors[year] = f"{type(ye).__name__}: {ye}"
     mseed_files = [os.path.join(mseed_dir, f) for f in os.listdir(mseed_dir)]
     xml_files = [os.path.join(xml_dir, f) for f in os.listdir(xml_dir)]
     download_bytes = sum(os.path.getsize(f) for f in mseed_files)
     result.update(download_ok=len(mseed_files) > 0, download_bytes=download_bytes,
                    download_elapsed_s=time.time() - t0, n_channels=len(mseed_files))
+    if year_errors:
+        result["year_errors"] = year_errors
 except Exception as e:
     result.update(download_elapsed_s=time.time() - t0, download_error=f"{type(e).__name__}: {e}")
 

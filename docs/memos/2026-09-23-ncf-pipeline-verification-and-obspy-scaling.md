@@ -186,4 +186,127 @@ HOW TO REPORT BACK
     NCF-ready for a reason I haven't anticipated, say so plainly — that's exactly what
     this task is for.
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+UPDATE 2026-09-24: FULL-HISTORY PRODUCTION DEPLOYMENT, A REAL BUG, AND A NEW ROLE FOR YOU
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+wavenet_junior — this section is the reason I want you doing more than Tasks 1/2 above
+going forward. Short version: we moved to real full-scale deployment, found a real bug
+the hard way, and it's exactly the kind of thing a second set of eyes watching the run
+(not just building it) would have caught faster. Read on for the concrete ask.
+
+WHAT CHANGED: FULL HISTORY, NOT A BOUNDED WINDOW
+
+Decision (2026-09-24): download all available data for every station, not a
+connectivity-gated subset — "the goal is to get all the data." That settles the
+scope-choice question Task 1/2's memo left open above. Real numbers from the key index
+once this was decided: **78.9 TB total**, spanning from a few dozen days up to **56
+years** for the longest-running stations (median far smaller — most of that volume and
+time sits in a long tail of ~40 outlier stations).
+
+A production framework now exists to actually run this at scale — master/orchestrator/
+logger/inspector, `src/wavenet_pipeline/00_waveform_acquisition/production/`, full
+detail in `docs/ncf_pipeline_stages/PROGRESS.md`'s "Production framework" section:
+  - `orchestrator.py` — one SLURM array task per station (download -> preprocess ->
+    package), idempotent so a resubmit doesn't redo finished work
+  - `logger.py` — the single process that merges finished stations into the shared
+    master HDF5
+  - `inspector.py` — independently re-verifies each merge, only THEN deletes the raw
+    SEED for that station
+  - `master.py` — `init`/`submit`/`status`/`progress`/`stop` CLI, splits the array
+    across `urseismo`/`standard`/`preempt`/`interactive` by estimated WORK (not station
+    count — the biggest ~11% of stations carry ~78% of total cost, so an equal split
+    would leave three partitions idle for days while one was still grinding)
+
+Real infra bugs found and fixed while building this (all in PROGRESS.md if you want the
+detail): a conda double-activation race that broke `pkg_resources` under `sbatch`, a
+duplicate-processing race from an orphaned test job, an inspector exit-condition bug,
+and a SLURM `MaxArraySize` limit that rejected two of four partition chunks outright.
+All fixed and verified on a real 15-station end-to-end run before touching the full
+2,000.
+
+WHAT HAPPENED AT FULL SCALE (the part that matters for you)
+
+I launched all 2,000 stations today. At ~800 stations reported, **zero** had
+successfully packaged. Digging in: ObsPy's MassDownloader has a real internal bug —
+querying IRIS's "availability" endpoint over a many-decade span sometimes crashes
+outright (`TypeError: sequence item 0: expected str instance, tuple found`, ~28% of
+completions) and sometimes gets silently swallowed and reported as "IRIS has no data"
+(the rest) — meaning a real chunk of that 0% wasn't stations genuinely lacking data,
+it was us silently losing IRIS-hosted data without any error at all. I've cancelled the
+run and am testing a fix (splitting each station's request into yearly sub-windows,
+which every prior test already proves is safe — the bug only shows up on very wide
+single requests).
+
+Why this matters beyond "we found a bug": every test I ran before today's full-history
+switch used a 1-week window (see the "OBSPY / BLUEHIVE" numbers above) — none of that
+testing could have exposed a bug that only triggers on multi-decade spans. What I DID
+check before launching — watching one station start downloading correctly — proved the
+mechanism worked, not that it worked at scale across many real stations and providers.
+That gap is the actual lesson: a live production rollout needs someone watching
+*aggregate* behavior (success rates, error patterns) while it runs, not just a
+pre-launch spot check. That's a distinct job from building the pipeline, and it's one
+I was doing badly single-handedly, because I was heads-down on the fix, not the watch.
+
+YOUR ROLE, GOING FORWARD: PRODUCTION TESTER, NOT JUST A ONE-OFF VERIFIER
+
+This builds on what you're already doing (Tasks 1/2), formalized as an ongoing role,
+using standard software-testing practice rather than ad hoc checking:
+
+  1. SMOKE TEST (before I hand you a run to watch) — I'll always confirm a run starts
+     without immediate crashes before you get involved; that's on me, not a new ask.
+
+  2. LIVE MONITORING DURING ROLLOUT (this is the new, important one) — while a
+     production run is active, periodically run
+       `python3 .../production/master.py progress --root <ROOT>`
+     and watch for anything outside expected range, not just "did it crash":
+       - success rate ("with real data" / "orchestrator tasks reported") dropping to
+         near-zero or swinging wildly is a red flag on its own, independent of any
+         error message — that's exactly the signal that would have caught today's bug
+         hours earlier than I did
+       - error messages repeating identically across many different stations (like
+         today's TypeError) means an infrastructure/code bug, not per-station data
+         absence — worth flagging immediately, not batching into a later report
+       - `squeue` showing a partition's tasks stuck PENDING far longer than expected,
+         or a partition's tasks all finishing suspiciously fast (usually means they're
+         all failing fast, not succeeding fast)
+
+  3. DATA QUALITY SPOT-CHECKS (extends what Task 1 already has you doing) — once a run
+     is producing real merged stations, periodically pull a small random sample from
+     the growing master HDF5 and sanity-check it the way you'll already know how to
+     from Task 1: non-empty, no all-zero/NaN channels, plausible amplitude range,
+     `units` attr matches what you'd expect. This is sampling-based QA, not a full
+     re-verification of every station — the inspector already does an automated version
+     of this per-station; your spot checks are the independent human check on top of it.
+
+  4. STRUCTURED BUG REPORTS — when something looks wrong, capture it so it's actionable
+     without back-and-forth: which station(s) (network.station, or the idx from
+     results/*.json), the exact error text if there is one, roughly how many other
+     stations show the same pattern, and what you were running when you saw it. "Several
+     stations near idx 500-600 are all failing with the same TypeError" is immediately
+     useful; "downloads look broken" isn't.
+
+  5. CANARY BEFORE FULL SCALE — for the relaunch (and any future one): once my
+     year-chunking fix is verified on the specific stations that broke today, I'm going
+     to relaunch a small canary batch first (a few dozen stations spread across all four
+     partitions, including some of the multi-decade ones that triggered today's bug) and
+     let it run for a defined window before scaling to the rest — not jump straight back
+     to all 2,000. I'd like you watching that canary window specifically: confirm the
+     success rate looks sane and no repeated error pattern shows up before I scale
+     further. This is standard practice for any risky rollout (canary/phased release) —
+     we're applying it here because today is the second time this project has learned
+     that lesson the expensive way.
+
+WHAT I NEED FROM YOU NOW
+
+  □ Read this section and PROGRESS.md's "Production framework" section so the pieces
+    (orchestrator/logger/inspector/master) aren't a black box to you.
+  □ When I relaunch the canary batch (I'll ping the team), run `master.py progress`
+    against it every hour or so for the first few hours and report what you see —
+    including "looks fine, success rate matches expectations" as a valid report, same
+    as Task 1/2 above.
+  □ Keep Tasks 1 and 2 above on your plate too — this doesn't replace them, it's the
+    same kind of independent-verification instinct applied to a live system instead of
+    a one-off check.
+
 — Tolu
