@@ -128,10 +128,100 @@ template as an extra guard against incidental cache writes landing in `$HOME`.
 -- once called at least twice -- a rate (stations/hr, GB/hr) and ETA to completion,
 computed from a snapshot log it appends to on each call.
 
-**Not yet run at full 2,000-station scale** -- the 15-station run above is the
-verification step; scaling up is the next action (`master.py init` with no
-`--n-stations` + `submit`), still gated on the same "final band/duration decision"
-already flagged as an open PI call earlier in this doc.
+**Scope decision made (PI, 2026-09-24), superseding the "gated" note above**: download
+all available history for every station, not a connectivity-gated subset -- "the goal
+is to get all the data." Real numbers from the key index: **78.9 TB total**, spanning a
+few dozen days up to **56 years** for the longest-running stations (avg real year-span
+only 5.55 years -- most of that volume/time sits in a long tail of ~40 outlier
+stations). This makes the North Star minimum-coverage framing above moot for the
+current push (superseded, not deleted -- it's still the right lens if scope ever gets
+re-bounded later).
+
+## Full-history rollout, real bugs found and fixed (2026-09-24, after the 15-station verification above)
+
+Launching at real full-history scale surfaced three more real, load-bearing problems
+beyond the four infra bugs above -- each found by direct testing, each fixed and
+re-verified before moving on, not guessed at:
+
+**1. ObsPy itself breaks on very wide date-range requests.** A full 2,000-station launch
+hit 0% success across ~800 completed stations. Cause: `MassDownloader` has an internal
+bug querying IRIS's availability endpoint over a many-decade span (`TypeError: sequence
+item 0: expected str instance, tuple found`) -- sometimes raised (crashing the station),
+sometimes silently swallowed inside ObsPy and reported as "no data" (a **silent
+data-loss** failure mode, confirmed directly: re-ran a "no data" station, `IU.MA2`, by
+hand and it came back with real 1993-2013 data). Fixed: `orchestrator.py`'s download
+loop now requests one **year** at a time instead of one call spanning the full range --
+every prior verification test (1-week windows) already proved a narrow span is safe.
+
+**2. The per-station year loop originally spanned the full 1970-2026 range for EVERY
+station, regardless of real deployment length.** Found while investigating why real
+observed download throughput (~23 KB/s per connection, from real canary telemetry) was
+~43x slower than the ~1 MB/s originally assumed: a station like `ZL.A21` (real span:
+2010-2010, one year) was still paying 56 rounds of multi-provider negotiation instead of
+1-3. Real average station year-span in the key index is 5.55 years vs. a 56-year loop
+every station was running -- ~10x average unnecessary overhead, worse for the many
+short-deployment stations (all but 2 of 1984 stations span under 50 years). Fixed: the
+loop now bounds itself to that station's own `[year_min, year_max]` from
+`station_summary.csv` (+/-1 year margin), falling back to the full range only if a
+station's summary entry is missing. Verified directly: `ZL.A21`'s job dropped from an
+extrapolated ~500s to a real, measured 68s total.
+
+**3. Preprocessing was memory-unsafe at full-history scale, independent of (1)/(2).**
+The original design (`mdl_bluehive_quicktest.py`'s logic, ported as-is into
+`orchestrator.py`) reads every downloaded file into one combined Stream, merges, then
+processes the whole thing -- fine at 1-week scale, but for real full-history data this
+used **7.3 GB RSS and got OOM-killed** on less than half a year of our single largest
+station (`G.SSB`), before processing even started. Full history per station makes this
+untenable at any reasonable memory allocation, not just an edge case.
+**PI decision: day-by-day, matching the already-proven-safe design from
+`preprocess_existing_archive.py`** (551MB RSS regardless of history length) --
+*"compute time is expensive, this should be robust, even though it means more
+read-write time... it is what it is."* `orchestrator.py`'s preprocessing was rewritten
+to process and checkpoint **one calendar day at a time**, appending directly into the
+per-station shard via a new shared `append_channel_data()` helper (extracted from
+`build_master_h5.py`'s `merge_channel`, which now delegates to it -- the logger's
+shard-to-master merge and the orchestrator's day-by-day checkpointing need the exact
+same create-or-append-with-gap-fill logic, so it lives in one place now). A day-state
+checkpoint file (`{shard}.daystate.json`) tracks completed days, and the shard HDF5 file
+is only ever open for the duration of one day's append (not a station's whole run,
+since HDF5 has no crash-safety against a hard kill mid-write). **Verified directly
+against the real dataset that caused the original OOM** (925 real days, including a
+genuine ~20-year calendar gap): peak RSS held flat at **377.6 MB throughout**, full
+completion -- vs. 7.3GB that never finished. The 20-year gap itself exposed a fourth bug
+along the way: the gap-fill wrote the *entire* gap as zeros in one array assignment
+(633 million samples for that one gap) -- now chunked in bounded batches matching the
+dataset's own chunk size.
+
+**Checkpoint/resume verified under a real kill-and-restart, not just in isolation**: the
+60-station canary batch was deliberately stopped mid-run (to swap in fix #2/#3 above)
+and resubmitted against the *same* root. Every station's day-count survived untouched
+(no resets), and the smaller stations resumed appending new days from exactly where
+they'd stopped (e.g. `XA.SA01` continued 97 -> 102, `XE.EC01` continued 10 -> 11) within
+minutes of the restart. Bigger, genuinely-decades-long stations (`II.NIL`, `YT.MRTP`)
+took longer to resume checkpointing after a restart since download-phase year
+negotiation is still a monolithic pre-step that must finish before that station's
+day-loop resumes -- an accurate reflection of those stations' real size, not a stall,
+but worth knowing if a future restart looks "stuck" on a big station.
+
+**A real operational hazard, not a code bug**: Bluehive's SLURM controller was
+observed briefly unresponsive (`sbatch`/`squeue` timing out cluster-wide) during this
+session, and in that state a job can be **submitted successfully server-side while the
+client-side `sbatch` call still reports an error** -- retrying blindly on an apparent
+failure can silently create a duplicate array covering the same stations, racing on the
+same shard files. Always re-check `squeue`/`sacct` for whether the job actually landed
+before retrying a failed-looking submission.
+
+**Real rate/ETA data, not yet a final campaign estimate**: early canary telemetry (33
+concurrent tasks, ~85 min elapsed) measured ~23 KB/s per connection and ~2.76 GB/hr
+aggregate -- the fix in bug #2 above should improve this substantially for the ~95% of
+stations with short real deployment spans, but a trustworthy full-2,000-station ETA
+needs a fresh rate measurement taken *after* that fix, not the pre-fix number. Revisit
+once the current (post-fix) canary run has enough data-bearing stations completed to
+give a clean read.
+
+**Not yet done**: a full 2,000-station launch with all of the above fixes in place
+(the 60-station canary is the current verification step for the combined fix set).
+`master.py init` (no `--n-stations`) + `submit` once the canary confirms clean.
 
 **Fixed decision, do not revisit without explicit PI approval**: the 2,000-station set
 in `metadata3/fps_stations.csv` (farthest-point-sampled for even global coverage) is
@@ -189,4 +279,6 @@ Rule (mirrors `docs/ml_pipeline_stages/PROGRESS.md`): whoever completes a stage/
 update updates two things in the same commit — the cell here, and that stage's Hardware
 Tier Log row in the detailed doc.
 
-Last updated: 2026-09-23 (Stage 1 in progress this session).
+Last updated: 2026-09-24 (production framework built, verified, and hardened against
+three real full-scale bugs this session; 60-station canary re-running now with all
+fixes applied).
