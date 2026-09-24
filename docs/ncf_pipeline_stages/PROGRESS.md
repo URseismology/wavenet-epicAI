@@ -389,7 +389,58 @@ live production run (without touching the already-running orchestrator array or 
 and confirmed `verified+purged` climbing for real (0 -> 26+ within about a minute) via
 `master.py progress`.
 
+## Scoped comparison of shared-master-HDF5 design patterns (debug partition, 2026-09-24)
+
+After the inspector lock-race fix above, PI asked whether a design that avoids the shared
+file entirely (rather than retrying around contention on it) would be better, and to
+empirically test the real alternatives rather than just reason about them. Three patterns
+tested via isolated multiprocess scripts on Bluehive's `debug` partition, against a
+throwaway scratch file (never the production root):
+
+**A. `open_h5_retry` (the pattern actually deployed).** Stress test: 4 concurrent readers
+hammering a writer that cycles through merges back-to-back with almost no idle gap
+(occasional 5s adversarial hold), far more hostile than real production (where logger
+polls every 30s with long idle gaps between individual merges). Result: some reads
+*did* exhaust their 8-attempt/backoff budget under this artificial back-to-back
+hammering. Not a regression to worry about, though: a single exhausted
+`open_h5_retry` call in `inspector.py` is already caught and skipped (see the fix above),
+so it just gets retried on the *next* 30s poll cycle rather than failing permanently —
+confirmed by the real deployment's clean, steady `verified+purged` growth since the fix
+went live. Real production's writer idle-gap is much longer than this stress test's, so
+this failure mode is a found *boundary*, not an observed *problem*.
+
+**B. HDF5 SWMR mode — tested against this pipeline's REAL access pattern, not a toy case.**
+Result: **incompatible as naturally implemented.** A first pass (no exception raised
+either direction) looked like it worked, but that was misleading — checking whether the
+reader actually *saw* newly-created station groups (not just "no crash") showed it does
+not: a SWMR reader never observed any of 5 station groups created by the writer after
+`swmr_mode=True`, whether or not the writer called `f.flush()` after each one. This
+matches HDF5's real restriction (only easy to miss from docs alone): SWMR reliably
+exposes *appends to an existing dataset*, not *new links/groups* — and this pipeline's
+master file grows by station-group *count* continuously as stations complete, not just
+by extending existing datasets. Making SWMR work here would need low-level per-object
+`refresh()` handling well beyond the plain `h5py.File`/`.keys()` pattern already used
+throughout this codebase — a real restructure, not a drop-in swap. **Confirms the
+retry-with-backoff fix was the right call, empirically, not just by default.**
+
+**C. Separate-log / no-shared-file (writer self-checks, reader never touches the H5).**
+Result: works exactly as expected — structurally zero contention (reader only ever
+opens a plain JSON), and correctly flagged an injected bad write (all-zero channel) via
+the writer's own read-back check in the same `open()` session. The real trade-off is a
+design fact, not something a test can measure: this only catches what the writer's own
+check logic looks for — a systematic bug in `merge_channel`/the self-check itself
+wouldn't be caught, unlike today's design where `inspector.py` is a genuinely separate
+process/code path independently re-reading the master file.
+
+**Decision: leave the deployed `open_h5_retry` fix as-is** (PI, 2026-09-24) — it's
+already verified working live, and this comparison confirms neither alternative is a
+clear improvement (SWMR doesn't actually fit the access pattern; the separate-log
+pattern trades away real process independence for a contention guarantee this pipeline
+doesn't currently need).
+
 Last updated: 2026-09-24 (full 2,000-station production run launched: two-tier
 fast/outlier split, canary carry-forward, a MaxArraySize chunk-splitting bug, and an
 inspector HDF5-lock-race bug — all found and fixed the same session, each verified live
-against the real running deployment rather than assumed from a clean exit/job state).
+against the real running deployment rather than assumed from a clean exit/job state;
+plus a scoped debug-partition comparison of alternative designs confirming the fix
+chosen was the right one).
