@@ -438,9 +438,35 @@ clear improvement (SWMR doesn't actually fit the access pattern; the separate-lo
 pattern trades away real process independence for a contention guarantee this pipeline
 doesn't currently need).
 
-Last updated: 2026-09-24 (full 2,000-station production run launched: two-tier
-fast/outlier split, canary carry-forward, a MaxArraySize chunk-splitting bug, and an
-inspector HDF5-lock-race bug — all found and fixed the same session, each verified live
-against the real running deployment rather than assumed from a clean exit/job state;
-plus a scoped debug-partition comparison of alternative designs confirming the fix
-chosen was the right one).
+## Why "73.8% stations reported" looks inconsistent with <1TB packaged (diagnosed 2026-09-25)
+
+PI observation at 1,476/2,000 (73.8%) stations reported: total packaged size was still
+well under 1TB. Diagnosed directly from `results/*.json`, not assumed — **this is the
+two-tier design working as intended, not a bug**, and "stations reported" is genuinely
+the wrong metric to read for data-volume progress:
+
+- Real per-station packaged sizes are hugely right-skewed: median **158 MB**, mean 369MB,
+  max already 11.6GB, across the 603 stations with real data so far. `days checkpointed`
+  (382,941 / 2,770,643 = **13.8%**) is the honest volume-progress number, not the 73.8%
+  station count — the two diverge exactly because the fast tier is sorted
+  smallest-first.
+- Only **12 of the 43 outlier-tier stations** (`urseismo`, multi-decade spans) have
+  finished; the other 31 are still running (several 16+ hours in). The largest sizes
+  observed so far (11.6, 7.5, 6.3, 6.0, 5.4 GB) all belong to high-idx stations at or
+  near that tier — i.e. the stations holding most of the real data mass haven't reported
+  yet.
+- The current no-data rate among reported stations (59%, vs. the previously documented
+  ~18-20% baseline) is inflated by the same sort order: no-data stations have a median
+  real deployment span of 505 days vs. 807 for stations with real data, confirming the
+  smallest/most-marginal stations (processed first) disproportionately come back empty
+  this early in the run. Expect this to normalize toward the historical baseline as
+  larger, more established stations get processed later.
+- Rough projection from the real observed rate (~1.1 MB per checkpointed day, applied to
+  the full 2,770,643 expected days): **~3 TB** for the full campaign — and per the
+  recent-years-cost-more finding above (up to ~14x denser per day than 1990s data), the
+  remaining/outlier-heavy tail skews toward exactly the denser data, so 3TB is likely a
+  floor, not a ceiling.
+
+Last updated: 2026-09-25 (diagnosed why the station-count-vs-packaged-size progress
+looked inconsistent — confirmed as the two-tier design's expected shape, not a bug, with
+a rough ~3TB full-campaign size projection from real observed per-day rates).
