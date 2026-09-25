@@ -87,6 +87,16 @@ Patch ids: **1** = integer-second alignment; **1b** = overlap trim / skip; **2**
 5. Extend the timing audit (`code/timing_replay.py`) to a sample of the 2,000 stations before a production run.
 6. If LH is available the tool already prefers it; native 1 Hz data should be spared from patch-1's problem (no decimation phase; expected from the mechanism, not tested here), so document that BH-only stations are the exposed set. IRIS metadata lists LH? channels for both XD stations over this window (`evidence/iris_channel_metadata.txt`); whether LH waveforms exist was not tested.
 
+## Applied
+
+Applied on 2026-09-25, commit `9edfb41` — all six patches (1, 1b, 2, 3, 4, 6), no
+disagreements. Verified before applying (`git apply --check`, the 6 unit tests, and
+`neg_control.py` against the live source) and re-verified the 6 tests against the
+patched live source afterward. The live 2,000-station production run was confirmed
+still mid-flight at apply time (170 tasks running/pending via `squeue`); this commit
+touches only the git-tracked repo source, not the Bluehive deployment path the running
+job actually executes from — rolling the fix into that live run is a separate decision.
+
 ## Behaviour changes to be aware of
 | area | before | after |
 |---|---|---|
