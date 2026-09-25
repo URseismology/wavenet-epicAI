@@ -23,6 +23,7 @@ Scaling to the full 2,000 once the small run is clean:
                                                                        # at that concurrency (2026-09-23)
 """
 import argparse
+import glob
 import json
 import os
 import subprocess
@@ -129,6 +130,11 @@ FAST_TIER_PARTITIONS_DEFAULT = "standard,preempt,interactive"
 # Confirmed via `scontrol show config` (2026-09-24): sbatch rejects a job array whose
 # highest index is >= this, independent of how many tasks are actually in the array.
 MAX_ARRAY_INDEX = 1001
+
+# Banked pre-patch timing offsets (timing_replay_production.py). The inspector will not
+# purge a pre-patch station's raw SEED until that station's offsets are present here --
+# purging destroys the only source of the exact correction.
+TIMING_OFFSETS_DEFAULT = "/scratch/tolugboj_lab/wavenet_ncf_migration/timing_offsets"
 
 
 def cmd_init(args):
@@ -264,7 +270,8 @@ def cmd_init(args):
                             ("inspector.slurm", INSPECTOR_SLURM)):
         path = os.path.join(args.root, name)
         with open(path, "w") as f:
-            f.write(template.format(root=args.root, here=HERE))
+            f.write(template.format(root=args.root, here=HERE,
+                                     offsets_dir=TIMING_OFFSETS_DEFAULT))
         print(f"[master] wrote {path}")
 
     # Partition/QOS choice is a SUBMIT-time decision (see cmd_submit), not baked into the
@@ -507,10 +514,29 @@ def cmd_progress(args):
         joined = manifest_df.merge(summary_df, on=["network", "station"], how="left")
         total_expected_days = int(joined["total_days"].fillna(0).sum())
 
-    master_log = os.path.join(args.root, "master_log.csv")
-    n_merged = len(pd.read_csv(master_log)) if os.path.exists(master_log) else 0
+    # NOTE: the shared master HDF5 and its logger daemon were retired 2026-09-25 -- the
+    # master is now built on demand from shards by build_master_h5.py. master_log.csv is
+    # therefore frozen history, NOT live progress, and is deliberately no longer reported:
+    # a stale number that looks like progress is worse than no number (that is exactly how
+    # logger's death went unnoticed for 21 hours).
     inspector_log = os.path.join(args.root, "inspector_log.csv")
     n_purged = len(pd.read_csv(inspector_log)) if os.path.exists(inspector_log) else 0
+    n_indexed = len(glob.glob(os.path.join(args.root, "station_index", "*.json")))
+
+    # Instrument-response coverage: a channel left in raw counts is not amplitude-comparable
+    # with any other station, so this is a first-class health number, not a detail.
+    meta_dir = os.path.join(args.root, "station_metadata")
+    n_meta_ok = n_meta_none = 0
+    for p in glob.glob(os.path.join(meta_dir, "*.json")):
+        if p.endswith("_coverage.json"):
+            continue
+        try:
+            if json.load(open(p)).get("ok"):
+                n_meta_ok += 1
+            else:
+                n_meta_none += 1
+        except (json.JSONDecodeError, OSError):
+            pass
 
     state_dir = os.path.join(args.root, "state")
     os.makedirs(state_dir, exist_ok=True)
@@ -536,7 +562,11 @@ def cmd_progress(args):
 
     print(f"[{bar}] {n_reported}/{n_rows} stations reported ({pct:.1f}%)"
           + (f"  [{n_unreadable} unreadable, transient]" if n_unreadable else ""))
-    print(f"  with data / merged / verified+purged : {n_with_data} / {n_merged} / {n_purged}")
+    print(f"  with data          : {n_with_data}   (patched {n_patched} / pre-patch {n_prepatch})")
+    print(f"  response metadata  : {n_meta_ok} ok / {n_meta_none} none  "
+          f"[raw counts are not amplitude-comparable -- run `fetch_station_metadata.py --report`]")
+    print(f"  indexed / purged   : {n_indexed} / {n_purged}"
+          + (f"   days refused (data lost): {n_days_refused:,}" if n_days_refused else ""))
     print(f"  days checkpointed  : {n_days_checkpointed:,}{days_frac}")
     print(f"  downloaded         : {dl_str}   packaged: {packaged_bytes / 1e9:.2f} GB")
 
@@ -552,6 +582,25 @@ def cmd_progress(args):
             print(f"  rate: no new days checkpointed in the last {dt/60:.0f} min -- can't estimate yet")
     else:
         print("  rate: no prior snapshot yet -- run `progress` again later for a rate/ETA")
+    # Service health. For a SLURM-chained service the invariant is "exactly one link queued
+    # or running" -- zero looks exactly like normal quiet otherwise, which is how logger sat
+    # dead for 21 hours while every other number kept climbing. Report it explicitly.
+    try:
+        q = subprocess.run(["squeue", "-A", "tolugboj_lab", "-h", "-o", "%j|%T"],
+                            capture_output=True, text=True, timeout=30).stdout
+        live = {}
+        for line in q.splitlines():
+            if "|" in line:
+                name, _state = line.rsplit("|", 1)
+                live[name.strip().split(".")[0]] = live.get(name.strip().split(".")[0], 0) + 1
+        orch = live.get("orchestrator", 0)
+        insp = live.get("inspector", 0)
+        insp_str = ("OK (1 link)" if insp == 1 else
+                    "NOT RUNNING -- chain broken or intentionally off" if insp == 0 else
+                    f"{insp} links -- duplicate chain, investigate")
+        print(f"  services           : orchestrator {orch} task(s) | inspector chain: {insp_str}")
+    except Exception:
+        pass
     print()
     subprocess.run(["squeue", "-A", "tolugboj_lab", "-o", "%.12i %.20j %.10P %.8T %.10M"])
 
@@ -629,22 +678,58 @@ exit 1
 
 INSPECTOR_SLURM = """#!/bin/bash
 #SBATCH -A tolugboj_lab
-#SBATCH -t 15-00:00:00
+#SBATCH -t 02:00:00
 #SBATCH --mem-per-cpu=8G
 #SBATCH -n 1
-#SBATCH -o {root}/logs/inspector.out
-#SBATCH -e {root}/logs/inspector.err
+#SBATCH -o {root}/logs/inspector_%j.out
+#SBATCH -e {root}/logs/inspector_%j.err
+
+# ---- SELF-CHAINING: hand the baton forward BEFORE doing any work. --------------------
+# This is the FIRST statement on purpose. An OOM cgroup kill, a walltime kill or a node
+# failure destroys this entire job -- shell, traps and all -- so a successor submitted at
+# exit time would simply never be created. Confirmed the hard way on 2026-09-24: logger
+# was OOM-killed and its in-job `for attempt in 1 2 3 4` retry wrapper never ran a single
+# retry, because the cgroup kill took the wrapper with it. Submitting the successor here,
+# while healthy, puts the recovery record in the SLURM controller's queue -- outside this
+# job's failure domain, which is the only place it survives a SIGKILL.
+#   --dependency=afterany : fires on EVERY terminal state (success, failure, timeout, OOM,
+#                           node death), so recovery is uniform rather than case-by-case.
+#   --begin=now+20minutes : sets the tick cadence AND caps a runaway chain at ~3/hour even
+#                           if every link were to die instantly.
+# Progress (as opposed to continuity) comes from inspector_state.json, which is resumable:
+# the chain keeps a link alive, the state file means a new link re-does only what was
+# unfinished. Two separate mechanisms, deliberately.
+# Guards: honour the STOP file, and refuse to chain if the previous link handed off less
+# than 5 minutes ago (belt-and-braces against a fast failure loop).
+CHAIN_STAMP={root}/state/inspector_last_chain
+NOW=$(date +%s)
+LAST=$(cat $CHAIN_STAMP 2>/dev/null || echo 0)
+if [ -f {root}/state/STOP ]; then
+    echo "[inspector.slurm] STOP present -- not chaining a successor." >&2
+elif [ $((NOW - LAST)) -lt 300 ]; then
+    echo "[inspector.slurm] last chain was $((NOW - LAST))s ago -- refusing to chain (fast-failure guard)." >&2
+else
+    echo $NOW > $CHAIN_STAMP
+    sbatch --export=NONE -p ${{SLURM_JOB_PARTITION}} --qos ${{SLURM_JOB_PARTITION}} \\
+           --dependency=afterany:$SLURM_JOB_ID --begin=now+20minutes \\
+           {root}/inspector.slurm >> {root}/logs/inspector_chain.log 2>&1 \\
+        && echo "[inspector.slurm] successor queued." >&2
+fi
 
 export MPLCONFIGDIR={root}/.cache/mpl
 export XDG_CACHE_HOME={root}/.cache
 source /scratch/tolugboj_lab/softwares/anaconda/anaconda3/2021.05/etc/profile.d/conda.sh
 conda activate instaseis
-for attempt in 1 2 3 4; do
-    python3 {here}/inspector.py --root {root} --poll-interval 30 && exit 0
+# One pass, then exit -- periodic, not a daemon, so memory cannot accumulate across ticks
+# and there is no walltime exposure. --timing-offsets-dir gates purging of pre-patch
+# stations on their exact correction having been banked from the raw headers first.
+for attempt in 1 2 3; do
+    python3 {here}/inspector.py --root {root} --once \\
+        --timing-offsets-dir {offsets_dir} && exit 0
     echo "[inspector.slurm] attempt $attempt failed (transient import race), retrying..." >&2
     sleep $(( RANDOM % 15 + 5 ))
 done
-echo "[inspector.slurm] gave up after 4 attempts -- this is a real failure, not transient." >&2
+echo "[inspector.slurm] gave up after 3 attempts -- real failure; the chain continues regardless." >&2
 exit 1
 """
 
