@@ -160,10 +160,40 @@ MassDownloader skips files already on disk, so an attempt *resumes* rather than
 re-downloads. `n_download_retries` is recorded per station so the fix is measurable rather
 than assumed.
 
-**Consequence for the existing archive:** the 674 completed pre-patch stations are not just
-timing-shifted, they are *substantially incomplete*. D3 (don't reprocess them, just bank
-their offsets) addressed timing only; it does not address missing days. Re-downloading the
-affected ~63 % is a separate decision that has not been taken.
+**Verified end to end.** Three of the worst-affected stations were re-run under the patched
+code in an isolated root:
+
+| station | production obtained | patched re-run | key index expects |
+|---|---|---|---|
+| `ZG.CP12` | 2 days | **631 days** (3,786 files) | ~631 |
+| `YW.MAIO` | 6 days | **690 days** (4,137 files) | ~690 |
+| `N4.G65A` | 2 days | **7,266 files** | ~598 |
+
+All three recovered to exactly the expected day count, with StationXML, and -- the
+informative part -- **0 retries were needed**. The error simply did not occur at 3-way
+concurrency, where it had hit 63 % of stations at the production array's 120-way. So the
+retry is the safety net; **concurrency is the actual driver**.
+
+**Restart decisions (PI: "restart with new fixes to aim for completeness"):**
+
+- **464 completed stations selected for a full patched redo** -- those with a recorded
+  `year_errors` entry or under half their expected days. They collectively held ~20 % of
+  the days they should. Their pre-patch artefacts (shard, daystate, qc, result JSON) were
+  **moved, not copied**, to `wavenet_ncf_prepatch_incomplete/` -- a rename within one GPFS
+  filesystem is a metadata operation, so preserving them for comparison cost nothing and
+  stays reversible. Raw SEED was deliberately left in place so re-download *resumes*.
+- **211 completed stations kept** -- they hit no error and are complete, so they are
+  timing-shifted only and their exact offsets are already banked (D3 still applies).
+- **Concurrency cut from 120 to ~50 total.** A gotcha worth recording: `--array-limit` is
+  **per array**, and the deployment submits five chunks, so `--array-limit 40` would have
+  meant up to 200 concurrent -- *more* than the setting that caused the damage. The correct
+  value for ~50 total across five chunks is `--array-limit 10`.
+- **Inspector stays off.** Raw SEED is now load-bearing for resuming the redo, so purging
+  would be actively counterproductive until the redo settles.
+
+Completeness is now a measured gate rather than an assumption: `n_download_retries` is
+recorded per station, and days-obtained-vs-key-index is checked directly on the first
+batch of patched completions.
 
 ## 4. Services: why they kept dying, and the fix
 
