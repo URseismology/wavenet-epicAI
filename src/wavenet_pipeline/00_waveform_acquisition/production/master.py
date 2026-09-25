@@ -591,8 +591,8 @@ exit 1
 
 LOGGER_SLURM = """#!/bin/bash
 #SBATCH -A tolugboj_lab
-#SBATCH -t 08:00:00
-#SBATCH --mem-per-cpu=4G
+#SBATCH -t 15-00:00:00
+#SBATCH --mem-per-cpu=24G
 #SBATCH -n 1
 #SBATCH -o {root}/logs/logger.out
 #SBATCH -e {root}/logs/logger.err
@@ -614,8 +614,8 @@ exit 1
 
 INSPECTOR_SLURM = """#!/bin/bash
 #SBATCH -A tolugboj_lab
-#SBATCH -t 08:00:00
-#SBATCH --mem-per-cpu=2G
+#SBATCH -t 15-00:00:00
+#SBATCH --mem-per-cpu=8G
 #SBATCH -n 1
 #SBATCH -o {root}/logs/inspector.out
 #SBATCH -e {root}/logs/inspector.err
