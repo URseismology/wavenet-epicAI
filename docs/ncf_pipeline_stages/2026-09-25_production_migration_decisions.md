@@ -68,10 +68,29 @@ and "BH-only stations are the exposed set" should not be documented as true.
 comparable across stations, so roughly a third of the archive was silently unusable for any
 calibrated work.
 
-**Root cause is structural, not a provider limitation.** StationXML was only ever obtained
-as a *side effect* of MassDownloader fetching waveforms. Any quirk in the waveform path cost
-us the response, and `orchestrator.py` then fell through to `units="counts"` without
-complaint. Proven directly:
+**Root cause, established by elimination.** The first hypothesis — that reusing one
+`MassDownloader` instance across per-year calls suppressed the StationXML step — was tested
+and **falsified**: a shared instance and a fresh-instance-per-year both retrieved it
+(`mseed=393, stationxml=1` either way).
+
+The actual mechanism is ObsPy's own already-documented availability-endpoint bug
+(`PROGRESS.md`, "ObsPy itself breaks on very wide date-range requests"):
+
+```
+TypeError: sequence item 0: expected str instance, tuple found
+```
+
+**233 of the 234 no-XML stations (100 %) recorded exactly this in `year_errors`.** The
+per-year chunking reduced its frequency but did not eliminate it. When it fires, it aborts
+that `download()` call partway — *after* waveforms have been written incrementally, but
+*before* MassDownloader writes StationXML at the end of the call. Hence the signature:
+mseed present, XML absent, error recorded. Stations that kept their XML are those where at
+least one year's call completed (40 % of them still hit the error in *some* year).
+
+This makes the structural point sharper rather than weaker: StationXML was obtained only as
+a *side effect* of a code path that is **known to be unreliable**, so any failure there cost
+us the response and `orchestrator.py` fell through to `units="counts"` without complaint.
+Supporting evidence:
 
 - affected stations have **hundreds of miniSEED files and zero StationXML** on disk
   (`1P.EIDA` 173 mseed / 0 xml, `1P.OHRS` 378/0, `2O.BTL04` 159/0)
@@ -221,6 +240,14 @@ FW=/scratch/tolugboj_lab/wavenet_ncf_framework/production
 
 ## 7. Open items / not done
 
+0. **The ObsPy `TypeError` is still live, and may be costing waveform data, not just
+   metadata.** 380 of 602 completed stations (**63 %**) recorded it in at least one year.
+   Each occurrence aborts that year's `download()` call partway, so that year's waveforms
+   may be incomplete — the metadata loss is simply the most *visible* symptom because
+   StationXML is written last. This was not quantified tonight and should be: compare
+   downloaded day counts against `station_summary.csv` expectations for stations with and
+   without `year_errors`. Decoupling the metadata (§3) removes the response exposure but
+   does **not** fix the underlying waveform risk.
 1. **Edge taper** (smoke test §4.5) still unpatched — needs overlap-padded per-day
    processing; `WAVENET_TAPER_PCT` only makes the current behaviour adjustable.
 2. **Window-level quality masking** rather than whole-day rejection (smoke test §4.3).
