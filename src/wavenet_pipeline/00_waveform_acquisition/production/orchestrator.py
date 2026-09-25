@@ -67,6 +67,18 @@ DAY_START = os.environ.get("WAVENET_DAY_START")
 DAY_END = os.environ.get("WAVENET_DAY_END")
 TAPER_PCT = float(os.environ.get("WAVENET_TAPER_PCT", "0.05"))
 
+# Which processing pipeline produced a station's packaged data. Written as an HDF5 group
+# attribute (travels with the shard), into the result JSON, and into the inspector's
+# station index -- so a downstream consumer can refuse to silently mix levels.
+#   1 = pre-patch (before 2026-09-25): grid anchored at an arbitrary sub-second phase, so a
+#       piecewise timing error up to ~1s; days silently dropped on small overlaps;
+#       units="m" asserted whenever response removal succeeded (10^9 off where the
+#       StationXML declares NM/S); no QC sidecar. Correctable downstream ONLY via the
+#       banked per-day offsets (wavenet_ncf_migration/timing_offsets/), which require the
+#       raw SEED headers and so must be computed before that raw data is purged.
+#   2 = patches 1, 1b, 2, 3, 4, 6 from the XD.MTAN/XD.RUNG smoke test.
+PIPELINE_PATCH_LEVEL = 2
+
 
 def _raw_qc(x, n_segments):
     """[PATCH 3] Non-destructive per-channel-day quality flags from the RAW counts (nothing is altered or removed).
@@ -352,6 +364,21 @@ if result["download_ok"]:
                     grp.attrs["station"] = station
                     grp.attrs["latitude"] = float(lat)
                     grp.attrs["longitude"] = float(lon)
+                    # Provenance travels WITH the data (PI, 2026-09-25). A shard that
+                    # already holds channel data but carries no patch_level was written by
+                    # pre-patch code, so a run that resumes it is MIXING two pipelines --
+                    # and that cannot be fixed by appending, because each channel's grid is
+                    # anchored at its first stored sample (docs/ncf_pipeline_stages/
+                    # xd_mtan_rung_smoke_test/REPORT.md 4.1). Record that instead of
+                    # silently stamping this run's level over it.
+                    if "patch_level" not in grp.attrs:
+                        has_prior_data = any(k != "_stationxml_raw" for k in grp.keys())
+                        grp.attrs["patch_level"] = 1 if has_prior_data else PIPELINE_PATCH_LEVEL
+                        if has_prior_data:
+                            grp.attrs["patch_level_mixed"] = f"1+{PIPELINE_PATCH_LEVEL}"
+                    elif int(grp.attrs["patch_level"]) != PIPELINE_PATCH_LEVEL:
+                        grp.attrs["patch_level_mixed"] = \
+                            f"{int(grp.attrs['patch_level'])}+{PIPELINE_PATCH_LEVEL}"
                     if xml_files and "_stationxml_raw" not in grp:
                         with open(xml_files[0], "rb") as xf:
                             grp.create_dataset("_stationxml_raw", data=np.void(xf.read()))
@@ -397,7 +424,8 @@ if result["download_ok"]:
                        h5_size_bytes=os.path.getsize(h5_path) if os.path.exists(h5_path) else 0,
                        packaged_h5_path=h5_path, n_days_refused=n_days_refused,
                        n_days_qc_flagged=sum(1 for v in qc_all.values() if any(c.get("flag") for c in v.values())),
-                       qc_sidecar=qc_path, day_notes=day_notes)
+                       qc_sidecar=qc_path, day_notes=day_notes,
+                       patch_level=PIPELINE_PATCH_LEVEL)
         if day_errors:
             result["day_errors"] = day_errors
     except Exception as e:
