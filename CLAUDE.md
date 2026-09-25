@@ -1,7 +1,7 @@
 # CLAUDE.md — WaveNet-EpicAI
 # Claude Code reads this file automatically at the start of every session.
 # Keep this file current. It is the single source of truth for all AI agents.
-# Last updated: 2026-09-10
+# Last updated: 2026-09-23
 
 ---
 
@@ -38,6 +38,39 @@ directional intent, not a finalized specification, until then.
 
 ---
 
+## Real waveform acquisition (NCF) pipeline (added 2026-09-23)
+
+A **separate workstream** from the CPS-synthetic ML pipeline above: downloading real,
+globally-distributed ambient-noise waveforms from EarthScope for cross-correlation (NCF)
+analysis. Lives on the **unmerged branch `add-september-ncf-pipeline`**
+(`src/wavenet_pipeline/00_waveform_acquisition/`), not yet on `main` — check that branch out before
+touching this work. **Start here**: `docs/ncf_pipeline_stages/PROGRESS.md` (same staged,
+PI-reviewable tracking format as `docs/ml_pipeline_stages/`, but fully independent —
+this pipeline doesn't feed the U-Net ML work, it's upstream real-data acquisition).
+
+Key fixed decision, do not revisit without explicit PI approval: a 2,000-station,
+farthest-point-sampled global network (`src/wavenet_pipeline/00_waveform_acquisition/metadata3/fps_stations.csv`)
+is locked — later stages may relax pair *distance/duration* parameters, never the
+station selection itself.
+
+Two viable, real (not hypothetical) data-acquisition paths, both confirmed by direct
+testing 2026-09-23 — no single path chosen yet:
+- **AWS zero-egress** (`docs/containers_docker_vs_apptainer.md`-adjacent architecture,
+  see `chrisScripts/AWS_Docker_Pipeline_Guide.md`) — fast, has small real $ cost (S3
+  LIST/GET + EC2 + egress).
+- **ROVER via plain FDSN** (`service.earthscope.org/fdsnws/dataselect/1/query`,
+  zero authentication, zero AWS cost) — confirmed working via ROVER's `download`
+  command (not `retrieve`/`list-retrieve`, which are broken today because the
+  `fdsnws-availability` service they depend on is retired). Slower, but genuinely free.
+
+PI's framing: "AWS is fast but expensive, ROVER is slow but zero cost." Full comparison,
+real numbers, and open questions: `docs/ncf_pipeline_stages/stage_1_data_availability_cost_analysis.md`.
+
+**mothership** (see Infrastructure below) is the machine with live AWS/EarthScope
+credentials for this workstream — added 2026-09-23.
+
+---
+
 ## Single-machine rule
 
 ALL work originates from axon-1 (10.17.6.243, macOS, urseismoadmin).
@@ -69,6 +102,7 @@ ALL work originates from axon-1 (10.17.6.243, macOS, urseismoadmin).
 | `src/wavenet_pipeline/02_simulation/verify_main.py` | HDF5 verifier + reference schema reader |
 | `src/wavenet_pipeline/01_parametrization/model_manifest.parquet` | 10,000 Earth models (master input) |
 | `src/wavenet_pipeline/03_machine_learning/` | **ML pipeline (added 2026-09-04) — FTAN group-velocity U-Net.** Staged build in progress; see `docs/ml_pipeline_stages/PROGRESS.md` for status. |
+| `src/wavenet_pipeline/00_waveform_acquisition/` | **NCF waveform acquisition pipeline (added 2026-09-23) — real EarthScope data, separate from the CPS-synthetic pipeline above.** Numbered `00` since it's upstream of everything else. Currently on the unmerged `add-september-ncf-pipeline` branch. Staged build in progress; see `docs/ncf_pipeline_stages/PROGRESS.md` for status. |
 | `docs/HANDOFF.md` | Full project state, timelines, infrastructure |
 | `CLAUDE.md` | This file — rules for all AI agents |
 
@@ -127,6 +161,26 @@ Address: 10.17.6.17
 User: tolulopeolugboji
 OS: macOS
 Passwordless SSH key access confirmed working from axon-1.
+
+### mothership (added 2026-09-23 — AWS/EarthScope credentials host for the NCF pipeline)
+SSH: `ssh mothership` (alias in ~/.ssh/config on axon-1)
+Address: 10.17.7.237 | User: `olugboji` | OS: macOS (Darwin 24.6.0, x86_64)
+Passwordless SSH key access confirmed working from axon-1 (`ssh-copy-id`, 2026-09-23).
+**Login shell is tcsh, not bash/zsh** — inline `2>&1`/pipe redirects in a single SSH
+command string break with cryptic tcsh errors ("Ambiguous output redirect", "Unmatched
+'"'"). Always write a small script file and `scp` + `ssh mothership bash /path/to/script.sh`
+instead of complex inline command strings.
+Has a **live, verified** AWS IAM identity (`atos-orchestrator`, confirmed via
+`boto3 sts get_caller_identity`) and EarthScope login (confirmed via `es user
+get-profile`, EarthScope CLI at `~/Library/Python/3.9/bin/es` — not on `$PATH` by
+default) — this is the credential host for `docs/ncf_pipeline_stages/` work. No Docker
+installed. Two separate Python 3 installs exist (`/usr/bin/python3` — has
+boto3/pandas/pyarrow/earthscope_sdk, use this one; `~/anaconda3/bin/python3` — older,
+missing boto3). **Never inspect EarthScope/AWS token file contents directly, even
+redacted** — Claude Code's own credential-materialization safety classifier blocks this;
+use the credential's own safe identity-check command instead (`es user get-profile`,
+`boto3 sts.get_caller_identity()`), never `get-aws-credentials` or reading
+`~/.earthscope/`/`~/.aws/` files.
 
 ### Empire AI (added 2026-09-04, target GPU hardware for ML training)
 SSH: `ssh empireai` (alias in ~/.ssh/config; matches `empireai`, `alpha1.empireai.edu`,

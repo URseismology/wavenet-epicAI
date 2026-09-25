@@ -1,0 +1,66 @@
+{
+ "band_hz": [
+  0.02847104181136269,
+  0.1963080052785109
+ ],
+ "n_freq_bins": 1813,
+ "variants": {
+  "as_packaged": {
+   "corr_vs_adama_bessel": 0.8337705741965441,
+   "n_predicted_crossings": 12,
+   "n_observed_crossings": 12,
+   "recall_within_quarter_spacing": 12,
+   "precision_observed_near_prediction": 1.0,
+   "median_signed_velocity_diff_pct": -0.6038052216746657,
+   "median_abs_velocity_diff_pct": 0.6699595303061014,
+   "median_abs_offset_in_spacings": 0.06128148443560957,
+   "p95_abs_coherence_in_band": 0.17427400840348964,
+   "n_days": 157,
+   "coh_num": 2355,
+   "K": 13,
+   "ncf": {
+    "peak_lag_causal_s": 35.117834088036,
+    "peak_lag_acausal_s": -34.462100100302855,
+    "implied_group_velocity_km_s": [
+     3.1174805637128027,
+     3.176799002106695
+    ],
+    "peak_asymmetry_s": 0.655733987733143
+   }
+  },
+  "excl_outlier_days": {
+   "corr_vs_adama_bessel": 0.8798439855265412,
+   "n_predicted_crossings": 12,
+   "n_observed_crossings": 13,
+   "recall_within_quarter_spacing": 12,
+   "precision_observed_near_prediction": 1.0,
+   "median_signed_velocity_diff_pct": -0.7119413255869103,
+   "median_abs_velocity_diff_pct": 0.7456876240286148,
+   "median_abs_offset_in_spacings": 0.06616762863558517,
+   "p95_abs_coherence_in_band": 0.23599225869643964,
+   "n_days": 122,
+   "coh_num": 1830,
+   "K": 13,
+   "ncf": {
+    "peak_lag_causal_s": 27.422510210173684,
+    "peak_lag_acausal_s": -34.46402895903152,
+    "implied_group_velocity_km_s": [
+     3.992310126610023,
+     3.176621205236465
+    ],
+    "peak_asymmetry_s": -7.04151874885784
+   }
+  }
+ },
+ "single_taper_as_packaged": {
+  "corr_vs_adama_bessel": 0.8686629549046024,
+  "n_predicted_crossings": 12,
+  "n_observed_crossings": 60,
+  "recall_within_quarter_spacing": 12,
+  "precision_observed_near_prediction": 1.0,
+  "median_signed_velocity_diff_pct": -0.20254811828538324,
+  "median_abs_velocity_diff_pct": 0.4792617328928193,
+  "median_abs_offset_in_spacings": 0.03436360688561044,
+  "p95_abs_coherence_in_band": 0.19153672019668797
+ }
+}

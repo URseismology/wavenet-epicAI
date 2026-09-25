@@ -1,0 +1,96 @@
+{
+ "MTAN": [
+  {
+   "n_days_processed": 32,
+   "n_days_refused": 0,
+   "n_days_qc_flagged": 7,
+   "day_errors": null,
+   "day_notes": {},
+   "preprocess_elapsed_s": 2075.9960067272186,
+   "h5_size_bytes": 34199146
+  },
+  {
+   "n_days_processed": 32,
+   "n_days_refused": 0,
+   "n_days_qc_flagged": 6,
+   "day_errors": null,
+   "day_notes": {},
+   "preprocess_elapsed_s": 2076.5119128227234,
+   "h5_size_bytes": 30251634
+  },
+  {
+   "n_days_processed": 32,
+   "n_days_refused": 0,
+   "n_days_qc_flagged": 7,
+   "day_errors": null,
+   "day_notes": {},
+   "preprocess_elapsed_s": 2125.112352848053,
+   "h5_size_bytes": 31218699
+  },
+  {
+   "n_days_processed": 32,
+   "n_days_refused": 0,
+   "n_days_qc_flagged": 5,
+   "day_errors": null,
+   "day_notes": {},
+   "preprocess_elapsed_s": 2069.7080523967743,
+   "h5_size_bytes": 30244574
+  },
+  {
+   "n_days_processed": 31,
+   "n_days_refused": 0,
+   "n_days_qc_flagged": 7,
+   "day_errors": null,
+   "day_notes": {},
+   "preprocess_elapsed_s": 1979.8736629486084,
+   "h5_size_bytes": 28809961
+  }
+ ],
+ "RUNG": [
+  {
+   "n_days_processed": 32,
+   "n_days_refused": 0,
+   "n_days_qc_flagged": 16,
+   "day_errors": null,
+   "day_notes": {},
+   "preprocess_elapsed_s": 2100.584536075592,
+   "h5_size_bytes": 37746946
+  },
+  {
+   "n_days_processed": 32,
+   "n_days_refused": 0,
+   "n_days_qc_flagged": 13,
+   "day_errors": null,
+   "day_notes": {},
+   "preprocess_elapsed_s": 2061.115813732147,
+   "h5_size_bytes": 30342607
+  },
+  {
+   "n_days_processed": 32,
+   "n_days_refused": 0,
+   "n_days_qc_flagged": 26,
+   "day_errors": null,
+   "day_notes": {},
+   "preprocess_elapsed_s": 2123.6798737049103,
+   "h5_size_bytes": 31297976
+  },
+  {
+   "n_days_processed": 32,
+   "n_days_refused": 0,
+   "n_days_qc_flagged": 32,
+   "day_errors": null,
+   "day_notes": {},
+   "preprocess_elapsed_s": 2082.0381968021393,
+   "h5_size_bytes": 30312558
+  },
+  {
+   "n_days_processed": 31,
+   "n_days_refused": 0,
+   "n_days_qc_flagged": 30,
+   "day_errors": null,
+   "day_notes": {},
+   "preprocess_elapsed_s": 2033.166463136673,
+   "h5_size_bytes": 29305854
+  }
+ ]
+}

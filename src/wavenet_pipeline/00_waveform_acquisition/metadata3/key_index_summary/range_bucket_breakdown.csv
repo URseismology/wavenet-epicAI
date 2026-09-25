@@ -1,0 +1,4 @@
+range_bucket,sep_min_km,sep_max_km,n_pairs,pct_of_all_pairs,median_shared_days
+short,110,500,3883,36.5,442
+medium,500,1500,6743,63.5,493
+long,1500,inf,0,0.0,0

@@ -1,0 +1,89 @@
+{
+ "ADAMAraw_co_ral.h5": {
+  "pair_found": "XD.RUNG-XD.MTAN",
+  "leaves": {
+   "ADAMAraw_co_ral.h5|XD.RUNG-XD.MTAN|[-6.937, 33.518].ZZ-[-7.907, 33.32].ZZ|1970-01-01T00:00:00_1970-01-01T01:59:59": {
+    "n": 7200,
+    "attrs": {
+     "N": 7200,
+     "_json": "{\"location1\": [-6.937, 33.518], \"location2\": [-7.907, 33.32]}",
+     "calib": 1.0,
+     "channel": "MTAN",
+     "channel1": "ZZ",
+     "channel2": "ZZ",
+     "delta": 1.0,
+     "distance": 109.47916520914315,
+     "fend": 0.49997,
+     "fo": 7e-05,
+     "location": "XD",
+     "network": "XD",
+     "network1": "XD",
+     "network2": "XD",
+     "starttime": "1970-01-01T00:00:00.000000Z",
+     "station": "RUNG",
+     "station1": "RUNG",
+     "station2": "MTAN"
+    },
+    "nonzero": 2418
+   }
+  }
+ },
+ "ADAMAraw_co_love.h5": {
+  "pair_found": "XD.RUNG-XD.MTAN",
+  "leaves": {
+   "ADAMAraw_co_love.h5|XD.RUNG-XD.MTAN|[-6.937, 33.518].TT-[-7.907, 33.32].TT|1970-01-01T00:00:00_1970-01-01T01:59:59": {
+    "n": 7200,
+    "attrs": {
+     "N": 7200,
+     "_json": "{\"location1\": [-6.937, 33.518], \"location2\": [-7.907, 33.32]}",
+     "calib": 1.0,
+     "channel": "MTAN",
+     "channel1": "TT",
+     "channel2": "TT",
+     "delta": 1.0,
+     "distance": 109.47916520914315,
+     "fend": 0.49997,
+     "fo": 7e-05,
+     "location": "XD",
+     "network": "XD",
+     "network1": "XD",
+     "network2": "XD",
+     "starttime": "1970-01-01T00:00:00.000000Z",
+     "station": "RUNG",
+     "station1": "RUNG",
+     "station2": "MTAN"
+    },
+    "nonzero": 2101
+   }
+  }
+ },
+ "ADAMAraw_cf_love.h5": {
+  "pair_found": "XD.RUNG-XD.MTAN",
+  "leaves": {
+   "ADAMAraw_cf_love.h5|XD.RUNG-XD.MTAN|[-6.937, 33.518].TT-[-7.907, 33.32].TT|1970-01-01T00:00:00_1970-01-01T01:59:59": {
+    "n": 7200,
+    "attrs": {
+     "N": 7200,
+     "_json": "{\"location1\": [-6.937, 33.518], \"location2\": [-7.907, 33.32]}",
+     "calib": 1.0,
+     "channel": "MTAN",
+     "channel1": "TT",
+     "channel2": "TT",
+     "delta": 1.0,
+     "distance": 109.47916520914315,
+     "fend": 0.49997,
+     "fo": 7e-05,
+     "location": "XD",
+     "network": "XD",
+     "network1": "XD",
+     "network2": "XD",
+     "starttime": "1970-01-01T00:00:00.000000Z",
+     "station": "RUNG",
+     "station1": "RUNG",
+     "station2": "MTAN"
+    },
+    "nonzero": 2521
+   }
+  }
+ }
+}

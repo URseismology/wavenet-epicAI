@@ -1,0 +1,9 @@
+,0
+stations_covered,1633
+stations_total,2000
+stations_uncovered,367
+pairs_selected,1486
+total_unique_station_days,2241961
+required_download_gb,67071.68
+packaged_size_estimate_gb,4017.59
+packaged_size_assumption,5 channels/station x 350 KB/channel-day (confirmed real range 300-410 KB)

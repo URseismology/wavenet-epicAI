@@ -1,0 +1,112 @@
+{
+ "band_hz": [
+  0.02847104181136269,
+  0.1963080052785109
+ ],
+ "n_freq_bins": 1813,
+ "variants": {
+  "as_packaged": {
+   "corr_vs_adama_bessel": 0.6516233505928065,
+   "n_predicted_crossings": 12,
+   "n_observed_crossings": 12,
+   "recall_within_quarter_spacing": 8,
+   "precision_observed_near_prediction": 0.6666666666666666,
+   "median_signed_velocity_diff_pct": -2.327227356196234,
+   "median_abs_velocity_diff_pct": 2.327227356196234,
+   "median_abs_offset_in_spacings": 0.17887307763346455,
+   "p95_abs_coherence_in_band": 0.17416033865018998,
+   "n_days": 156,
+   "coh_num": 2340,
+   "K": 13,
+   "ncf": {
+    "peak_lag_causal_s": 34.22969899487217,
+    "peak_lag_acausal_s": -35.31315641490511,
+    "implied_group_velocity_km_s": [
+     3.1983677456685733,
+     3.1002373144682633
+    ],
+    "peak_asymmetry_s": -1.0834574200329357
+   }
+  },
+  "excl_outlier_days": {
+   "corr_vs_adama_bessel": 0.6923026279905355,
+   "n_predicted_crossings": 12,
+   "n_observed_crossings": 12,
+   "recall_within_quarter_spacing": 8,
+   "precision_observed_near_prediction": 0.6666666666666666,
+   "median_signed_velocity_diff_pct": -2.4869224832109484,
+   "median_abs_velocity_diff_pct": 2.4869224832109484,
+   "median_abs_offset_in_spacings": 0.17713857483255613,
+   "p95_abs_coherence_in_band": 0.23878385446615974,
+   "n_days": 121,
+   "coh_num": 1815,
+   "K": 13,
+   "ncf": {
+    "peak_lag_causal_s": 26.51098416827253,
+    "peak_lag_acausal_s": -35.344376234643576,
+    "implied_group_velocity_km_s": [
+     4.129577556014092,
+     3.0974988632515377
+    ],
+    "peak_asymmetry_s": -8.833392066371047
+   }
+  },
+  "timing_corrected": {
+   "corr_vs_adama_bessel": 0.8310800180861643,
+   "n_predicted_crossings": 12,
+   "n_observed_crossings": 12,
+   "recall_within_quarter_spacing": 12,
+   "precision_observed_near_prediction": 1.0,
+   "median_signed_velocity_diff_pct": -0.4577458852822761,
+   "median_abs_velocity_diff_pct": 0.8180665603497325,
+   "median_abs_offset_in_spacings": 0.060225075789147126,
+   "p95_abs_coherence_in_band": 0.175746617390795,
+   "n_days": 153,
+   "coh_num": 2295,
+   "K": 13,
+   "ncf": {
+    "peak_lag_causal_s": 35.137526539069604,
+    "peak_lag_acausal_s": -34.46733465964373,
+    "implied_group_velocity_km_s": [
+     3.115733405065171,
+     3.1763165411605625
+    ],
+    "peak_asymmetry_s": 0.6701918794258717
+   }
+  },
+  "timing_corrected_excl_outliers": {
+   "corr_vs_adama_bessel": 0.8781648725987371,
+   "n_predicted_crossings": 12,
+   "n_observed_crossings": 12,
+   "recall_within_quarter_spacing": 12,
+   "precision_observed_near_prediction": 1.0,
+   "median_signed_velocity_diff_pct": -0.6983145129691247,
+   "median_abs_velocity_diff_pct": 0.7393801782441879,
+   "median_abs_offset_in_spacings": 0.0582048043964639,
+   "p95_abs_coherence_in_band": 0.23802206393556397,
+   "n_days": 118,
+   "coh_num": 1770,
+   "K": 13,
+   "ncf": {
+    "peak_lag_causal_s": 27.436372584769728,
+    "peak_lag_acausal_s": -34.47172465817529,
+    "implied_group_velocity_km_s": [
+     3.9902929904777715,
+     3.175912035001102
+    ],
+    "peak_asymmetry_s": -7.035352073405562
+   }
+  }
+ },
+ "single_taper_as_packaged": {
+  "corr_vs_adama_bessel": 0.6889869709300723,
+  "n_predicted_crossings": 12,
+  "n_observed_crossings": 80,
+  "recall_within_quarter_spacing": 10,
+  "precision_observed_near_prediction": 0.8,
+  "median_signed_velocity_diff_pct": -1.6575873117065836,
+  "median_abs_velocity_diff_pct": 1.6575873117065836,
+  "median_abs_offset_in_spacings": 0.1291964951475168,
+  "p95_abs_coherence_in_band": 0.1860150188736165
+ }
+}

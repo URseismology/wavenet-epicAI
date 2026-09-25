@@ -1,0 +1,346 @@
+[
+ {
+  "station": "MTAN",
+  "day": "19940920",
+  "channels_refused": [
+   "BHE",
+   "BHN",
+   "BHZ"
+  ],
+  "previous_day": "19940919",
+  "previous_day_info": {
+   "BHE": {
+    "first_sample": "1994-09-19T00:00:00.002700Z",
+    "last_sample": "1994-09-20T00:00:00.002700Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728001,
+    "n_segments": 1,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.003
+   },
+   "BHN": {
+    "first_sample": "1994-09-19T00:00:00.002700Z",
+    "last_sample": "1994-09-20T00:00:00.002700Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728001,
+    "n_segments": 1,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.003
+   },
+   "BHZ": {
+    "first_sample": "1994-09-19T00:00:00.002700Z",
+    "last_sample": "1994-09-20T00:00:00.002700Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728001,
+    "n_segments": 1,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.003
+   }
+  },
+  "refused_day_info": {
+   "BHE": {
+    "first_sample": "1994-09-20T00:00:00.045300Z",
+    "last_sample": "1994-09-20T23:59:59.995300Z",
+    "n_raw": 1728000,
+    "n_raw_in_records": 1728000,
+    "n_segments": 1,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHN": {
+    "first_sample": "1994-09-20T00:00:00.045300Z",
+    "last_sample": "1994-09-20T23:59:59.995300Z",
+    "n_raw": 1728000,
+    "n_raw_in_records": 1728000,
+    "n_segments": 1,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHZ": {
+    "first_sample": "1994-09-20T00:00:00.045300Z",
+    "last_sample": "1994-09-20T23:59:59.995300Z",
+    "n_raw": 1728000,
+    "n_raw_in_records": 1728000,
+    "n_segments": 1,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   }
+  },
+  "message": "REFUSED (overlap: new data starts 1994-09-20T00:00:00.045300Z, existing data runs through 1994-09-20T00:00:00.222100Z)"
+ },
+ {
+  "station": "RUNG",
+  "day": "19940603",
+  "channels_refused": [
+   "BHE",
+   "BHN",
+   "BHZ"
+  ],
+  "previous_day": "19940602",
+  "previous_day_info": {
+   "BHE": {
+    "first_sample": "1994-06-02T00:00:00.015100Z",
+    "last_sample": "1994-06-02T23:59:59.999700Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728000,
+    "n_segments": 2,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHN": {
+    "first_sample": "1994-06-02T00:00:00.015100Z",
+    "last_sample": "1994-06-02T23:59:59.999700Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728000,
+    "n_segments": 2,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHZ": {
+    "first_sample": "1994-06-02T00:00:00.015100Z",
+    "last_sample": "1994-06-02T23:59:59.999700Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728000,
+    "n_segments": 2,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.0
+   }
+  },
+  "refused_day_info": {
+   "BHE": {
+    "first_sample": "1994-06-03T00:00:00.049700Z",
+    "last_sample": "1994-06-03T23:59:59.984300Z",
+    "n_raw": 1728000,
+    "n_raw_in_records": 1727999,
+    "n_segments": 2,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHN": {
+    "first_sample": "1994-06-03T00:00:00.049700Z",
+    "last_sample": "1994-06-03T23:59:59.984300Z",
+    "n_raw": 1728000,
+    "n_raw_in_records": 1727999,
+    "n_segments": 2,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHZ": {
+    "first_sample": "1994-06-03T00:00:00.049700Z",
+    "last_sample": "1994-06-03T23:59:59.984300Z",
+    "n_raw": 1728000,
+    "n_raw_in_records": 1727999,
+    "n_segments": 2,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   }
+  },
+  "message": "REFUSED (overlap: new data starts 1994-06-03T00:00:00.049700Z, existing data runs through 1994-06-03T00:00:00.701000Z)"
+ },
+ {
+  "station": "RUNG",
+  "day": "19940916",
+  "channels_refused": [
+   "BHE",
+   "BHN",
+   "BHZ"
+  ],
+  "previous_day": "19940915",
+  "previous_day_info": {
+   "BHE": {
+    "first_sample": "1994-09-15T00:00:00.013000Z",
+    "last_sample": "1994-09-15T23:59:59.992200Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728000,
+    "n_segments": 2,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHN": {
+    "first_sample": "1994-09-15T00:00:00.013000Z",
+    "last_sample": "1994-09-15T23:59:59.992200Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728000,
+    "n_segments": 2,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHZ": {
+    "first_sample": "1994-09-15T00:00:00.013000Z",
+    "last_sample": "1994-09-15T23:59:59.992200Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728000,
+    "n_segments": 2,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.0
+   }
+  },
+  "refused_day_info": {
+   "BHE": {
+    "first_sample": "1994-09-16T00:00:00.042200Z",
+    "last_sample": "1994-09-16T23:59:59.971000Z",
+    "n_raw": 1728000,
+    "n_raw_in_records": 1727999,
+    "n_segments": 2,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHN": {
+    "first_sample": "1994-09-16T00:00:00.042200Z",
+    "last_sample": "1994-09-16T23:59:59.971000Z",
+    "n_raw": 1728000,
+    "n_raw_in_records": 1727999,
+    "n_segments": 2,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHZ": {
+    "first_sample": "1994-09-16T00:00:00.042200Z",
+    "last_sample": "1994-09-16T23:59:59.971000Z",
+    "n_raw": 1728000,
+    "n_raw_in_records": 1727999,
+    "n_segments": 2,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   }
+  },
+  "message": "REFUSED (overlap: new data starts 1994-09-16T00:00:00.042200Z, existing data runs through 1994-09-16T00:00:00.701000Z)"
+ },
+ {
+  "station": "RUNG",
+  "day": "19940923",
+  "channels_refused": [
+   "BHE",
+   "BHN",
+   "BHZ"
+  ],
+  "previous_day": "19940922",
+  "previous_day_info": {
+   "BHE": {
+    "first_sample": "1994-09-22T00:00:00.007400Z",
+    "last_sample": "1994-09-22T23:59:59.989000Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728000,
+    "n_segments": 2,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHN": {
+    "first_sample": "1994-09-22T00:00:00.007400Z",
+    "last_sample": "1994-09-22T23:59:59.989000Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728000,
+    "n_segments": 2,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHZ": {
+    "first_sample": "1994-09-22T00:00:00.007400Z",
+    "last_sample": "1994-09-22T23:59:59.989000Z",
+    "n_raw": 1728001,
+    "n_raw_in_records": 1728000,
+    "n_segments": 2,
+    "n_decimated": 86401,
+    "runs_past_midnight_s": 0.0
+   }
+  },
+  "refused_day_info": {
+   "BHE": {
+    "first_sample": "1994-09-23T00:00:00.039000Z",
+    "last_sample": "1994-09-23T23:59:59.939000Z",
+    "n_raw": 1727999,
+    "n_raw_in_records": 1727999,
+    "n_segments": 1,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHN": {
+    "first_sample": "1994-09-23T00:00:00.039000Z",
+    "last_sample": "1994-09-23T23:59:59.939000Z",
+    "n_raw": 1727999,
+    "n_raw_in_records": 1727999,
+    "n_segments": 1,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHZ": {
+    "first_sample": "1994-09-23T00:00:00.039000Z",
+    "last_sample": "1994-09-23T23:59:59.939000Z",
+    "n_raw": 1727999,
+    "n_raw_in_records": 1727999,
+    "n_segments": 1,
+    "n_decimated": 86400,
+    "runs_past_midnight_s": 0.0
+   }
+  },
+  "message": "REFUSED (overlap: new data starts 1994-09-23T00:00:00.039000Z, existing data runs through 1994-09-23T00:00:00.701000Z)"
+ },
+ {
+  "station": "RUNG",
+  "day": "19941020",
+  "channels_refused": [
+   "BHE",
+   "BHN"
+  ],
+  "previous_day": "19941019",
+  "previous_day_info": {
+   "BHE": {
+    "first_sample": "1994-10-19T00:00:00.046700Z",
+    "last_sample": "1994-10-20T00:00:42.346700Z",
+    "n_raw": 1728847,
+    "n_raw_in_records": 1728847,
+    "n_segments": 1,
+    "n_decimated": 86443,
+    "runs_past_midnight_s": 42.347
+   },
+   "BHN": {
+    "first_sample": "1994-10-19T00:00:00.046700Z",
+    "last_sample": "1994-10-20T00:00:42.346700Z",
+    "n_raw": 1728847,
+    "n_raw_in_records": 1728847,
+    "n_segments": 1,
+    "n_decimated": 86443,
+    "runs_past_midnight_s": 42.347
+   },
+   "BHZ": {
+    "first_sample": "1994-10-19T00:00:00.046700Z",
+    "last_sample": "1994-10-20T00:00:07.996700Z",
+    "n_raw": 1728160,
+    "n_raw_in_records": 1728160,
+    "n_segments": 1,
+    "n_decimated": 86408,
+    "runs_past_midnight_s": 7.997
+   }
+  },
+  "refused_day_info": {
+   "BHE": {
+    "first_sample": "1994-10-20T00:00:42.413000Z",
+    "last_sample": "1994-10-20T23:59:59.963000Z",
+    "n_raw": 1727152,
+    "n_raw_in_records": 1727152,
+    "n_segments": 1,
+    "n_decimated": 86358,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHN": {
+    "first_sample": "1994-10-20T00:00:42.413000Z",
+    "last_sample": "1994-10-20T23:59:59.963000Z",
+    "n_raw": 1727152,
+    "n_raw_in_records": 1727152,
+    "n_segments": 1,
+    "n_decimated": 86358,
+    "runs_past_midnight_s": 0.0
+   },
+   "BHZ": {
+    "first_sample": "1994-10-20T00:00:08.050000Z",
+    "last_sample": "1994-10-20T23:59:59.950000Z",
+    "n_raw": 1727839,
+    "n_raw_in_records": 1727839,
+    "n_segments": 1,
+    "n_decimated": 86392,
+    "runs_past_midnight_s": 0.0
+   }
+  },
+  "message": "REFUSED (overlap: new data starts 1994-10-20T00:00:42.413000Z, existing data runs through 1994-10-20T00:00:42.701000Z)"
+ }
+]

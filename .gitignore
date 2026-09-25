@@ -6,3 +6,10 @@ _root_debug_archive/
 .venv_ml/
 .local_test_data/
 .ipynb_checkpoints/
+
+# Full EarthScope key index (1.8GB, 60,125 stations) -- already committed once
+# (2026-09-23, commit 8cc515b) since the PI wanted it prominently in-repo, but future
+# rebuilds/updates should not be re-added by default (large binary parquet, triggers
+# GitHub's 50MB-file soft-warning on several partitions). Explicitly `git add -f` if a
+# refreshed index genuinely needs to replace the committed one.
+src/wavenet_pipeline/00_waveform_acquisition/metadata3/keys_partitioned_year_full/

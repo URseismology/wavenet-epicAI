@@ -1,0 +1,21 @@
+Raw BHZ counts (XD.MTAN, XD.RUNG), gap-filled day files, median removed; robust sigma = 1.4826 x median |x|.
+"excursion" = |x| > 20 x robust sigma.  Times are seconds after 00:00 UTC of the file's day (2026-09-25, Bluehive, instaseis env).
+
+MTAN 19940610 robust sigma 338.0 max|x| 4207 (12x) n>20sigma 0  hours with excursions []  first -1s last -1s
+MTAN 19940609 robust sigma 437.4 max|x| 6496137 (14853x) n>20sigma 16568  hours with excursions [0, 1, 17]  first 2763s last 61262s
+MTAN 19940614 robust sigma 397.3 max|x| 6563494 (16519x) n>20sigma 59  hours with excursions [17]  first 61207s last 61210s
+MTAN 19940619 robust sigma 432.9 max|x| 6494751 (15002x) n>20sigma 694  hours with excursions [17]  first 61205s last 61260s
+MTAN 19940901 robust sigma 287.6 max|x| 34623 (120x) n>20sigma 12960  hours with excursions [16, 17]  first 59092s last 61993s
+MTAN 19940902 robust sigma 74.1 max|x| 195 (3x) n>20sigma 0  hours with excursions []  first -1s last -1s
+MTAN 19940907 robust sigma 320.2 max|x| 7008477 (21885x) n>20sigma 115  hours with excursions [17]  first 61206s last 61212s
+RUNG 19940610 robust sigma 177.9 max|x| 4355 (24x) n>20sigma 2  hours with excursions [3]  first 10958s last 10959s
+RUNG 19940609 robust sigma 389.9 max|x| 6550594 (16800x) n>20sigma 19296  hours with excursions [0, 1, 2, 17]  first 2765s last 61376s
+RUNG 19940614 robust sigma 155.7 max|x| 6451086 (41440x) n>20sigma 503953  hours with excursions [17, 18, 19, 20, 21, 22, 23]  first 61202s last 86400s
+RUNG 19940619 robust sigma 169.0 max|x| 6274980 (37126x) n>20sigma 1728  hours with excursions [16, 17]  first 58881s last 61304s
+RUNG 19940901 robust sigma 136.4 max|x| 26234 (192x) n>20sigma 32940  hours with excursions [1, 2, 3, 12, 13, 14, 15, 16]  first 5118s last 72294s
+RUNG 19940902 robust sigma 90.4 max|x| 301 (3x) n>20sigma 0  hours with excursions []  first -1s last -1s
+RUNG 19940907 robust sigma 134.9 max|x| 6544307 (48506x) n>20sigma 3035  hours with excursions [11, 12, 17]  first 42115s last 61344s
+
+Reading: on 06-09, 06-14, 06-19 and 09-07 (a 5-day cadence) both stations show a ~6.5e6-count excursion starting at ~61,205 s = 17:00:05 UTC.
+The RUNG 06-14 excursion is followed by a long disturbed stretch (503,953 samples above 20 sigma, 17 h onward): a recovery or restart.
+06-10 and 09-02 (control days) are quiet.

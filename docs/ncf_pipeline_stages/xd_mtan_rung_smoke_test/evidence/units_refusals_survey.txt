@@ -1,0 +1,19 @@
+XD.MTAN BHZ  epoch 1994-05-25T16:36:00.000000Z -> 1994-10-30T11:54:00.000000Z: sensitivity 0.786575 counts per NM/S at 0.159155 Hz; stage1 input NM/S, gain 1.50027e-06
+XD.RUNG BHZ  epoch 1994-05-25T08:24:00.000000Z -> 1995-05-16T04:48:00.000000Z: sensitivity 0.786575 counts per NM/S at 0.159155 Hz; stage1 input NM/S, gain 1.50027e-06
+---
+=== MTAN: refused ['19940920']
+  refused 19940920: this day {'start': '00:00:00.045300', 'end': '23:59:59.995300', 'end_date': '1994-09-20', 'n_raw': 1728000, 'segs': 1, 'n_dec': 86400}
+     previous day 19940919: {'start': '00:00:00.002700', 'end': '00:00:00.002700', 'end_date': '1994-09-20', 'n_raw': 1728001, 'segs': 1, 'n_dec': 86401}   placed idx/n/e: {'idx': 10045448, 'n': 86401, 'start_ts': 779932800.0027001, 'e': 0.21939992904663086, 'n_segments': 1}
+=== RUNG: refused ['19940603', '19940916', '19940923']
+  refused 19940603: this day {'start': '00:00:00.049700', 'end': '23:59:59.984300', 'end_date': '1994-06-03', 'n_raw': 1728000, 'segs': 2, 'n_dec': 86400}
+     previous day 19940602: {'start': '00:00:00.015100', 'end': '23:59:59.999700', 'end_date': '1994-06-02', 'n_raw': 1728001, 'segs': 2, 'n_dec': 86401}   placed idx/n/e: {'idx': 657224, 'n': 86401, 'start_ts': 770515200.0151, 'e': 0.6858999729156494, 'n_segments': 2}
+  refused 19940916: this day {'start': '00:00:00.042200', 'end': '23:59:59.971000', 'end_date': '1994-09-16', 'n_raw': 1728000, 'segs': 2, 'n_dec': 86400}
+     previous day 19940915: {'start': '00:00:00.013000', 'end': '23:59:59.992200', 'end_date': '1994-09-15', 'n_raw': 1728001, 'segs': 2, 'n_dec': 86401}   placed idx/n/e: {'idx': 9729224, 'n': 86401, 'start_ts': 779587200.0129999, 'e': 0.6880000829696655, 'n_segments': 2}
+  refused 19940923: this day {'start': '00:00:00.039000', 'end': '23:59:59.939000', 'end_date': '1994-09-23', 'n_raw': 1727999, 'segs': 1, 'n_dec': 86400}
+     previous day 19940922: {'start': '00:00:00.007400', 'end': '23:59:59.989000', 'end_date': '1994-09-22', 'n_raw': 1728001, 'segs': 2, 'n_dec': 86401}   placed idx/n/e: {'idx': 10334024, 'n': 86401, 'start_ts': 780192000.0073999, 'e': 0.693600058555603, 'n_segments': 2}
+MTAN raw sample counts per day file (n_raw: number of days): {1728000: 150, 460956: 1, 33145: 1, 1693799: 1, 1229: 1, 1725715: 1}
+RUNG raw sample counts per day file (n_raw: number of days): {1728000: 139, 1728001: 5, 1727999: 5, 1048466: 1, 42977: 1, 1683967: 1}
+---
+stations surveyed: 6
+input-unit tally (stations declaring each): {'M/S': 6}
+{}

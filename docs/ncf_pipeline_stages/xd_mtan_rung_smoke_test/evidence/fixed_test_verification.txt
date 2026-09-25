@@ -1,0 +1,40 @@
+tests finished:    6 COMPLETED 
+=== result JSONs ===
+fixed_test/0000_XD_MTAN.json {'package_ok': True, 'n_days_processed': 4, 'n_days_refused': 0, 'n_days_qc_flagged': 1, 'day_errors': None, 'day_notes': {}}
+fixed_test/0001_XD_RUNG.json {'package_ok': True, 'n_days_processed': 4, 'n_days_refused': 0, 'n_days_qc_flagged': 1, 'day_errors': None, 'day_notes': {}}
+fixed_test2_mtan_0919/0000_XD_MTAN.json {'package_ok': True, 'n_days_processed': 3, 'n_days_refused': 0, 'n_days_qc_flagged': 0, 'day_errors': None, 'day_notes': {}}
+fixed_test2_rung_0602/0001_XD_RUNG.json {'package_ok': True, 'n_days_processed': 3, 'n_days_refused': 0, 'n_days_qc_flagged': 3, 'day_errors': None, 'day_notes': {}}
+fixed_test2_rung_0915/0001_XD_RUNG.json {'package_ok': True, 'n_days_processed': 3, 'n_days_refused': 0, 'n_days_qc_flagged': 3, 'day_errors': None, 'day_notes': {}}
+fixed_test2_rung_0922/0001_XD_RUNG.json {'package_ok': True, 'n_days_processed': 3, 'n_days_refused': 0, 'n_days_qc_flagged': 3, 'day_errors': None, 'day_notes': {}}
+=== verify (fixed_test vs original) ===
+
+===== XD.MTAN =====
+channels: ['BHE', 'BHN', 'BHZ']
+BHZ fixed: n=282,248  start_time=1994-05-25T17:35:52.000000Z  integer second: True  units='m'  sr=1.0
+  QC 19940525: BHZ: flag=False rms/robust=4.2 sat=False segs=1
+  QC 19940526: BHZ: flag=False rms/robust=1.2 sat=False segs=1
+  QC 19940527: BHZ: flag=False rms/robust=1.0 sat=False segs=1
+  QC 19940528: BHZ: flag=True rms/robust=102.6 sat=False segs=2
+  1994-05-26: RMS orig = 743 nm-labelled-m ; RMS fixed = 7.43e-07 m  (ratio 1e+09)
+      measured shift between orig-slice and fixed-slice = +0.022 s   (replay predicted +0.022 s; band coherence 1.000)
+  1994-05-27: RMS orig = 375 nm-labelled-m ; RMS fixed = 3.75e-07 m  (ratio 1e+09)
+      measured shift between orig-slice and fixed-slice = +0.020 s   (replay predicted +0.020 s; band coherence 1.000)
+
+===== XD.RUNG =====
+channels: ['BHE', 'BHN', 'BHZ']
+BHZ fixed: n=311,623  start_time=1994-05-25T09:26:17.000000Z  integer second: True  units='m'  sr=1.0
+  QC 19940525: BHZ: flag=False rms/robust=23.6 sat=False segs=1
+  QC 19940526: BHZ: flag=False rms/robust=9.3 sat=False segs=1
+  QC 19940527: BHZ: flag=False rms/robust=12.0 sat=False segs=1
+  QC 19940528: BHZ: flag=False rms/robust=15.4 sat=False segs=1
+  1994-05-26: RMS orig = 640 nm-labelled-m ; RMS fixed = 6.4e-07 m  (ratio 1e+09)
+      measured shift between orig-slice and fixed-slice = -0.999 s   (replay predicted -0.999 s; band coherence 0.988)
+  1994-05-27: RMS orig = 301 nm-labelled-m ; RMS fixed = 3.01e-07 m  (ratio 1e+09)
+      measured shift between orig-slice and fixed-slice = -0.998 s   (replay predicted -0.998 s; band coherence 0.993)
+=== hard cases: placement + day counts in test2 shards ===
+fixed_test2_mtan_0919 XD.MTAN.h5 n= 259200 start= 1994-09-19T00:00:00.000000Z -> days= 3.0
+fixed_test2_rung_0602 XD.RUNG.h5 n= 259200 start= 1994-06-02T00:00:00.000000Z -> days= 3.0
+fixed_test2_rung_0915 XD.RUNG.h5 n= 259201 start= 1994-09-15T00:00:00.000000Z -> days= 3.0
+fixed_test2_rung_0922 XD.RUNG.h5 n= 259200 start= 1994-09-22T00:00:00.000000Z -> days= 3.0
+
+[exited with code 0]
