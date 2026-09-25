@@ -26,6 +26,7 @@ see "download" section below for why this was a real, not theoretical, fix. Chan
 selection (BH?/LH?) is unchanged from verification.
 """
 import os
+import random
 import sys
 import time
 import json
@@ -78,6 +79,9 @@ TAPER_PCT = float(os.environ.get("WAVENET_TAPER_PCT", "0.05"))
 #       raw SEED headers and so must be computed before that raw data is purged.
 #   2 = patches 1, 1b, 2, 3, 4, 6 from the XD.MTAN/XD.RUNG smoke test.
 PIPELINE_PATCH_LEVEL = 2
+
+# Attempts per YEAR of download. See the retry block for why this matters so much.
+DOWNLOAD_ATTEMPTS = int(os.environ.get("WAVENET_DOWNLOAD_ATTEMPTS", "4"))
 
 
 def _raw_qc(x, n_segments):
@@ -188,6 +192,7 @@ result = dict(idx=idx, network=network, station=station,
 # scope to the new full-history requirement instead of one all-or-nothing request.
 t0 = time.time()
 year_errors = {}
+n_download_retries = 0
 try:
     domain = RectangularDomain(minlatitude=lat - 0.5, maxlatitude=lat + 0.5,
                                 minlongitude=lon - 0.5, maxlongitude=lon + 0.5)
@@ -207,18 +212,44 @@ try:
             channel_priorities=CHANNEL_PRIORITIES,
             location_priorities=["", "00", "10"],
         )
-        try:
-            mdl.download(domain, restrictions, mseed_storage=mseed_dir, stationxml_storage=xml_dir)
-        except Exception as ye:
+        # RETRY, because this failure is TRANSIENT and enormously expensive. Measured
+        # 2026-09-25 against the key index: stations that recorded a year_error obtained a
+        # median of 0.14 of their expected days (84% got under half), versus a median of
+        # exactly 1.00 for stations that did not -- and 63% of completed stations had hit
+        # it. The usual culprit is ObsPy's availability-endpoint bug, "TypeError: sequence
+        # item 0: expected str instance, tuple found", which aborts the download() call
+        # partway (after waveforms are written incrementally, before StationXML is written
+        # at the end -- which is why missing metadata was the visible symptom).
+        # It is not deterministic: isolated re-runs of two stations that failed in
+        # production both succeeded cleanly (YP.NE83 2009 -> 642 files, EI.IMAY 2023 ->
+        # 1083 files), which is why a retry recovers it where a single attempt did not.
+        # Retrying is cheap: MassDownloader skips files already on disk, so an attempt
+        # resumes rather than re-downloading. A fresh instance each time avoids reusing a
+        # client whose discovery state may be part of the problem.
+        last_err = None
+        for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+            try:
+                mdl.download(domain, restrictions, mseed_storage=mseed_dir,
+                              stationxml_storage=xml_dir)
+                last_err = None
+                break
+            except Exception as ye:
+                last_err = f"{type(ye).__name__}: {ye}"
+                n_download_retries += 1
+                if attempt < DOWNLOAD_ATTEMPTS:
+                    time.sleep(10 * attempt + random.uniform(0, 5))
+                    mdl = MassDownloader()
+        if last_err:
             # One bad year doesn't sink the whole station -- keep whatever other years
             # succeeded. Recorded, not silently dropped (see result["year_errors"]).
-            year_errors[year] = f"{type(ye).__name__}: {ye}"
+            year_errors[year] = f"after {DOWNLOAD_ATTEMPTS} attempts: {last_err}"
     mseed_files = [os.path.join(mseed_dir, f) for f in os.listdir(mseed_dir)]
     xml_files = [os.path.join(xml_dir, f) for f in os.listdir(xml_dir)]
     download_bytes = sum(os.path.getsize(f) for f in mseed_files)
     result.update(download_ok=len(mseed_files) > 0, download_bytes=download_bytes,
                    download_elapsed_s=time.time() - t0, n_channels=len(mseed_files),
-                   download_year_range=[loop_year_start, loop_year_end])
+                   download_year_range=[loop_year_start, loop_year_end],
+                   n_download_retries=n_download_retries)
     if year_errors:
         result["year_errors"] = year_errors
 except Exception as e:
