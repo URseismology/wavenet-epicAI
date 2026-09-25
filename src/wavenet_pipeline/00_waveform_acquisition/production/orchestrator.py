@@ -248,6 +248,9 @@ except Exception as e:
 t0 = time.time()
 n_days_processed = 0
 n_days_refused = 0      # [PATCH 2]
+response_failures = {}     # channel -> why its response could not be removed
+channels_seen = set()
+channels_response_ok = set()
 day_errors = {}
 day_notes = {}          # [PATCH 1b/2] benign statuses (e.g. SKIPPED = already stored), kept apart from real errors
 if result["download_ok"]:
@@ -295,7 +298,20 @@ if result["download_ok"]:
     # scaling memory problem this rewrite exists to fix.
     channel_meta = {}
     try:
-        inv = read_inventory(os.path.join(xml_dir, "*.xml")) if xml_files else None
+        # Response metadata comes from the DEDICATED fetch_station_metadata.py stage, not
+        # from whatever MassDownloader happened to leave beside the waveforms. Coupling the
+        # two silently cost us the response for 283 of the first 667 stations (36.9% of all
+        # channels left in raw counts) even though the metadata was available on request --
+        # and raw counts cannot be compared in amplitude across stations. The sidecar is
+        # kept only as a fallback for roots predating that stage.
+        station_xml = os.path.join(ROOT, "station_metadata", f"{network}.{station}.xml")
+        if os.path.exists(station_xml):
+            inv, inv_source = read_inventory(station_xml), "station_metadata"
+        elif xml_files:
+            inv, inv_source = read_inventory(os.path.join(xml_dir, "*.xml")), "massdownloader_sidecar"
+        else:
+            inv, inv_source = None, "NONE -- no response available, data stays in raw counts"
+        result["inventory_source"] = inv_source
 
         for day_str in sorted(files_by_day):
             if day_str in done_days:
@@ -328,8 +344,18 @@ if result["download_ok"]:
                             units_out, scale_ = _disp_units(inv, tr)      # [PATCH 4]
                             if scale_ != 1.0:
                                 tr.data = tr.data * scale_
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            # Never silent: a channel that keeps its raw counts is not
+                            # amplitude-comparable with any other station, so record which
+                            # channel failed and why instead of letting "counts" quietly
+                            # appear in the packaged output.
+                            response_failures.setdefault(
+                                tr.stats.channel, f"{type(e).__name__}: {str(e)[:150]}")
+                    else:
+                        response_failures.setdefault(tr.stats.channel, "no inventory available")
+                    channels_seen.add(tr.stats.channel)
+                    if response_removed:
+                        channels_response_ok.add(tr.stats.channel)
                         try:
                             meta = inv.get_channel_metadata(tr.id, tr.stats.starttime)
                             azimuth, dip = meta["azimuth"], meta["dip"]
@@ -379,8 +405,13 @@ if result["download_ok"]:
                     elif int(grp.attrs["patch_level"]) != PIPELINE_PATCH_LEVEL:
                         grp.attrs["patch_level_mixed"] = \
                             f"{int(grp.attrs['patch_level'])}+{PIPELINE_PATCH_LEVEL}"
-                    if xml_files and "_stationxml_raw" not in grp:
-                        with open(xml_files[0], "rb") as xf:
+                    # Store the SAME inventory the response was actually removed with, so
+                    # the shard is self-describing and a later reader can check the
+                    # calibration rather than trust the units label.
+                    xml_to_store = station_xml if os.path.exists(station_xml) else (
+                        xml_files[0] if xml_files else None)
+                    if xml_to_store and "_stationxml_raw" not in grp:
+                        with open(xml_to_store, "rb") as xf:
                             grp.create_dataset("_stationxml_raw", data=np.void(xf.read()))
 
                     for tr, response_removed, azimuth, dip, units_out in day_traces:
@@ -425,7 +456,11 @@ if result["download_ok"]:
                        packaged_h5_path=h5_path, n_days_refused=n_days_refused,
                        n_days_qc_flagged=sum(1 for v in qc_all.values() if any(c.get("flag") for c in v.values())),
                        qc_sidecar=qc_path, day_notes=day_notes,
-                       patch_level=PIPELINE_PATCH_LEVEL)
+                       patch_level=PIPELINE_PATCH_LEVEL,
+                       n_channels_response_ok=len(channels_response_ok),
+                       n_channels_total=len(channels_seen),
+                       response_ok=bool(channels_seen) and channels_response_ok == channels_seen,
+                       response_failures=response_failures)
         if day_errors:
             result["day_errors"] = day_errors
     except Exception as e:

@@ -430,6 +430,9 @@ def cmd_progress(args):
     n_reported = 0
     n_with_data = 0
     n_unreadable = 0
+    n_patched = 0        # patch_level >= 2
+    n_prepatch = 0       # patch_level 1 (or absent, which means pre-patch)
+    n_days_refused = 0
     completed_stations = set()
     completed_packaged_bytes = 0
     finished_download_bytes = 0   # sum over finished stations, used only to derive an avg $/day
@@ -450,6 +453,18 @@ def cmd_progress(args):
             completed_stations.add((r.get("network"), r.get("station")))
             finished_download_bytes += r.get("download_bytes") or 0
             finished_days_processed += r.get("n_days_processed") or 0
+            # Provenance split. A result written before 2026-09-25 has no patch_level at
+            # all, which IS the pre-patch marker -- absence is meaningful here, not missing
+            # data. Kept visible because a pair mixing levels needs the banked timing
+            # offsets applied before correlation.
+            if int(r.get("patch_level") or 1) >= 2:
+                n_patched += 1
+            else:
+                n_prepatch += 1
+            # Days the overlap bug refused and silently dropped (surfaced by patch 2).
+            # Pre-patch stations report nothing here even though they lost days -- that
+            # loss is only visible via the banked replay, hence the separate counter.
+            n_days_refused += r.get("n_days_refused") or 0
 
     # Packaged bytes + days-checkpointed are TRUE live totals (not just finished
     # stations) -- safe because packaged_h5/ is bounded by station count (<=2,000 files,
