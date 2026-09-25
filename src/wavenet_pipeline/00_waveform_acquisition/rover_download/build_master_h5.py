@@ -22,8 +22,32 @@ import numpy as np
 from obspy import UTCDateTime
 
 
+def align_to_integer_second(tr):
+    """[PATCH 1] Shift `tr`'s samples (band-limited fractional delay) so that sample 0 falls exactly on an
+    integer UTC second, and set starttime accordingly; returns `tr`.
+
+    Why: each processed day is decimated from its own first raw sample, so its 1 Hz samples sit at an
+    arbitrary sub-second phase that differs from day to day. append_channel_data places days on a grid
+    anchored at the first day's start; without this alignment the placement error reaches ~1 s and
+    changes by whole seconds between days (measured on XD.MTAN/XD.RUNG: -0.35..+0.70 s), which
+    corrupts inter-station timing and makes later days look like overlaps. Data are already low-passed
+    at 0.4 Hz (< Nyquist), so the FFT fractional delay is accurate; the residual edge effect sits in the
+    5 % taper zone. Intended for the pipeline's 1 Hz output (call after decimation)."""
+    dt = tr.stats.delta
+    t = tr.stats.starttime.timestamp
+    t_int = round(t)
+    s = t - t_int                                  # seconds; |s| <= 0.5
+    if abs(s) > 1e-6 * dt:
+        n = len(tr.data)
+        F = np.fft.rfft(tr.data)
+        f = np.fft.rfftfreq(n, d=dt)
+        tr.data = np.fft.irfft(F * np.exp(-2j * np.pi * f * s), n=n)    # y[j] = x(j - s/dt): delay by s
+    tr.stats.starttime = UTCDateTime(t_int)
+    return tr
+
+
 def append_channel_data(grp, channel, data, sampling_rate, start_time, units,
-                         azimuth=None, dip=None):
+                         azimuth=None, dip=None, max_trim_samples=2):
     """Core gap-fill/append logic, shared by merge_channel (below, used by logger.py to
     merge a completed per-station shard into the master file) and orchestrator.py's
     day-by-day checkpointing (added 2026-09-24 -- appends one calendar day's processed
@@ -66,9 +90,20 @@ def append_channel_data(grp, channel, data, sampling_rate, start_time, units,
 
     existing_end = existing_start + (len(ds) - 1) / existing_sr
 
-    if start_time <= existing_end:
-        return (f"REFUSED (overlap: new data starts {start_time}, existing data runs "
-                f"through {existing_end})")
+    n_trimmed = 0
+    if start_time <= existing_end + 0.5 / sampling_rate:
+        # [PATCH 1b] whole-sample overlap: trim the coinciding leading samples of the NEW data instead of
+        # refusing the entire day. Larger overlaps (real duplicated data) are still refused.
+        overlap = int(round((existing_end - start_time) * sampling_rate)) + 1
+        if overlap >= len(data):
+            # entirely inside data already stored: an idempotent re-append (e.g. a resubmitted array task) -- skip it
+            return f"SKIPPED (new data fully covered by existing data, overlap={overlap} samples)"
+        if overlap > max_trim_samples:
+            return (f"REFUSED (overlap: new data starts {start_time}, existing data runs through "
+                    f"{existing_end}; {overlap} samples exceeds max_trim_samples={max_trim_samples})")
+        data = data[overlap:]
+        start_time = start_time + overlap / sampling_rate
+        n_trimmed = overlap
 
     gap_samples = int(round((start_time - existing_end) * sampling_rate)) - 1
     gap_samples = max(gap_samples, 0)
@@ -94,7 +129,8 @@ def append_channel_data(grp, channel, data, sampling_rate, start_time, units,
     ds[old_len + gap_samples:new_len] = data
     # azimuth/dip are set once at creation -- a channel's orientation doesn't change
     # between appends of the same channel, so there's nothing to update here.
-    return f"appended ({len(data):,} samples, gap={gap_samples} samples)"
+    return (f"appended ({len(data):,} samples, gap={gap_samples} samples"
+            + (f", trimmed {n_trimmed} overlapping sample(s)" if n_trimmed else "") + ")")
 
 
 def merge_channel(master_grp, channel, src_ds):
