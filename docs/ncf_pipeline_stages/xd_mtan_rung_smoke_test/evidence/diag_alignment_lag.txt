@@ -1,0 +1,8 @@
+diag2 final state: COMPLETED
+XD.MTAN 19940526: fresh start=1994-05-26T00:00:00.022100Z dataset t0=1994-05-25T17:35:52.222100Z (start-t0)=23047.8000 s -> nearest idx 23048; best matching lag = +0 samples (rel diff 0.00e+00)
+XD.RUNG 19940526: fresh start=1994-05-26T00:00:00.001000Z dataset t0=1994-05-25T09:26:16.701000Z (start-t0)=52423.3000 s -> nearest idx 52423; best matching lag = +1 samples (rel diff 0.00e+00)
+XD.RUNG 19940530: fresh start=1994-05-30T00:00:00.025000Z dataset t0=1994-05-25T09:26:16.701000Z (start-t0)=398023.3240 s -> nearest idx 398023; best matching lag = +1 samples (rel diff 0.00e+00)
+XD.MTAN 19940530: fresh start=1994-05-30T00:00:00.021000Z dataset t0=1994-05-25T17:35:52.222100Z (start-t0)=368647.7989 s -> nearest idx 368648; best matching lag = +0 samples (rel diff 0.00e+00)
+--- err ---
+
+[exited with code 0]

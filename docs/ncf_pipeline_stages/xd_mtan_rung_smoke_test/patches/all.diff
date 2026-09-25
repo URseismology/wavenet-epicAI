@@ -1,0 +1,292 @@
+diff --git a/src/wavenet_pipeline/00_waveform_acquisition/production/orchestrator.py b/src/wavenet_pipeline/00_waveform_acquisition/production/orchestrator.py
+index 0f76ca7..2760c10 100644
+--- a/src/wavenet_pipeline/00_waveform_acquisition/production/orchestrator.py
++++ b/src/wavenet_pipeline/00_waveform_acquisition/production/orchestrator.py
+@@ -38,7 +38,7 @@ from obspy import UTCDateTime, read, read_inventory
+ from obspy.clients.fdsn.mass_downloader import Restrictions, MassDownloader, RectangularDomain
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rover_download"))
+-from build_master_h5 import append_channel_data  # shared gap-fill/append logic
++from build_master_h5 import append_channel_data, align_to_integer_second  # shared gap-fill/append logic
+ 
+ ROOT = os.environ["WAVENET_PROD_ROOT"]
+ STATIONS_CSV = os.environ.get("WAVENET_STATIONS_CSV", os.path.join(ROOT, "manifest", "fps_stations.csv"))
+@@ -49,8 +49,52 @@ STATIONS_CSV = os.environ.get("WAVENET_STATIONS_CSV", os.path.join(ROOT, "manife
+ # current instant (PI, 2026-09-24) -- avoids requesting a partial "today" that most
+ # providers haven't finished ingesting/replicating yet, which would just come back empty
+ # or truncated rather than actually getting today's data.
+-DOWNLOAD_START = UTCDateTime(1970, 1, 1)
+-DOWNLOAD_END = UTCDateTime(UTCDateTime.now().date) - 1  # midnight today, minus 1s -> end of yesterday
++DOWNLOAD_START = UTCDateTime(os.environ.get("WAVENET_START", "1970-01-01"))
++DOWNLOAD_END = (UTCDateTime(os.environ["WAVENET_END"]) if "WAVENET_END" in os.environ
++                else UTCDateTime(UTCDateTime.now().date) - 1)  # default: midnight today, minus 1s -> end of yesterday
++
++# [PATCH 6] Per-run overrides (defaults reproduce the previous hard-coded behaviour exactly):
++#   WAVENET_START / WAVENET_END      download + processing window (ISO date/time)
++#   WAVENET_CHANNELS                 obspy channel selector, default "BH?,LH?"
++#   WAVENET_CHANNEL_PRIORITIES       comma list, default "LH?,BH?"
++#   WAVENET_SKIP_DOWNLOAD=1          reprocess raw files already in scratch_work/ (no network)
++#   WAVENET_DAY_START / _DAY_END     'YYYYMMDD' inclusive; process only these days (parallel date-range chunks)
++#   WAVENET_TAPER_PCT                per-end taper fraction applied to every processed day, default 0.05
++CHANNELS = os.environ.get("WAVENET_CHANNELS", "BH?,LH?")
++CHANNEL_PRIORITIES = os.environ.get("WAVENET_CHANNEL_PRIORITIES", "LH?,BH?").split(",")
++SKIP_DOWNLOAD = os.environ.get("WAVENET_SKIP_DOWNLOAD", "0") == "1"
++DAY_START = os.environ.get("WAVENET_DAY_START")
++DAY_END = os.environ.get("WAVENET_DAY_END")
++TAPER_PCT = float(os.environ.get("WAVENET_TAPER_PCT", "0.05"))
++
++
++def _raw_qc(x, n_segments):
++    """[PATCH 3] Non-destructive per-channel-day quality flags from the RAW counts (nothing is altered or removed).
++    Flag = int32-saturated, or heavy-tailed (RMS / robust sigma > 30; quiet days were <= ~9, corrupt days > 100
++    on XD.MTAN / XD.RUNG), or the day contains more than one record segment (gap / recorder restart)."""
++    x = np.asarray(x, dtype=np.float64)
++    med = np.median(x)
++    robust = float(np.median(np.abs(x - med)) * 1.4826 + 1e-12)
++    rms, mx = float(np.sqrt(np.mean(x ** 2))), float(np.max(np.abs(x)))
++    ratio, saturated = rms / robust, bool(mx >= 0.999 * 2 ** 31)
++    return dict(rms=rms, robust_sigma=robust, max_abs=mx, rms_over_robust_sigma=float(ratio),
++                saturated=saturated, n_segments=int(n_segments),
++                flag=bool(saturated or ratio > 30 or n_segments > 1))
++
++
++_UNIT_SCALE = {"M/S": ("m", 1.0), "M": ("m", 1.0), "NM/S": ("m", 1e-9), "NM": ("m", 1e-9),
++               "MM/S": ("m", 1e-3), "UM/S": ("m", 1e-6)}
++
++
++def _disp_units(inv, tr):
++    """[PATCH 4] remove_response(output='DISP') returns displacement in the response's OWN length unit (input
++    NM/S -> nanometres) and never converts to metres. Return (label, scale) so the packaged data really are
++    metres; an unrecognised/unreadable unit is labelled as such and left unscaled instead of being called 'm'."""
++    try:
++        u = inv.get_response(tr.id, tr.stats.starttime).instrument_sensitivity.input_units.upper()
++    except Exception:
++        return "unknown (response input units unreadable)", 1.0
++    return _UNIT_SCALE.get(u, (f"displacement[{u}-derived, not rescaled]", 1.0))
+ 
+ # Discard raw SEED after packaging is NOT done here -- that's the inspector's job, gated
+ # on verifying the merged master-h5 copy is good (docs/ncf_pipeline_stages/PROGRESS.md's
+@@ -135,10 +179,10 @@ year_errors = {}
+ try:
+     domain = RectangularDomain(minlatitude=lat - 0.5, maxlatitude=lat + 0.5,
+                                 minlongitude=lon - 0.5, maxlongitude=lon + 0.5)
+-    mdl = MassDownloader()  # one client-discovery pass reused across all years below
++    mdl = None if SKIP_DOWNLOAD else MassDownloader()  # one client-discovery pass reused across all years below
+     loop_year_start = station_year_start if station_year_start is not None else DOWNLOAD_START.year
+     loop_year_end = station_year_end if station_year_end is not None else DOWNLOAD_END.year
+-    for year in range(loop_year_start, loop_year_end + 1):
++    for year in ([] if SKIP_DOWNLOAD else range(loop_year_start, loop_year_end + 1)):
+         year_start = max(DOWNLOAD_START, UTCDateTime(year, 1, 1))
+         year_end = min(DOWNLOAD_END, UTCDateTime(year, 12, 31, 23, 59, 59))
+         if year_start > year_end:
+@@ -146,9 +190,9 @@ try:
+         restrictions = Restrictions(
+             starttime=year_start, endtime=year_end,
+             chunklength_in_sec=86400, network=network, station=station,
+-            channel="BH?,LH?",
++            channel=CHANNELS,
+             reject_channels_with_gaps=False, minimum_length=0.0,
+-            channel_priorities=["LH?", "BH?"],
++            channel_priorities=CHANNEL_PRIORITIES,
+             location_priorities=["", "00", "10"],
+         )
+         try:
+@@ -191,7 +235,9 @@ except Exception as e:
+ # reprocessing from scratch.
+ t0 = time.time()
+ n_days_processed = 0
++n_days_refused = 0      # [PATCH 2]
+ day_errors = {}
++day_notes = {}          # [PATCH 1b/2] benign statuses (e.g. SKIPPED = already stored), kept apart from real errors
+ if result["download_ok"]:
+     h5_path = os.path.join(H5_DIR, f"{network}.{station}.h5")
+     day_state_path = h5_path + ".daystate.json"
+@@ -217,6 +263,20 @@ if result["download_ok"]:
+         if len(parts) >= 2 and len(parts[1]) >= 8:
+             files_by_day[parts[1][:8]].append(mf)
+ 
++    if DAY_START or DAY_END:                      # [PATCH 6] parallel date-range chunks
++        files_by_day = defaultdict(list, {k: v for k, v in files_by_day.items()
++                                          if (not DAY_START or k >= DAY_START) and (not DAY_END or k <= DAY_END)})
++
++    # [PATCH 3] per-day raw-quality sidecar (JSON next to the shard), same atomic pattern as daystate
++    qc_path = h5_path + ".qc.json"
++    qc_all = json.load(open(qc_path)) if os.path.exists(qc_path) else {}
++
++    def save_qc():
++        tmp = qc_path + ".tmp"
++        with open(tmp, "w") as fq:
++            json.dump(qc_all, fq)
++        os.replace(tmp, qc_path)
++
+     # channel_meta is just a small per-channel tally (n_samples, sampling_rate) kept in
+     # memory across the day loop -- bounded by channel count (<=6 here), not by how
+     # many days/years are processed, so it doesn't reintroduce the history-length-
+@@ -234,19 +294,28 @@ if result["download_ok"]:
+                 for mf in files_by_day[day_str]:
+                     st_part = read(mf)
+                     day_stream = st_part if day_stream is None else day_stream + st_part
++                seg_count = {}
++                for tr_ in day_stream:                 # [PATCH 3] record segments per channel BEFORE merge (gaps / restarts)
++                    seg_count[tr_.id] = seg_count.get(tr_.id, 0) + 1
+                 day_stream.merge(fill_value=0)  # scoped to ONE day now -- cheap, not the 7.3GB version
+ 
+                 day_traces = []
++                day_qc = {}
+                 for tr in day_stream:
++                    day_qc[tr.stats.channel] = _raw_qc(tr.data, seg_count.get(tr.id, 1))
+                     tr.detrend("linear")
+                     tr.detrend("demean")
+                     response_removed = False
++                    units_out = "counts"
+                     azimuth, dip = None, None
+                     if inv is not None:
+                         try:
+                             tr.remove_response(inventory=inv, output="DISP", water_level=60,
+                                                 pre_filt=(0.001, 0.005, 0.4, 0.5))
+                             response_removed = True
++                            units_out, scale_ = _disp_units(inv, tr)      # [PATCH 4]
++                            if scale_ != 1.0:
++                                tr.data = tr.data * scale_
+                         except Exception:
+                             pass
+                         try:
+@@ -259,9 +328,12 @@ if result["download_ok"]:
+                     tr.filter("highpass", freq=1.0 / 3600.0, corners=4, zerophase=True)
+                     if tr.stats.sampling_rate >= 2:
+                         tr.decimate(factor=int(round(tr.stats.sampling_rate)), no_filter=True)
++                    align_to_integer_second(tr)                            # [PATCH 1] sample 0 exactly on an integer UTC second
+                     tr.detrend("demean")
+-                    tr.taper(max_percentage=0.05)
+-                    day_traces.append((tr, response_removed, azimuth, dip))
++                    tr.taper(max_percentage=TAPER_PCT)                     # [PATCH 6] was hard-coded 0.05
++                    day_traces.append((tr, response_removed, azimuth, dip, units_out))
++                qc_all[day_str] = day_qc
++                save_qc()
+ 
+                 # ---- open the shard ONLY to append this one day, then close it again.
+                 # HDF5 has no journal/crash-safety against a hard kill (OOM SIGKILL,
+@@ -273,6 +345,7 @@ if result["download_ok"]:
+                 # worst case, corrupts only the current shard -- caught by the inspector
+                 # later regardless, but far less likely than with the file open for a
+                 # station's whole multi-year run. ----
++                day_refused = False
+                 with h5py.File(h5_path, "a") as f:
+                     grp = f.require_group(f"{network}.{station}")
+                     grp.attrs["network"] = network
+@@ -283,21 +356,30 @@ if result["download_ok"]:
+                         with open(xml_files[0], "rb") as xf:
+                             grp.create_dataset("_stationxml_raw", data=np.void(xf.read()))
+ 
+-                    for tr, response_removed, azimuth, dip in day_traces:
++                    for tr, response_removed, azimuth, dip, units_out in day_traces:
+                         channel = tr.stats.channel
+                         data = tr.data.astype(np.float32)
+-                        units = "m" if response_removed else "counts"
++                        units = units_out                                  # [PATCH 4] was: "m" if response_removed else "counts"
+                         status = append_channel_data(grp, channel, data, tr.stats.sampling_rate,
+                                                       tr.stats.starttime, units, azimuth=azimuth, dip=dip)
++                        if status.startswith("SKIPPED"):
++                            day_notes[f"{day_str}/{channel}"] = status
++                            continue
+                         if status.startswith("REFUSED"):
+                             # A real anomaly (e.g. overlapping timestamps from a
+                             # provider) -- skip this trace, don't crash the whole day,
+                             # but don't silently pretend it succeeded either.
+                             day_errors[f"{day_str}/{channel}"] = status
++                            day_refused = True                             # [PATCH 2]
+                             continue
+                         meta_entry = channel_meta.setdefault(
+                             channel, dict(n_samples=0, sampling_rate=tr.stats.sampling_rate))
+                         meta_entry["n_samples"] += len(data)
++                if day_refused:
++                    # [PATCH 2] a refused day used to be marked done anyway (silently lost). Now it is NOT marked done
++                    # (a resubmit retries it) and is counted in the result JSON (n_days_refused / day_errors).
++                    n_days_refused += 1
++                    continue
+                 # File is now safely closed -- only mark the day done AFTER that, so
+                 # day_state can never claim a day is in the shard when it isn't.
+                 done_days.add(day_str)
+@@ -313,7 +395,9 @@ if result["download_ok"]:
+                        preprocess_elapsed_s=time.time() - t0, n_days_processed=n_days_processed,
+                        n_processed=len(channel_meta), channel_meta=channel_meta,
+                        h5_size_bytes=os.path.getsize(h5_path) if os.path.exists(h5_path) else 0,
+-                       packaged_h5_path=h5_path)
++                       packaged_h5_path=h5_path, n_days_refused=n_days_refused,
++                       n_days_qc_flagged=sum(1 for v in qc_all.values() if any(c.get("flag") for c in v.values())),
++                       qc_sidecar=qc_path, day_notes=day_notes)
+         if day_errors:
+             result["day_errors"] = day_errors
+     except Exception as e:
+diff --git a/src/wavenet_pipeline/00_waveform_acquisition/rover_download/build_master_h5.py b/src/wavenet_pipeline/00_waveform_acquisition/rover_download/build_master_h5.py
+index f53a399..c984ea6 100644
+--- a/src/wavenet_pipeline/00_waveform_acquisition/rover_download/build_master_h5.py
++++ b/src/wavenet_pipeline/00_waveform_acquisition/rover_download/build_master_h5.py
+@@ -22,8 +22,32 @@ import numpy as np
+ from obspy import UTCDateTime
+ 
+ 
++def align_to_integer_second(tr):
++    """[PATCH 1] Shift `tr`'s samples (band-limited fractional delay) so that sample 0 falls exactly on an
++    integer UTC second, and set starttime accordingly; returns `tr`.
++
++    Why: each processed day is decimated from its own first raw sample, so its 1 Hz samples sit at an
++    arbitrary sub-second phase that differs from day to day. append_channel_data places days on a grid
++    anchored at the first day's start; without this alignment the placement error reaches ~1 s and
++    changes by whole seconds between days (measured on XD.MTAN/XD.RUNG: -0.35..+0.70 s), which
++    corrupts inter-station timing and makes later days look like overlaps. Data are already low-passed
++    at 0.4 Hz (< Nyquist), so the FFT fractional delay is accurate; the residual edge effect sits in the
++    5 % taper zone. Intended for the pipeline's 1 Hz output (call after decimation)."""
++    dt = tr.stats.delta
++    t = tr.stats.starttime.timestamp
++    t_int = round(t)
++    s = t - t_int                                  # seconds; |s| <= 0.5
++    if abs(s) > 1e-6 * dt:
++        n = len(tr.data)
++        F = np.fft.rfft(tr.data)
++        f = np.fft.rfftfreq(n, d=dt)
++        tr.data = np.fft.irfft(F * np.exp(-2j * np.pi * f * s), n=n)    # y[j] = x(j - s/dt): delay by s
++    tr.stats.starttime = UTCDateTime(t_int)
++    return tr
++
++
+ def append_channel_data(grp, channel, data, sampling_rate, start_time, units,
+-                         azimuth=None, dip=None):
++                         azimuth=None, dip=None, max_trim_samples=2):
+     """Core gap-fill/append logic, shared by merge_channel (below, used by logger.py to
+     merge a completed per-station shard into the master file) and orchestrator.py's
+     day-by-day checkpointing (added 2026-09-24 -- appends one calendar day's processed
+@@ -66,9 +90,20 @@ def append_channel_data(grp, channel, data, sampling_rate, start_time, units,
+ 
+     existing_end = existing_start + (len(ds) - 1) / existing_sr
+ 
+-    if start_time <= existing_end:
+-        return (f"REFUSED (overlap: new data starts {start_time}, existing data runs "
+-                f"through {existing_end})")
++    n_trimmed = 0
++    if start_time <= existing_end + 0.5 / sampling_rate:
++        # [PATCH 1b] whole-sample overlap: trim the coinciding leading samples of the NEW data instead of
++        # refusing the entire day. Larger overlaps (real duplicated data) are still refused.
++        overlap = int(round((existing_end - start_time) * sampling_rate)) + 1
++        if overlap >= len(data):
++            # entirely inside data already stored: an idempotent re-append (e.g. a resubmitted array task) -- skip it
++            return f"SKIPPED (new data fully covered by existing data, overlap={overlap} samples)"
++        if overlap > max_trim_samples:
++            return (f"REFUSED (overlap: new data starts {start_time}, existing data runs through "
++                    f"{existing_end}; {overlap} samples exceeds max_trim_samples={max_trim_samples})")
++        data = data[overlap:]
++        start_time = start_time + overlap / sampling_rate
++        n_trimmed = overlap
+ 
+     gap_samples = int(round((start_time - existing_end) * sampling_rate)) - 1
+     gap_samples = max(gap_samples, 0)
+@@ -94,7 +129,8 @@ def append_channel_data(grp, channel, data, sampling_rate, start_time, units,
+     ds[old_len + gap_samples:new_len] = data
+     # azimuth/dip are set once at creation -- a channel's orientation doesn't change
+     # between appends of the same channel, so there's nothing to update here.
+-    return f"appended ({len(data):,} samples, gap={gap_samples} samples)"
++    return (f"appended ({len(data):,} samples, gap={gap_samples} samples"
++            + (f", trimmed {n_trimmed} overlapping sample(s)" if n_trimmed else "") + ")")
+ 
+ 
+ def merge_channel(master_grp, channel, src_ds):

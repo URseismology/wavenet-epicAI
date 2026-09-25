@@ -1,0 +1,84 @@
+diag final state: COMPLETED
+
+===== XD.MTAN BHZ  19940526 =====
+  raw file: XD.MTAN..BHZ__19940526T000000Z__19940527T000000Z.mseed; traces=1; segments: [('00:00:00.022100', 1728000)]
+    RAW counts                         rms=5.637e+02  max|x|=9.104e+03  robust_sigma=4.685e+02  n>10sigma=1475
+  -- orchestrator replay (with response removal):
+    after detrend                      rms=3.253e+02  max|x|=8.633e+03  robust_sigma=2.103e+02  n>10sigma=6684
+    after remove_response(DISP)        rms=7.550e+02  max|x|=1.800e+04  robust_sigma=1.742e+02  n>10sigma=28640
+    after lowpass 0.4 Hz               rms=7.549e+02  max|x|=1.799e+04  robust_sigma=1.738e+02  n>10sigma=28704
+    after highpass 1/3600 Hz           rms=7.549e+02  max|x|=1.799e+04  robust_sigma=1.739e+02  n>10sigma=28704
+    after decimate+demean+taper        rms=7.426e+02  max|x|=1.783e+04  robust_sigma=1.655e+02  n>10sigma=1459
+  -- same steps WITHOUT response removal (counts space):
+    after decimate+demean+taper        rms=2.798e+02  max|x|=8.405e+03  robust_sigma=7.903e+01  n>10sigma=828
+  -- packaging check: packaged slice len=86400 vs fresh 86400; identical=True; max|diff|/max|fresh|=0.00e+00; packaged rms=7.426e+02
+
+===== XD.MTAN BHZ  19940528 =====
+  raw file: XD.MTAN..BHZ__19940528T000000Z__19940529T000000Z.mseed; traces=2; segments: [('00:00:00.021000', 1051092), ('14:45:52.222000', 664956)]
+    RAW counts                         rms=4.425e+04  max|x|=1.425e+06  robust_sigma=4.314e+02  n>10sigma=11854
+  -- orchestrator replay (with response removal):
+    after detrend                      rms=4.425e+04  max|x|=1.424e+06  robust_sigma=2.599e+02  n>10sigma=12512
+    after remove_response(DISP)        rms=7.724e+05  max|x|=1.740e+07  robust_sigma=2.872e+02  n>10sigma=52269
+    after lowpass 0.4 Hz               rms=7.724e+05  max|x|=1.740e+07  robust_sigma=2.869e+02  n>10sigma=52288
+    after highpass 1/3600 Hz           rms=7.724e+05  max|x|=1.740e+07  robust_sigma=2.869e+02  n>10sigma=52288
+    after decimate+demean+taper        rms=7.724e+05  max|x|=1.739e+07  robust_sigma=2.772e+02  n>10sigma=2638
+  -- same steps WITHOUT response removal (counts space):
+    after decimate+demean+taper        rms=4.424e+04  max|x|=1.425e+06  robust_sigma=1.660e+02  n>10sigma=2755
+  -- packaging check: packaged slice len=86400 vs fresh 86400; identical=True; max|diff|/max|fresh|=0.00e+00; packaged rms=7.724e+05
+
+===== XD.MTAN BHZ  19940530 =====
+  raw file: XD.MTAN..BHZ__19940530T000000Z__19940531T000000Z.mseed; traces=1; segments: [('00:00:00.021000', 1728000)]
+    RAW counts                         rms=4.829e+08  max|x|=2.147e+09  robust_sigma=4.372e+06  n>10sigma=421113
+  -- orchestrator replay (with response removal):
+    after detrend                      rms=4.813e+08  max|x|=2.226e+09  robust_sigma=4.996e+07  n>10sigma=257019
+    after remove_response(DISP)        rms=6.284e+08  max|x|=3.982e+09  robust_sigma=4.192e+08  n>10sigma=0
+    after lowpass 0.4 Hz               rms=6.275e+08  max|x|=3.952e+09  robust_sigma=4.187e+08  n>10sigma=0
+    after highpass 1/3600 Hz           rms=6.275e+08  max|x|=3.952e+09  robust_sigma=4.187e+08  n>10sigma=0
+    after decimate+demean+taper        rms=6.118e+08  max|x|=3.951e+09  robust_sigma=3.891e+08  n>10sigma=1
+  -- same steps WITHOUT response removal (counts space):
+    after decimate+demean+taper        rms=1.328e+08  max|x|=8.399e+08  robust_sigma=7.438e+07  n>10sigma=11
+  -- packaging check: packaged slice len=86400 vs fresh 86400; identical=True; max|diff|/max|fresh|=0.00e+00; packaged rms=6.118e+08
+
+===== XD.RUNG BHZ  19940526 =====
+  raw file: XD.RUNG..BHZ__19940526T000000Z__19940527T000000Z.mseed; traces=1; segments: [('00:00:00.001000', 1728000)]
+    RAW counts                         rms=2.704e+03  max|x|=1.105e+04  robust_sigma=2.906e+02  n>10sigma=3186
+  -- orchestrator replay (with response removal):
+    after detrend                      rms=2.920e+02  max|x|=8.239e+03  robust_sigma=1.624e+02  n>10sigma=7826
+    after remove_response(DISP)        rms=6.507e+02  max|x|=1.883e+04  robust_sigma=1.334e+02  n>10sigma=29750
+    after lowpass 0.4 Hz               rms=6.506e+02  max|x|=1.883e+04  robust_sigma=1.331e+02  n>10sigma=29843
+    after highpass 1/3600 Hz           rms=6.506e+02  max|x|=1.883e+04  robust_sigma=1.331e+02  n>10sigma=29845
+    after decimate+demean+taper        rms=6.403e+02  max|x|=1.820e+04  robust_sigma=1.264e+02  n>10sigma=1491
+  -- same steps WITHOUT response removal (counts space):
+    after decimate+demean+taper        rms=2.431e+02  max|x|=8.407e+03  robust_sigma=7.247e+01  n>10sigma=784
+  -- packaging check: packaged slice len=86400 vs fresh 86400; identical=False; max|diff|/max|fresh|=5.74e-01; packaged rms=6.403e+02
+
+===== XD.RUNG BHZ  19940529 =====
+  raw file: XD.RUNG..BHZ__19940529T000000Z__19940530T000000Z.mseed; traces=2; segments: [('00:00:00.015000', 417494), ('06:00:13.425000', 1295732)]
+    RAW counts                         rms=1.345e+05  max|x|=6.687e+06  robust_sigma=1.764e+02  n>10sigma=31047
+  -- orchestrator replay (with response removal):
+    after detrend                      rms=1.345e+05  max|x|=6.683e+06  robust_sigma=8.419e+02  n>10sigma=22632
+    after remove_response(DISP)        rms=1.414e+06  max|x|=3.599e+07  robust_sigma=1.826e+02  n>10sigma=107207
+    after lowpass 0.4 Hz               rms=1.413e+06  max|x|=3.588e+07  robust_sigma=1.823e+02  n>10sigma=107276
+    after highpass 1/3600 Hz           rms=1.413e+06  max|x|=3.588e+07  robust_sigma=1.822e+02  n>10sigma=107311
+    after decimate+demean+taper        rms=1.413e+06  max|x|=3.575e+07  robust_sigma=1.744e+02  n>10sigma=5489
+  -- same steps WITHOUT response removal (counts space):
+    after decimate+demean+taper        rms=1.218e+05  max|x|=6.134e+06  robust_sigma=1.218e+02  n>10sigma=8230
+  -- packaging check: packaged slice len=86400 vs fresh 86400; identical=False; max|diff|/max|fresh|=2.05e-01; packaged rms=1.413e+06
+
+===== XD.RUNG BHZ  19940530 =====
+  raw file: XD.RUNG..BHZ__19940530T000000Z__19940531T000000Z.mseed; traces=1; segments: [('00:00:00.025000', 1728000)]
+    RAW counts                         rms=3.523e+04  max|x|=6.473e+06  robust_sigma=1.127e+02  n>10sigma=3287
+  -- orchestrator replay (with response removal):
+    after detrend                      rms=3.520e+04  max|x|=6.474e+06  robust_sigma=9.541e+01  n>10sigma=3356
+    after remove_response(DISP)        rms=1.490e+05  max|x|=1.615e+07  robust_sigma=1.309e+02  n>10sigma=45001
+    after lowpass 0.4 Hz               rms=1.489e+05  max|x|=1.627e+07  robust_sigma=1.306e+02  n>10sigma=45100
+    after highpass 1/3600 Hz           rms=1.489e+05  max|x|=1.627e+07  robust_sigma=1.306e+02  n>10sigma=45100
+    after decimate+demean+taper        rms=1.489e+05  max|x|=1.564e+07  robust_sigma=1.241e+02  n>10sigma=2243
+  -- same steps WITHOUT response removal (counts space):
+    after decimate+demean+taper        rms=2.878e+04  max|x|=4.971e+06  robust_sigma=7.902e+01  n>10sigma=175
+  -- packaging check: packaged slice len=86400 vs fresh 86400; identical=False; max|diff|/max|fresh|=3.04e-01; packaged rms=1.489e+05
+
+DONE
+--- err ---
+
+[exited with code 0]

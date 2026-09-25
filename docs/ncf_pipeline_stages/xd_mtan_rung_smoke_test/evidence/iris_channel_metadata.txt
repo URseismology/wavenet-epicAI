@@ -1,0 +1,6 @@
+IRIS FDSN station service, level=channel, XD.MTAN and XD.RUNG, 1994-05-25 .. 1994-10-30 (queried 2026-09-25 from Bluehive)
+LH? [(XD MTAN LHE/LHN/LHZ 1994-05-25..1994-10-30), (XD RUNG LHE/LHN/LHZ 1994-05-25..1995-05-16)]
+BH? [(XD MTAN BHE/BHN/BHZ 1994-05-25..1994-10-30), (XD RUNG BHE/BHN/BHZ 1994-05-25..1995-05-16)]   (20 Hz)
+VH? -> no metadata;  SH? -> no metadata
+Note: this is channel METADATA. Whether LH waveform data exist was not tested (the request was BH only). The StationXML that the
+pipeline downloaded for this run declares BH channels only (scratch_work/XD_*/stationxml/XD.*.xml).

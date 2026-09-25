@@ -1,0 +1,12 @@
+timing final state: COMPLETED
+MTAN: 158 days placed, 1 refused; final grid length 13,630,596; placement error e = grid_time - true_time: min -0.030, median +0.213, max +0.222 s
+RUNG: 156 days placed, 3 refused; final grid length 13,703,623; placement error e = grid_time - true_time: min -0.345, median +0.681, max +0.700 s
+validate RUNG 19940526: replay idx=52424 expected=52424  OK
+validate RUNG 19940530: replay idx=398024 expected=398024  OK
+validate MTAN 19940526: replay idx=23048 expected=23048  OK
+validate MTAN 19940530: replay idx=368648 expected=368648  OK
+REPLAY VALIDATION: PASS
+relative placement error RUNG-MTAN over 155 common days: min -0.539, median +0.468, max +0.511 s
+--- err ---
+
+[exited with code 0]
