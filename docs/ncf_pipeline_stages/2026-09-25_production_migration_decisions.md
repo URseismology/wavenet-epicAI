@@ -133,6 +133,38 @@ stations as benign.
 
 ---
 
+## 3b. The largest defect found: ~86 % of the waveform archive was missing
+
+Investigating the metadata loss led somewhere much worse. Measuring days actually obtained
+against what the key index says exists (`station_summary.csv` `total_days`), for completed
+stations:
+
+| | days obtained / expected (median) | mean | got <50 % |
+|---|---|---|---|
+| stations **with** a `year_errors` entry | **0.14** | 0.25 | **84 %** |
+| stations **without** | **1.00** | 0.90 | 12 % |
+
+Stations that never hit the error land on **exactly** the predicted day count — which
+validates the comparison and means the 0.14 median is real loss, not a bad expectation.
+**380 of 602 completed stations (63 %) hit it.** Examples: `ZG.CP12` obtained 2 days of
+~631; `N4.G65A` 2 of ~598; `YW.MAIO` 6 of ~690.
+
+**It is transient, not deterministic.** Isolated re-runs of two stations that failed in
+production both succeeded cleanly — `YP.NE83` 2009 gave 642 mseed files, `EI.IMAY` 2023
+gave 1083, both with StationXML. The suspected trigger is provider flakiness under the
+120-way concurrency the array ran at; GFZ timeouts appear even in a single isolated run.
+
+**Fix:** each year's download now retries up to `WAVENET_DOWNLOAD_ATTEMPTS` (default 4)
+with backoff and a fresh `MassDownloader` per attempt. Retrying is cheap because
+MassDownloader skips files already on disk, so an attempt *resumes* rather than
+re-downloads. `n_download_retries` is recorded per station so the fix is measurable rather
+than assumed.
+
+**Consequence for the existing archive:** the 674 completed pre-patch stations are not just
+timing-shifted, they are *substantially incomplete*. D3 (don't reprocess them, just bank
+their offsets) addressed timing only; it does not address missing days. Re-downloading the
+affected ~63 % is a separate decision that has not been taken.
+
 ## 4. Services: why they kept dying, and the fix
 
 **What happened.** Logger was OOM-killed at 2026-09-24T18:43:54 (MaxRSS 4.03 GB against a
