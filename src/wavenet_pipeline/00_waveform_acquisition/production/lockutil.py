@@ -61,3 +61,30 @@ def _pid_alive(pid):
     except PermissionError:
         return True  # exists, just owned by someone else -- still alive
     return True
+
+
+def scratch_quota(timeout=30):
+    """Scratch usage vs the real quota (CIRC's `circ-quota`), or None if unavailable.
+
+    /scratch is 10 TB soft / 11 TB hard for this account, while `df` reports hundreds of TB
+    free on the shared filesystem -- so df is reassuring and wrong, and anything deciding
+    whether there is room must use this instead. It is a binding ceiling for this pipeline:
+    raw SEED runs several times the size of the packaged output, so a full campaign's raw
+    would exceed the quota outright if nothing purges it."""
+    import subprocess
+    try:
+        out = subprocess.run(["circ-quota"], capture_output=True, text=True,
+                              timeout=timeout).stdout
+    except Exception:
+        return None
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[0] == "/scratch":
+            try:
+                used, soft, hard = float(parts[1]), float(parts[2]), float(parts[3])
+            except ValueError:
+                return None
+            return dict(used_gb=used, soft_gb=soft, hard_gb=hard,
+                         pct_of_hard=(100.0 * used / hard) if hard else 0.0,
+                         free_gb=hard - used)
+    return None

@@ -53,7 +53,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "rover_download"))
 from build_master_h5 import covered_days  # schema v2 coverage bitmap
-from lockutil import acquire_singleton_lock, open_h5_retry
+from lockutil import acquire_singleton_lock, open_h5_retry, scratch_quota
 
 
 def load_state(state_path):
@@ -195,6 +195,8 @@ def rebuild_index_csv(index_dir, out_csv):
 
 
 def one_pass(args, state, verified, flagged, held):
+    q0 = scratch_quota()
+    q_tight = bool(q0 and q0["pct_of_hard"] >= 75)
     results_dir = os.path.join(args.root, "results")
     index_dir = os.path.join(args.root, "station_index")
     os.makedirs(index_dir, exist_ok=True)
@@ -205,7 +207,18 @@ def one_pass(args, state, verified, flagged, held):
     inspector_log = os.path.join(args.root, "inspector_log.csv")
     did = 0
 
-    for rf in sorted(glob.glob(os.path.join(results_dir, "*.json"))):
+    result_files = sorted(glob.glob(os.path.join(results_dir, "*.json")))
+    if q_tight:
+        # Biggest raw directories first: when space is the binding constraint, the order
+        # that frees the most soonest is the one that matters.
+        def _raw_size(rf):
+            try:
+                r = json.load(open(rf))
+            except (ValueError, OSError):
+                return 0
+            return r.get("download_bytes") or 0
+        result_files.sort(key=_raw_size, reverse=True)
+    for rf in result_files:
         try:
             r = json.load(open(rf))
         except (ValueError, OSError):
@@ -280,6 +293,20 @@ def one_pass(args, state, verified, flagged, held):
         print(f"[inspector] {station_key} -> verified (patch_level={patch_level})"
               f"{' + purged' if purged else ''}", flush=True)
         did += 1
+
+    q = scratch_quota()
+    if q:
+        # Inspector is the only thing that frees space, so it reports the ceiling it is
+        # working against. It does NOT relax any verification gate when space is tight --
+        # purging unverified data to make room would trade a recoverable problem for an
+        # unrecoverable one. If this stays high with nothing left to purge, the lever is
+        # slowing downloads (orchestrator refuses to start above WAVENET_QUOTA_STOP_PCT),
+        # not loosening the gates.
+        level = ("CRITICAL" if q["pct_of_hard"] >= 90 else
+                 "tight" if q["pct_of_hard"] >= 75 else "ok")
+        print(f"[inspector] scratch {q['used_gb']:,.0f}/{q['hard_gb']:,.0f} GB "
+              f"({q['pct_of_hard']:.1f}% of hard limit, {q['free_gb']:,.0f} GB free) -- {level}",
+              flush=True)
 
     save_json_atomic(flagged_path, flagged)
     save_json_atomic(held_path, held)

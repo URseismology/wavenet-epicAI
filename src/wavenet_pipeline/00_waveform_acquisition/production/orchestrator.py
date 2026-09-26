@@ -39,6 +39,7 @@ import pandas as pd
 from obspy import UTCDateTime, read, read_inventory
 from obspy.clients.fdsn.mass_downloader import Restrictions, MassDownloader, RectangularDomain
 
+from lockutil import scratch_quota
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rover_download"))
 from build_master_h5 import write_channel_day, align_to_integer_second  # schema v2 absolute-grid writer
 
@@ -159,6 +160,20 @@ if os.path.exists(STATION_SUMMARY_PATH):
         # clipping a station whose first/last real byte lands right at a year edge.
         station_year_start = int(match.iloc[0]["year_min"]) - 1
         station_year_end = int(match.iloc[0]["year_max"]) + 1
+
+# Pre-flight storage check. Running /scratch out of space mid-write is far worse than
+# not starting: an HDF5 file being appended to when the filesystem fills can be left
+# corrupt, taking that station's whole shard with it. /scratch here is quota-limited
+# (10 TB soft / 11 TB hard) even though `df` shows hundreds of TB free on the shared
+# filesystem, and raw SEED is several times the packaged size -- so this ceiling is real
+# and reachable. Exit cleanly and let the day be retried once the inspector has purged.
+_q = scratch_quota()
+if _q and _q["pct_of_hard"] >= float(os.environ.get("WAVENET_QUOTA_STOP_PCT", "95")):
+    print(f"[orchestrator] REFUSING to start {network}.{station}: scratch at "
+          f"{_q['used_gb']:,.0f}/{_q['hard_gb']:,.0f} GB ({_q['pct_of_hard']:.1f}% of hard "
+          f"limit, {_q['free_gb']:,.0f} GB free). Waiting for the inspector to purge rather "
+          f"than risking a half-written shard.", flush=True)
+    sys.exit(0)
 
 result_path = os.path.join(RESULT_DIR, f"{idx:04d}_{network}_{station}.json")
 

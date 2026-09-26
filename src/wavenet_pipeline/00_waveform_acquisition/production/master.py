@@ -36,6 +36,29 @@ FPS_STATIONS_DEFAULT = os.path.join(HERE, "..", "metadata3", "fps_stations.csv")
 STATION_SUMMARY_DEFAULT = os.path.join(HERE, "..", "metadata3", "key_index_summary", "station_summary.csv")
 
 
+def _scratch_quota():
+    """Scratch usage against the real quota, via CIRC's own tool. This is a hard ceiling,
+    not just filesystem capacity: /scratch is 10 TB soft / 11 TB hard per circ-quota, while
+    `df` shows hundreds of TB free on the shared filesystem -- so df is reassuring and
+    wrong. It matters because raw SEED runs several times the size of the packaged output,
+    so a full campaign's raw would exceed the quota outright if the inspector is not
+    purging. Reported here so the ceiling is visible long before it is hit."""
+    try:
+        out = subprocess.run(["circ-quota"], capture_output=True, text=True, timeout=30).stdout
+    except Exception:
+        return None
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[0] == "/scratch":
+            try:
+                used, soft, hard = float(parts[1]), float(parts[2]), float(parts[3])
+                return dict(used_gb=used, soft_gb=soft, hard_gb=hard,
+                             pct_of_hard=100.0 * used / hard if hard else 0.0)
+            except ValueError:
+                return None
+    return None
+
+
 def _count_log_rows(path):
     """Row count of an APPEND-ONLY log, by lines rather than pd.read_csv. These logs span
     pipeline versions (inspector_log gained patch_level on 2026-09-25), so one file can
@@ -596,6 +619,16 @@ def cmd_progress(args):
             print(f"  rate: no new days checkpointed in the last {dt/60:.0f} min -- can't estimate yet")
     else:
         print("  rate: no prior snapshot yet -- run `progress` again later for a rate/ETA")
+    q = _scratch_quota()
+    if q:
+        warn = ""
+        if q["pct_of_hard"] >= 90:
+            warn = "  <<< CRITICAL: purging must keep up or the campaign stalls"
+        elif q["pct_of_hard"] >= 75:
+            warn = "  <<< approaching the hard limit"
+        print(f"  scratch quota       : {q['used_gb']:,.0f} GB used of {q['hard_gb']:,.0f} GB hard "
+              f"({q['pct_of_hard']:.1f}%), soft {q['soft_gb']:,.0f} GB{warn}")
+
     # Service health. For a SLURM-chained service the invariant is "exactly one link queued
     # or running" -- zero looks exactly like normal quiet otherwise, which is how logger sat
     # dead for 21 hours while every other number kept climbing. Report it explicitly.
