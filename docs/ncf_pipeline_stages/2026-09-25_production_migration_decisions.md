@@ -356,6 +356,45 @@ FW=/scratch/tolugboj_lab/wavenet_ncf_framework/production
 
 ---
 
+## 6b. Making the archive genuinely growable (recommendation, not yet decided)
+
+PI, 2026-09-26: *"this is an archive that can grow and be updated ... visiting all
+providers to extend completeness post campaign is also valid."* That direction is sound,
+but it collides with a property of the current schema that should be stated plainly.
+
+**`append_channel_data` is forward-only.** A day earlier than a channel's existing end
+cannot be inserted -- it is refused. `NL.HGN` is the worked example: IRIS serves it from
+**1993-11-03** while ORFEUS and KNMI start at **2001-06-06**, and the run obtained only
+2001-2003. Adding the missing 1993-2000 data to that shard is *impossible today*. The only
+route is rebuilding the station from raw -- and raw SEED is exactly what the inspector
+exists to purge. **"Grow the archive later" and "purge raw once verified" are in direct
+conflict as things stand.**
+
+**Recommendation: anchor each channel's grid at the station's known deployment start from
+metadata, rather than at whichever day happens to arrive first.** Consequences:
+
+- every day maps to a *deterministic* index, so out-of-order and late-arriving days simply
+  write to their slot -- insertion becomes O(1) instead of impossible
+- gap-fill already exists and already zero-fills holes, so nothing new is needed for the
+  gaps between sparse arrivals
+- storage cost is near-zero: the datasets are gzip-compressed and chunked at one day, and
+  zero-runs compress to almost nothing
+- **it would also have prevented this entire class of timing bugs.** The whole failure
+  chain -- arbitrary sub-second anchor phase, piecewise placement error, days misread as
+  overlaps -- exists only because the anchor is "whatever arrived first" rather than a
+  fixed known epoch
+
+That single change turns a shard from an append-only log into a genuine time-indexed
+archive, which is what "grows and gets updated" actually requires. It is a schema change,
+so it belongs after the current campaign, not during it.
+
+**Multi-provider completeness sweep (endorsed in principle).** Provider holdings differ
+materially: for `NL.HGN`, IRIS has ~8 more years than the European nodes. A post-campaign
+pass that queries each provider explicitly per station, rather than relying on
+MassDownloader's default routing, is a real source of additional coverage. It depends on
+the insertion fix above to be worth doing incrementally -- otherwise every extension means
+a full station rebuild.
+
 ## 7. Open items / not done
 
 0. **The ObsPy `TypeError` is still live, and may be costing waveform data, not just
