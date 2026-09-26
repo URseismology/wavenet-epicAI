@@ -195,6 +195,46 @@ Completeness is now a measured gate rather than an assumption: `n_download_retri
 recorded per station, and days-obtained-vs-key-index is checked directly on the first
 batch of patched completions.
 
+## 3c. The smoke test's trim threshold was too tight for production
+
+The first batch of patched completions came back at median 0.67 of expected days -- much
+better than 0.14, but not the >0.9 the fix predicted. Three genuinely different causes,
+worth separating rather than averaging:
+
+1. **`max_trim_samples=2` was refusing real data.** `NL.HGN` downloaded 572 days and
+   processed **82**, reporting `package_ok=True` with `n_days_refused=490`. Across the
+   patched stations, **18 % of all attempted days were refused**, and the overlap
+   distribution is strikingly tight: **every single one was 10-19 samples** (median 15,
+   max 19) -- day files starting a few seconds before midnight while the previous day ran
+   a few seconds past it. Patch 1b's threshold of 2 came from the XD pair, which only
+   showed the single-extra-sample case. Raised to **60** (1 min at 1 Hz): clears every
+   observed case, covers the smoke test's own 42-second straddling record, and stays
+   1/1440th of a day so a genuinely duplicated day is still refused.
+2. **The `TypeError` can survive 4 retries.** `XA.SA81` used all 4 attempts on 1997 and
+   still failed, losing that year. Retry mitigates but does not eliminate; concurrency
+   remains the real lever.
+3. **The key index is not a perfect oracle for FDSN availability.** `XF.GOAT` downloaded
+   45 days cleanly, with no errors and no retries, against a key-index expectation of 505.
+   The index counts S3 objects; MassDownloader queries FDSN. Some shortfall is genuine
+   unavailability, not loss -- so the completeness metric is a strong signal, not a proof.
+
+**Forward-only append has a consequence worth recording.** `append_channel_data` only ever
+appends, so a day refused under the old threshold cannot be back-filled by rerunning -- it
+would arrive out of order and be refused again. Shards written under the old threshold must
+therefore be *rebuilt*, not topped up. 251 were moved aside (112 GB, fully recoverable) and
+raw SEED was retained so downloads resume and only preprocessing repeats.
+
+**An error in that selection, and the decision taken because of it.** The wipe was meant to
+spare the 211 complete pre-patch stations (D3). It did not: pre-patch results carry **no
+`patch_level` field at all** (it was only added today), so a `patch_level == 1` test never
+matched and they were swept in. Because artefacts are *moved* rather than deleted, nothing
+was lost and restoring them was a one-line operation. The wipe was nonetheless **allowed to
+stand, deliberately**: those stations are pre-patch, so they carry both the timing error
+*and* the days dropped by the original no-trim-at-all logic (5.56 % of channel-days
+archive-wide). Rebuilding them costs preprocessing only, and yields a uniformly
+`patch_level=2` archive with no per-station offset correction needed downstream -- which
+serves "aim for completeness" better than preserving them would. **This supersedes D3.**
+
 ## 4. Services: why they kept dying, and the fix
 
 **What happened.** Logger was OOM-killed at 2026-09-24T18:43:54 (MaxRSS 4.03 GB against a
