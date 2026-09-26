@@ -66,11 +66,24 @@ def test_one_extra_boundary_sample_is_trimmed_not_refused():
 
 
 def test_real_overlap_is_still_refused():
-    """Guards the safety net: genuinely duplicated data (> max_trim_samples) must not be silently merged."""
+    """Guards the safety net: genuinely duplicated data (> max_trim_samples) must not be silently merged.
+
+    Amended 2026-09-25 (production migration): this originally asserted a 10-sample overlap is REFUSED, which
+    silently encoded the then-default max_trim_samples=2. Production raised that default to 60, because every
+    real refusal observed at scale was a 10-19 sample day-boundary artefact (a day file starting seconds before
+    midnight while the previous day ran seconds past it), and refusing them cost 18% of all attempted days --
+    NL.HGN alone lost 490 of 572. The original assertion is preserved verbatim by passing max_trim_samples=2
+    explicitly, so this tests the BEHAVIOUR rather than one particular default; a second case covers the
+    current default."""
     with tempfile.TemporaryDirectory() as d:
         f, g = _grp(d); T0 = UTCDateTime(1994, 5, 26)
         _append(g, T0, 86400)
-        assert _append(g, T0 + 86400 - 10, 86400).startswith("REFUSED")
+        # original assertion, now pinned to the threshold it was written against
+        assert append_channel_data(g, "BHZ", np.ones(86400, dtype=np.float32), 1.0,
+                                    T0 + 86400 - 10, "m", max_trim_samples=2).startswith("REFUSED")
+        assert len(g["BHZ"]) == 86400
+        # and an overlap well beyond the current production default is still refused
+        assert _append(g, T0 + 86400 - 5000, 86400).startswith("REFUSED")
         assert len(g["BHZ"]) == 86400
         f.close()
 

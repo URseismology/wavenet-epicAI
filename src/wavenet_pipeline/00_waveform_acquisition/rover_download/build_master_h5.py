@@ -22,6 +22,20 @@ import numpy as np
 from obspy import UTCDateTime
 
 
+# How many whole samples of day-boundary overlap may be trimmed off the front of new data
+# instead of refusing the day outright. The smoke test set this to 2, because the XD pair
+# only ever showed the single-extra-sample case. Production says otherwise: measured over
+# the first patched stations, EVERY refusal was an overlap of 10-19 samples (median 15,
+# max 19) -- day files that start a few seconds before midnight while the previous day ran
+# a few seconds past it. At 2 this refused 18% of all attempted days (NL.HGN alone lost 490
+# of 572). Trimming is the correct response: those leading samples cover a time range
+# already stored, so dropping them and appending the rest is exactly right. 60 samples
+# (1 minute at 1 Hz) clears every case observed, covers the smoke test's 42-second
+# straddling record, and is still 1/1440th of a day -- so a genuinely duplicated day is
+# still REFUSED rather than silently merged. Override with WAVENET_MAX_TRIM_SAMPLES.
+MAX_TRIM_SAMPLES = int(os.environ.get("WAVENET_MAX_TRIM_SAMPLES", "60"))
+
+
 def align_to_integer_second(tr):
     """[PATCH 1] Shift `tr`'s samples (band-limited fractional delay) so that sample 0 falls exactly on an
     integer UTC second, and set starttime accordingly; returns `tr`.
@@ -47,7 +61,7 @@ def align_to_integer_second(tr):
 
 
 def append_channel_data(grp, channel, data, sampling_rate, start_time, units,
-                         azimuth=None, dip=None, max_trim_samples=2):
+                         azimuth=None, dip=None, max_trim_samples=MAX_TRIM_SAMPLES):
     """Core gap-fill/append logic, shared by merge_channel (below, used by logger.py to
     merge a completed per-station shard into the master file) and orchestrator.py's
     day-by-day checkpointing (added 2026-09-24 -- appends one calendar day's processed
