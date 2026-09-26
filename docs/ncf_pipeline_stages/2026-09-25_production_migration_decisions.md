@@ -213,10 +213,26 @@ worth separating rather than averaging:
 2. **The `TypeError` can survive 4 retries.** `XA.SA81` used all 4 attempts on 1997 and
    still failed, losing that year. Retry mitigates but does not eliminate; concurrency
    remains the real lever.
-3. **The key index is not a perfect oracle for FDSN availability.** `XF.GOAT` downloaded
-   45 days cleanly, with no errors and no retries, against a key-index expectation of 505.
-   The index counts S3 objects; MassDownloader queries FDSN. Some shortfall is genuine
-   unavailability, not loss -- so the completeness metric is a strong signal, not a proof.
+3. ~~The key index is not a perfect oracle for FDSN availability.~~ **Retracted.** This was
+   inferred from `XF.GOAT` downloading 45 days cleanly against an expectation of 505, with
+   no errors or retries. On the rebuild it obtained **455 days (0.90)** -- so that was the
+   transient failure too, simply not recorded as an error. The lesson is about the
+   diagnosis, not the pipeline: "no error recorded" is not evidence that nothing failed,
+   which is precisely why completeness is now measured directly rather than inferred from
+   error counts.
+
+**Verified after the fix.** Across the first 17 rebuilt stations:
+
+| metric | original | after retry alone | after trim fix |
+|---|---|---|---|
+| days obtained / expected (median) | 0.14 | 0.67 | **1.00** |
+| days refused | 18 % | 18 % | **0.0 %** |
+| years still failing | many | 1 | **0** |
+
+4 retries fired and recovered, confirming the safety net works without being the primary
+mechanism. `NL.HGN` remains an outlier (572 of 8553 expected days): the trim fix raised it
+from 82 processed to all 572 downloaded, so its remaining shortfall is in the DOWNLOAD, not
+the packaging -- tracked as an open item.
 
 **Forward-only append has a consequence worth recording.** `append_channel_data` only ever
 appends, so a day refused under the old threshold cannot be back-filled by rerunning -- it
