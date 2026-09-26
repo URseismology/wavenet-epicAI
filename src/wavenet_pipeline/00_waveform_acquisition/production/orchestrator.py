@@ -40,7 +40,7 @@ from obspy import UTCDateTime, read, read_inventory
 from obspy.clients.fdsn.mass_downloader import Restrictions, MassDownloader, RectangularDomain
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rover_download"))
-from build_master_h5 import append_channel_data, align_to_integer_second  # shared gap-fill/append logic
+from build_master_h5 import write_channel_day, align_to_integer_second  # schema v2 absolute-grid writer
 
 ROOT = os.environ["WAVENET_PROD_ROOT"]
 STATIONS_CSV = os.environ.get("WAVENET_STATIONS_CSV", os.path.join(ROOT, "manifest", "fps_stations.csv"))
@@ -79,7 +79,11 @@ TAPER_PCT = float(os.environ.get("WAVENET_TAPER_PCT", "0.05"))
 #       banked per-day offsets (wavenet_ncf_migration/timing_offsets/), which require the
 #       raw SEED headers and so must be computed before that raw data is purged.
 #   2 = patches 1, 1b, 2, 3, 4, 6 from the XD.MTAN/XD.RUNG smoke test.
-PIPELINE_PATCH_LEVEL = 2
+#   3 = schema v2: absolute-time grid anchored at a shared epoch, so insertion is
+#       O(1) in both directions and two stations share one index space. Overlap
+#       stops being an error condition, and per-sample time is exact by
+#       construction rather than anchored on whichever day arrived first.
+PIPELINE_PATCH_LEVEL = 3
 
 # Attempts per YEAR of download. See the retry block for why this matters so much.
 DOWNLOAD_ATTEMPTS = int(os.environ.get("WAVENET_DOWNLOAD_ATTEMPTS", "4"))
@@ -194,8 +198,6 @@ result = dict(idx=idx, network=network, station=station,
 t0 = time.time()
 year_errors = {}
 n_download_retries = 0
-n_days_trimmed = 0
-n_samples_trimmed = 0
 try:
     domain = RectangularDomain(minlatitude=lat - 0.5, maxlatitude=lat + 0.5,
                                 minlongitude=lon - 0.5, maxlongitude=lon + 0.5)
@@ -452,24 +454,21 @@ if result["download_ok"]:
                         channel = tr.stats.channel
                         data = tr.data.astype(np.float32)
                         units = units_out                                  # [PATCH 4] was: "m" if response_removed else "counts"
-                        status = append_channel_data(grp, channel, data, tr.stats.sampling_rate,
-                                                      tr.stats.starttime, units, azimuth=azimuth, dip=dip)
-                        if "trimmed" in status:
-                            # Visible, not silent: max_trim_samples is deliberately
-                            # permissive (3600), so a station routinely overlapping by
-                            # minutes must show up in the result rather than look clean.
-                            _m = re.search(r"trimmed (\d+) overlapping", status)
-                            n_days_trimmed += 1
-                            n_samples_trimmed += int(_m.group(1)) if _m else 0
-                        if status.startswith("SKIPPED"):
-                            day_notes[f"{day_str}/{channel}"] = status
-                            continue
+                        # [SCHEMA v2] Absolute-grid write. Position depends only on the
+                        # day's own timestamp, so this is O(1) and order-independent --
+                        # an earlier year can be added later without touching anything
+                        # else. Overlap is no longer an error: the same instant is the
+                        # same slot, so a duplicate day is an idempotent overwrite. That
+                        # removes v1's trim/skip/refuse-on-overlap handling entirely
+                        # (and with it the 18%-of-days losses those thresholds caused).
+                        status = write_channel_day(grp, channel, data, tr.stats.sampling_rate,
+                                                    tr.stats.starttime, units,
+                                                    azimuth=azimuth, dip=dip)
                         if status.startswith("REFUSED"):
-                            # A real anomaly (e.g. overlapping timestamps from a
-                            # provider) -- skip this trace, don't crash the whole day,
-                            # but don't silently pretend it succeeded either.
+                            # Now only a genuine anomaly: before the epoch, or a
+                            # sampling-rate change mid-channel.
                             day_errors[f"{day_str}/{channel}"] = status
-                            day_refused = True                             # [PATCH 2]
+                            day_refused = True
                             continue
                         meta_entry = channel_meta.setdefault(
                             channel, dict(n_samples=0, sampling_rate=tr.stats.sampling_rate))
@@ -502,8 +501,7 @@ if result["download_ok"]:
                        n_channels_total=len(channels_seen),
                        response_ok=bool(channels_seen) and channels_response_ok == channels_seen,
                        response_failures=response_failures,
-                       n_days_trimmed=n_days_trimmed,
-                       n_samples_trimmed=n_samples_trimmed)
+                       schema_version=2)
         if day_errors:
             result["day_errors"] = day_errors
     except Exception as e:

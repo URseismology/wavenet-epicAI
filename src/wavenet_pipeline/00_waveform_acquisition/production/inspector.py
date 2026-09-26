@@ -46,10 +46,13 @@ import glob
 import json
 import os
 import shutil
+import sys
 import time
 
 import numpy as np
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "rover_download"))
+from build_master_h5 import covered_days  # schema v2 coverage bitmap
 from lockutil import acquire_singleton_lock, open_h5_retry
 
 
@@ -89,7 +92,16 @@ def append_csv(path, header, row):
 
 
 def verify_shard(shard_path, station_key, expected_channel_meta):
-    """Returns (ok, reason, channels) -- channels is the per-channel detail for the index."""
+    """Returns (ok, reason, channels) -- channels is the per-channel detail for the index.
+
+    Schema-aware. Under v2 the dataset spans from the shared epoch, so two v1-era checks
+    become actively WRONG and had to change rather than merely be relaxed:
+      - `len(ds) >= n_samples` is now trivially true (the span is decades), so it proves
+        nothing; the real question is how many DAYS are covered.
+      - sampling `ds[:10000]` would read near 1970, which is unwritten and therefore all
+        zeros -- it would flag every healthy v2 station as all-zero.
+    So v2 verifies against the coverage bitmap and samples from a day that is actually
+    covered."""
     channels = {}
     with open_h5_retry(shard_path, "r") as f:
         if station_key not in f:
@@ -102,20 +114,36 @@ def verify_shard(shard_path, station_key, expected_channel_meta):
             if channel not in grp:
                 return False, f"channel {channel} missing from shard", channels
             ds = grp[channel]
-            if len(ds) < meta["n_samples"]:
-                return False, (f"channel {channel} shorter in shard ({len(ds)}) than "
-                                f"orchestrator recorded ({meta['n_samples']})"), channels
-            sample = ds[: min(len(ds), 10000)]
+            sr = float(ds.attrs.get("sampling_rate", 0)) or 1.0
+            is_v2 = int(ds.attrs.get("schema_version", 1)) >= 2
+
+            if is_v2:
+                covered = covered_days(grp, channel)
+                if len(covered) == 0:
+                    return False, f"channel {channel} has no covered days", channels
+                day_len = int(86400 * sr)
+                # sample from a day known to hold data, not from the epoch end of the grid
+                d = int(covered[len(covered) // 2])
+                sample = ds[d * day_len: d * day_len + min(10000, day_len)]
+                n_samples = int(len(covered) * day_len)
+            else:
+                if len(ds) < meta["n_samples"]:
+                    return False, (f"channel {channel} shorter in shard ({len(ds)}) than "
+                                    f"orchestrator recorded ({meta['n_samples']})"), channels
+                sample = ds[: min(len(ds), 10000)]
+                n_samples = int(len(ds))
+
             if not np.any(sample):
                 return False, f"channel {channel} is all-zero", channels
             if np.any(np.isnan(sample)):
                 return False, f"channel {channel} contains NaNs", channels
-            sr = float(ds.attrs.get("sampling_rate", 0)) or 1.0
             channels[channel] = dict(
-                sampling_rate=sr, n_samples=int(len(ds)),
+                sampling_rate=sr, n_samples=n_samples,
                 start_time=str(ds.attrs.get("start_time", "")),
                 units=str(ds.attrs.get("units", "")),
-                duration_s=round(len(ds) / sr, 1))
+                schema_version=2 if is_v2 else 1,
+                n_days_covered=int(len(covered_days(grp, channel))) if is_v2 else None,
+                duration_s=round(n_samples / sr, 1))
     return True, "ok", channels
 
 

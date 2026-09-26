@@ -91,6 +91,58 @@ def load_channel_range(h5_path, network, station, channel, start, end):
     return data, sampling_rate, actual_start, units
 
 
+def load_window(h5_path, network, station, channel, start, end):
+    """[SCHEMA v2] Load an absolute time window, WITH a coverage mask.
+
+    Returns (data, mask, sampling_rate, actual_start, units). `mask[i]` is True where the
+    sample is real recorded data and False where nothing was ever written.
+
+    Why the mask is not optional: on the absolute grid a channel's dataset spans from the
+    shared epoch, so the vast majority of it is unwritten and reads back as 0.0. Zero is
+    indistinguishable from genuinely quiet ground motion, and correlating never-recorded
+    span as if it were quiet data biases an NCF silently. Coverage is tracked per day in
+    the "_coverage" group precisely so this question has an answer.
+
+    The slice itself is O(1) index math on a grid shared by every station, so the SAME
+    (i0, i1) addresses the same absolute window at any other station -- which is what makes
+    pairwise correlation loads alignment-free.
+    """
+    start, end = UTCDateTime(start), UTCDateTime(end)
+    with h5py.File(h5_path, "r") as f:
+        key = f"{network}.{station}"
+        if key not in f or channel not in f[key]:
+            raise KeyError(f"{key}/{channel} not in {h5_path}")
+        grp = f[key]
+        ds = grp[channel]
+        sampling_rate = float(ds.attrs["sampling_rate"])
+        epoch = UTCDateTime(ds.attrs.get("epoch", ds.attrs.get("start_time")))
+        n_total = ds.shape[0]
+
+        i0 = max(0, int(round((start - epoch) * sampling_rate)))
+        i1 = min(n_total, int(round((end - epoch) * sampling_rate)))
+        units = ds.attrs.get("units", "unknown")
+        if i1 <= i0:
+            empty = np.array([], dtype=np.float32)
+            return empty, empty.astype(bool), sampling_rate, start, units
+
+        data = ds[i0:i1].astype(np.float32)
+        mask = np.zeros(len(data), dtype=bool)
+        cov = grp.get("_coverage")
+        if cov is not None and channel in cov:
+            cd = cov[channel][()]
+            day_len = int(86400 * sampling_rate)
+            idx = np.arange(i0, i1)
+            days = idx // day_len
+            valid = days < len(cd)
+            mask[valid] = cd[days[valid]].astype(bool)
+        else:
+            # v1 shard (no coverage group): everything stored was contiguous by
+            # construction, so treat the whole slice as real.
+            mask[:] = True
+        actual_start = epoch + i0 / sampling_rate
+    return data, mask, sampling_rate, actual_start, units
+
+
 def load_station(h5_path, network, station):
     """Returns {channel: (data, sampling_rate, start_time, units)} for every channel of
     one station -- convenience wrapper over load_channel for cross-correlation use,

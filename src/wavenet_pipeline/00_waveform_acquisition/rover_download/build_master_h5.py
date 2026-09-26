@@ -15,6 +15,7 @@ Usage:
 """
 import argparse
 import glob
+import math
 import os
 
 import h5py
@@ -63,6 +64,151 @@ def align_to_integer_second(tr):
         tr.data = np.fft.irfft(F * np.exp(-2j * np.pi * f * s), n=n)    # y[j] = x(j - s/dt): delay by s
     tr.stats.starttime = UTCDateTime(t_int)
     return tr
+
+
+# ---------------------------------------------------------------------------
+# SCHEMA v2: absolute-time grid (PI requirement, 2026-09-26)
+#
+# "archive should grow forward or backward easily without raw with order 1 insert.
+#  Time lookup and load on pair wise correlation run should also be efficient."
+#
+# Every channel of every station is indexed against ONE shared epoch:
+#       index(t) = round((t - EPOCH) * sampling_rate)
+# A day's index therefore depends only on its own timestamp, never on what is already
+# stored, which is what makes insertion O(1) in BOTH directions. Schema v1 anchored each
+# channel at whichever day arrived first, so it could only ever append -- adding an
+# earlier year (NL.HGN: IRIS serves from 1993, ORFEUS/KNMI from 2001) was impossible
+# without rebuilding the station from raw, and raw is what the inspector purges.
+#
+# Why the empty span costs nothing: HDF5 chunked datasets are SPARSE -- a chunk that was
+# never written is never allocated on disk and reads back as the fill value. At 1 Hz with
+# chunks of 86400, one chunk is exactly one calendar day and day boundaries land exactly on
+# chunk boundaries (POSIX time ignores leap seconds), so writing a day writes precisely one
+# chunk with no read-modify-write.
+#
+# Why pairwise correlation gets FASTER: two stations share one absolute grid, so a window
+# [t0,t1] is a[i0:i1] and b[i0:i1] with IDENTICAL i0,i1. Alignment is by construction --
+# no offset table, no resampling. HDF5 reads only the chunks overlapping the slice.
+#
+# It also removes a whole bug class structurally: every sample's time is exactly
+# EPOCH + i/sr by definition, so there is no anchor phase to drift (schema v1's ~1 s
+# placement error), and an overlapping day is simply an idempotent overwrite of the same
+# absolute slots rather than something to trim or refuse. max_trim_samples, REFUSED-on-
+# overlap and gap-fill are all moot under v2; they remain below only for reading v1 data.
+#
+# The one thing zeros cannot express is "no data" versus "quiet data", so coverage is
+# explicit: a per-channel uint8 bitmap over days-since-epoch under the "_coverage" group.
+# 56 years is ~20,500 days, so it costs kilobytes and makes "which samples are real" a
+# queryable fact instead of an inference.
+EPOCH = UTCDateTime(os.environ.get("WAVENET_EPOCH", "1970-01-01T00:00:00"))
+SCHEMA_VERSION = 2
+DAY_SECONDS = 86400
+
+
+def absolute_index(t, sampling_rate):
+    """Sample index of time `t` on the shared grid. The whole schema is this one line."""
+    return int(round((UTCDateTime(t) - EPOCH) * sampling_rate))
+
+
+def _mark_coverage(grp, channel, start_time, n_samples, sampling_rate):
+    cg = grp.require_group("_coverage")
+    d0 = int((UTCDateTime(start_time) - EPOCH) // DAY_SECONDS)
+    n_days = max(1, int(math.ceil(n_samples / (DAY_SECONDS * sampling_rate))))
+    need = d0 + n_days
+    if channel not in cg:
+        cd = cg.create_dataset(channel, shape=(need,), maxshape=(None,), dtype="uint8",
+                                chunks=(4096,), compression="gzip", compression_opts=4)
+    else:
+        cd = cg[channel]
+        if len(cd) < need:
+            cd.resize((need,))
+    cd[d0:need] = 1
+
+
+def covered_days(grp, channel):
+    """Day indices (since EPOCH) that actually hold data -- the answer to 'which samples
+    are real', which zeros alone cannot express on a sparse grid."""
+    cg = grp.get("_coverage")
+    if cg is None or channel not in cg:
+        return np.array([], dtype=np.int64)
+    return np.flatnonzero(cg[channel][()])
+
+
+def write_channel_day(grp, channel, data, sampling_rate, start_time, units,
+                       azimuth=None, dip=None):
+    """[SCHEMA v2] Write one day's samples at their ABSOLUTE index. O(1) and completely
+    order-independent: a 1993 day can be written into a shard that already holds 2001
+    without touching anything else, which is exactly what v1 could not do."""
+    start_time = UTCDateTime(start_time)
+    i0 = absolute_index(start_time, sampling_rate)
+    if i0 < 0:
+        return f"REFUSED (starts {start_time}, before epoch {EPOCH})"
+    n = len(data)
+    chunk = (int(DAY_SECONDS * sampling_rate) or 86400,)
+
+    if channel not in grp:
+        ds = grp.create_dataset(channel, shape=(i0 + n,), maxshape=(None,), chunks=chunk,
+                                 compression="gzip", compression_opts=4, dtype="float32")
+        # sample 0 IS the epoch, so `start_time` stays literally correct and any existing
+        # reader doing round((t - start_time) * sr) keeps working unchanged.
+        ds.attrs["start_time"] = str(EPOCH)
+        ds.attrs["epoch"] = str(EPOCH)
+        ds.attrs["sampling_rate"] = sampling_rate
+        ds.attrs["units"] = units
+        ds.attrs["schema_version"] = SCHEMA_VERSION
+        if azimuth is not None:
+            ds.attrs["azimuth"] = azimuth
+        if dip is not None:
+            ds.attrs["dip"] = dip
+    else:
+        ds = grp[channel]
+        if abs(ds.attrs["sampling_rate"] - sampling_rate) > 1e-6:
+            return (f"REFUSED (sampling_rate mismatch: existing="
+                    f"{ds.attrs['sampling_rate']}, new={sampling_rate})")
+        if len(ds) < i0 + n:
+            ds.resize((i0 + n,))
+
+    ds[i0:i0 + n] = data
+    _mark_coverage(grp, channel, start_time, n, sampling_rate)
+    return f"written ({n:,} samples at index {i0:,})"
+
+
+def merge_channel_v2(master_grp, channel, src_grp):
+    """Merge a v2 shard channel into a v2 master. Both sides share the same absolute grid,
+    so this is a direct index-preserving copy -- and it streams in bounded blocks rather
+    than reading a whole multi-GB channel into memory the way v1's merge did."""
+    src = src_grp[channel]
+    sr = src.attrs["sampling_rate"]
+    n = len(src)
+    if channel not in master_grp:
+        master_grp.create_dataset(channel, shape=(n,), maxshape=(None,),
+                                   chunks=(int(DAY_SECONDS * sr) or 86400,),
+                                   compression="gzip", compression_opts=4, dtype="float32")
+        for k, v in src.attrs.items():
+            master_grp[channel].attrs[k] = v
+    dst = master_grp[channel]
+    if len(dst) < n:
+        dst.resize((n,))
+    STEP = int(DAY_SECONDS * sr) * 30
+    copied = 0
+    for i in range(0, n, STEP):
+        block = src[i:i + STEP]
+        if block.any():          # skip never-written spans, keeping the master sparse
+            dst[i:i + len(block)] = block
+            copied += len(block)
+    cov = src_grp.get("_coverage")
+    if cov is not None and channel in cov:
+        mc = master_grp.require_group("_coverage")
+        c = cov[channel][()]
+        if channel not in mc:
+            mc.create_dataset(channel, data=c, maxshape=(None,), dtype="uint8",
+                               chunks=(4096,), compression="gzip", compression_opts=4)
+        else:
+            md = mc[channel]
+            if len(md) < len(c):
+                md.resize((len(c),))
+            md[:len(c)] = np.maximum(md[:len(c)], c)
+    return f"merged ({copied:,} samples copied on the absolute grid)"
 
 
 def append_channel_data(grp, channel, data, sampling_rate, start_time, units,
