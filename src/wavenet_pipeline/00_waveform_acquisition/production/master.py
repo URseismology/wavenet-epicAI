@@ -27,6 +27,7 @@ import glob
 import json
 import os
 import subprocess
+import sys
 import time
 
 import pandas as pd
@@ -37,26 +38,14 @@ STATION_SUMMARY_DEFAULT = os.path.join(HERE, "..", "metadata3", "key_index_summa
 
 
 def _scratch_quota():
-    """Scratch usage against the real quota, via CIRC's own tool. This is a hard ceiling,
-    not just filesystem capacity: /scratch is 10 TB soft / 11 TB hard per circ-quota, while
-    `df` shows hundreds of TB free on the shared filesystem -- so df is reassuring and
-    wrong. It matters because raw SEED runs several times the size of the packaged output,
-    so a full campaign's raw would exceed the quota outright if the inspector is not
-    purging. Reported here so the ceiling is visible long before it is hit."""
+    """Delegates to lockutil.scratch_quota, which reads the GROUP quota governing the
+    scratch tree -- bare `circ-quota` reports the user's, understating usage ~180x here."""
+    sys.path.insert(0, HERE)
     try:
-        out = subprocess.run(["circ-quota"], capture_output=True, text=True, timeout=30).stdout
+        from lockutil import scratch_quota
+        return scratch_quota()
     except Exception:
         return None
-    for line in out.splitlines():
-        parts = line.split()
-        if len(parts) >= 4 and parts[0] == "/scratch":
-            try:
-                used, soft, hard = float(parts[1]), float(parts[2]), float(parts[3])
-                return dict(used_gb=used, soft_gb=soft, hard_gb=hard,
-                             pct_of_hard=100.0 * used / hard if hard else 0.0)
-            except ValueError:
-                return None
-    return None
 
 
 def _count_log_rows(path):
