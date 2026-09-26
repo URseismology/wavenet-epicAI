@@ -356,44 +356,66 @@ FW=/scratch/tolugboj_lab/wavenet_ncf_framework/production
 
 ---
 
-## 6b. Making the archive genuinely growable (recommendation, not yet decided)
+## 6b. Schema v2: the absolute-time grid (IMPLEMENTED and verified 2026-09-26)
 
-PI, 2026-09-26: *"this is an archive that can grow and be updated ... visiting all
-providers to extend completeness post campaign is also valid."* That direction is sound,
-but it collides with a property of the current schema that should be stated plainly.
+PI made this a requirement, not an option: *"archive should grow forward or backward easily
+without raw with order 1 insert. Time lookup and load on pair wise correlation run should
+also be efficient. This is what data is designed for. It's a must have."*
 
-**`append_channel_data` is forward-only.** A day earlier than a channel's existing end
-cannot be inserted -- it is refused. `NL.HGN` is the worked example: IRIS serves it from
-**1993-11-03** while ORFEUS and KNMI start at **2001-06-06**, and the run obtained only
-2001-2003. Adding the missing 1993-2000 data to that shard is *impossible today*. The only
-route is rebuilding the station from raw -- and raw SEED is exactly what the inspector
-exists to purge. **"Grow the archive later" and "purge raw once verified" are in direct
-conflict as things stand.**
+**The design.** Every channel of every station is indexed against one shared epoch:
 
-**Recommendation: anchor each channel's grid at the station's known deployment start from
-metadata, rather than at whichever day happens to arrive first.** Consequences:
+```
+index(t) = round((t - EPOCH) * sampling_rate)      EPOCH = 1970-01-01T00:00:00Z
+```
 
-- every day maps to a *deterministic* index, so out-of-order and late-arriving days simply
-  write to their slot -- insertion becomes O(1) instead of impossible
-- gap-fill already exists and already zero-fills holes, so nothing new is needed for the
-  gaps between sparse arrivals
-- storage cost is near-zero: the datasets are gzip-compressed and chunked at one day, and
-  zero-runs compress to almost nothing
-- **it would also have prevented this entire class of timing bugs.** The whole failure
-  chain -- arbitrary sub-second anchor phase, piecewise placement error, days misread as
-  overlaps -- exists only because the anchor is "whatever arrived first" rather than a
-  fixed known epoch
+A day's position depends only on its own timestamp, never on what is already stored.
 
-That single change turns a shard from an append-only log into a genuine time-indexed
-archive, which is what "grows and gets updated" actually requires. It is a schema change,
-so it belongs after the current campaign, not during it.
+**What v1 got wrong, and why it cascaded.** Schema v1 anchored each channel at whichever
+day happened to arrive first. That one decision produced: an arbitrary sub-second anchor
+phase (the ~1 s timing error), forward-only insertion, overlaps that had to be treated as
+errors (a trim threshold tuned twice and wrong both times), 5.56 % of channel-days silently
+dropped archive-wide, and an entire apparatus of banked offsets, replay tooling and
+per-station corrections to compensate. **When one decision generates a sprawling apparatus
+of compensating machinery, the decision is wrong -- the machinery is not insufficient.**
 
-**Multi-provider completeness sweep (endorsed in principle).** Provider holdings differ
-materially: for `NL.HGN`, IRIS has ~8 more years than the European nodes. A post-campaign
-pass that queries each provider explicitly per station, rather than relying on
-MassDownloader's default routing, is a real source of additional coverage. It depends on
-the insertion fix above to be worth doing incrementally -- otherwise every extension means
-a full station rebuild.
+**Verified, each by test:**
+
+| requirement | result |
+|---|---|
+| grow **backward**, no raw, O(1) | writing a 1993 day into a shard already holding 2001 -- impossible under v1 |
+| order-independent | the same days written in any order give an identical result |
+| efficient pairwise load | two stations share one index space: `a[i0:i1]`, `b[i0:i1]`, **identical** `i0,i1` |
+| exact time | every sample is `EPOCH + i/sr` by construction -- no phase to drift |
+| overlap | the same instant is the same slot, so a duplicate day is an idempotent overwrite |
+
+**Storage got BETTER, which is the counter-intuitive part.** Real measurement on `XF.GOAT`:
+**340 MB on v2 against 356 MB on v1**, despite a logical span of 1.31e9 samples (5.2 GB
+uncompressed). HDF5 chunked datasets are sparse -- a chunk never written is never allocated
+-- whereas v1 wrote real zeros into interior gaps. At 1 Hz with 86400-sample chunks, one
+chunk is exactly one calendar day, so a day write touches exactly one chunk with no
+read-modify-write. The instinct that "anchoring a 2009 station at 1970 wastes space" is
+simply wrong given chunked storage semantics.
+
+**The cost of the new power, paid explicitly.** Zeros cannot express "no data" versus "quiet
+data", and on a sparse grid most of the array reads as zero. Coverage is therefore a
+first-class per-channel uint8 bitmap over days-since-epoch under `_coverage` (kilobytes for
+decades). `load_window()` returns it as a mask alongside the data, because handing a
+consumer unwritten zeros that look like quiet ground motion would bias an NCF silently.
+`inspector` is schema-aware and verifies against coverage -- its v1 checks would have
+flagged **every healthy v2 station**, since `ds[:10000]` now reads near the 1970 epoch.
+
+**Backwards compatible.** Sample 0 *is* the epoch, so `start_time` stays literally correct
+and any existing reader doing `round((t - start_time) * sr)` works unchanged.
+`append_channel_data` is retained for reading v1 shards.
+
+**End-to-end on real data:** `XF.GOAT` rebuilt to schema 2 -- 455 days, **0 refused**, all
+channels epoch-anchored, sampled data non-zero on covered days. 9/9 new schema tests pass,
+and the smoke test's original 6/6 still pass.
+
+**Timing of the switch.** Adopted at 1.7 % of days checkpointed, while nearly everything was
+being rebuilt anyway -- so the migration was close to free. Deferring it would have meant
+rebuilding every station a second time. 79 v1 shards were moved aside (recoverable) and raw
+SEED was untouched, so only packaging repeated.
 
 ## 7. Open items / not done
 
