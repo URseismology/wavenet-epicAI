@@ -63,6 +63,31 @@ def _pid_alive(pid):
     return True
 
 
+def _quota_line(fs, path="/scratch/tolugboj_lab"):
+    """One filesystem's row from the GROUP quota report governing `path`."""
+    import os as _os
+    try:
+        gid = _os.stat(path).st_gid
+    except OSError:
+        return None
+    try:
+        with open(f"/software/circ/share/quota-rep/{gid}") as f:
+            out = f.read()
+    except OSError:
+        return None
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[0] == fs:
+            try:
+                used, soft, hard = float(parts[1]), float(parts[2]), float(parts[3])
+            except ValueError:
+                return None
+            return dict(used_gb=used, soft_gb=soft, hard_gb=hard, gid=gid,
+                         pct_of_hard=(100.0 * used / hard) if hard else 0.0,
+                         free_gb=hard - used)
+    return None
+
+
 def scratch_quota(path="/scratch/tolugboj_lab", timeout=30):
     """Scratch usage vs the quota that actually GOVERNS `path`, or None if unavailable.
 

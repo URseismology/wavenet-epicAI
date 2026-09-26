@@ -37,6 +37,18 @@ FPS_STATIONS_DEFAULT = os.path.join(HERE, "..", "metadata3", "fps_stations.csv")
 STATION_SUMMARY_DEFAULT = os.path.join(HERE, "..", "metadata3", "key_index_summary", "station_summary.csv")
 
 
+def _home_quota():
+    """/home for the GROUP, reported beside /scratch. Home is small (25 GB hard) and shared,
+    so it goes from fine to "cannot write files" quickly and silently -- it was already in
+    that state when this was added. Cheap to surface, expensive to discover."""
+    sys.path.insert(0, HERE)
+    try:
+        from lockutil import _quota_line
+        return _quota_line("/home")
+    except Exception:
+        return None
+
+
 def _scratch_quota():
     """Delegates to lockutil.scratch_quota, which reads the GROUP quota governing the
     scratch tree -- bare `circ-quota` reports the user's, understating usage ~180x here."""
@@ -608,6 +620,13 @@ def cmd_progress(args):
             print(f"  rate: no new days checkpointed in the last {dt/60:.0f} min -- can't estimate yet")
     else:
         print("  rate: no prior snapshot yet -- run `progress` again later for a rate/ETA")
+    qh = _home_quota()
+    if qh:
+        hw = ("  <<< AT LIMIT: group cannot write to /home" if qh["pct_of_hard"] >= 98
+              else "  <<< over soft limit" if qh["used_gb"] > qh["soft_gb"] else "")
+        print(f"  home quota (group) : {qh['used_gb']:,.1f} GB used of {qh['hard_gb']:,.1f} GB hard "
+              f"({qh['pct_of_hard']:.1f}%){hw}")
+
     q = _scratch_quota()
     if q:
         warn = ""
@@ -660,8 +679,17 @@ ORCHESTRATOR_SLURM = """#!/bin/bash
 # constraint: tolugboj's $HOME already carries ~8GB of pre-existing personal package
 # installs, docs/ncf_pipeline_stages/PROGRESS.md). Redirect incidental cache writes
 # (matplotlib font cache, any XDG-respecting library) off $HOME too, just in case.
+# Keep every cache writer OFF $HOME. This is not hygiene, it is availability: the group's
+# /home sits at 24.6 GB of a 25 GB hard limit with the grace period expired, i.e. already
+# in "cannot write files". A job that fills home does not just waste space, it breaks
+# unrelated work for everyone in the group -- and a pip or conda cache can add GBs without
+# anyone noticing. MPLCONFIGDIR/XDG_CACHE_HOME were already redirected; PIP and CONDA were
+# not, and were the remaining way home could grow from a job.
 export MPLCONFIGDIR={root}/.cache/mpl
 export XDG_CACHE_HOME={root}/.cache
+export PIP_CACHE_DIR={root}/.cache/pip
+export CONDA_PKGS_DIRS={root}/.cache/conda
+export OBSPY_CACHE_DIR={root}/.cache/obspy
 
 # Stagger conda activation / first-import across the array (up to 38s, 2s steps over a
 # 20-wide cycle) -- found by direct testing (2026-09-23) that a whole array hitting the
@@ -697,8 +725,17 @@ LOGGER_SLURM = """#!/bin/bash
 #SBATCH -o {root}/logs/logger.out
 #SBATCH -e {root}/logs/logger.err
 
+# Keep every cache writer OFF $HOME. This is not hygiene, it is availability: the group's
+# /home sits at 24.6 GB of a 25 GB hard limit with the grace period expired, i.e. already
+# in "cannot write files". A job that fills home does not just waste space, it breaks
+# unrelated work for everyone in the group -- and a pip or conda cache can add GBs without
+# anyone noticing. MPLCONFIGDIR/XDG_CACHE_HOME were already redirected; PIP and CONDA were
+# not, and were the remaining way home could grow from a job.
 export MPLCONFIGDIR={root}/.cache/mpl
 export XDG_CACHE_HOME={root}/.cache
+export PIP_CACHE_DIR={root}/.cache/pip
+export CONDA_PKGS_DIRS={root}/.cache/conda
+export OBSPY_CACHE_DIR={root}/.cache/obspy
 source /scratch/tolugboj_lab/softwares/anaconda/anaconda3/2021.05/etc/profile.d/conda.sh
 conda activate instaseis
 # Same transient shared-env import race as orchestrator.slurm can crash this job before
@@ -752,8 +789,17 @@ else
         && echo "[inspector.slurm] successor queued." >&2
 fi
 
+# Keep every cache writer OFF $HOME. This is not hygiene, it is availability: the group's
+# /home sits at 24.6 GB of a 25 GB hard limit with the grace period expired, i.e. already
+# in "cannot write files". A job that fills home does not just waste space, it breaks
+# unrelated work for everyone in the group -- and a pip or conda cache can add GBs without
+# anyone noticing. MPLCONFIGDIR/XDG_CACHE_HOME were already redirected; PIP and CONDA were
+# not, and were the remaining way home could grow from a job.
 export MPLCONFIGDIR={root}/.cache/mpl
 export XDG_CACHE_HOME={root}/.cache
+export PIP_CACHE_DIR={root}/.cache/pip
+export CONDA_PKGS_DIRS={root}/.cache/conda
+export OBSPY_CACHE_DIR={root}/.cache/obspy
 source /scratch/tolugboj_lab/softwares/anaconda/anaconda3/2021.05/etc/profile.d/conda.sh
 conda activate instaseis
 # One pass, then exit -- periodic, not a daemon, so memory cannot accumulate across ticks
