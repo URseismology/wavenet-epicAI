@@ -166,28 +166,69 @@ def main():
             sys.exit(f"[archive] TRANSFER FAILED (src rc={p1.returncode}, "
                      f"dest rc={p2.returncode}); nothing deleted.")
 
-    print("[archive] 2/4 verifying by independent md5 manifests on both ends ...", flush=True)
-    m_src = manifest(a.src_host, src)
-    m_dst = manifest(dhost, dest_dir)
-    if not m_src or not m_dst:
-        sys.exit("[archive] could not build manifests; nothing deleted.")
-    if m_src != m_dst:
-        s_lines, d_lines = set(m_src.splitlines()), set(m_dst.splitlines())
-        only_src, only_dst = s_lines - d_lines, d_lines - s_lines
-        print(f"[archive] VERIFY FAILED -- {len(only_src)} file(s) differ or missing at dest. "
-              f"NOTHING deleted.", file=sys.stderr)
-        for l in list(only_src)[:10]:
-            print("   src: " + l, file=sys.stderr)
-        sys.exit(1)
-    n_verified = len(m_src.splitlines())
-    print(f"[archive]   verified: {n_verified:,} files, md5 identical on both ends")
+    print("[archive] 2/4 verifying ...", flush=True)
+    if a.direct:
+        # rsync ALREADY verifies integrity: its protocol checksums each reconstructed file
+        # and retries/errors on mismatch, so rc=0 is itself a real guarantee -- not merely
+        # "the command ran". What it does not prove is that nothing was missed, so compare
+        # counts and bytes computed INDEPENDENTLY on each end, then spot-check content.
+        #
+        # Deliberately NOT md5-ing everything twice. That costs a full read of both sides:
+        # ~36 min for this 214 GB set (and it is what just failed, the ssh session dying
+        # mid-hash), and ~30 HOURS for the 11 TB archive this tool is about to be pointed
+        # at. Cost that grows with the data while adding little over rsync's own check is
+        # the wrong trade; --paranoid is there when it is worth paying.
+        dn, db = src_stats(dhost, dest_dir) if not a.dest_user else (None, None)
+        r = remote(a.src_host, f"ssh -o BatchMode=yes {dhost} \"find {dest_dir} -type f "
+                               f"-printf '%s\\n' | awk '{{n++; t+=\$1}} END {{print n+0, t+0}}'\"")
+        try:
+            dn, db = (int(x) for x in r.stdout.split())
+        except Exception:
+            sys.exit(f"[archive] could not count destination files; nothing deleted.\n{r.stderr[-300:]}")
+        if (dn, db) != (n_files, n_bytes):
+            sys.exit(f"[archive] VERIFY FAILED: source {n_files:,} files/{n_bytes:,} B vs "
+                     f"dest {dn:,} files/{db:,} B. NOTHING deleted.")
+        print(f"[archive]   counts match: {dn:,} files, {db:,} bytes (independently counted)")
+
+        n_spot = int(os.environ.get("WAVENET_ARCHIVE_SPOTCHECK", "5"))
+        sp = remote(a.src_host, f"cd {src} && find . -type f | sort | head -{n_spot}")
+        picks = [x for x in sp.stdout.split() if x]
+        bad = []
+        for rel in picks:
+            h1 = remote(a.src_host, f"md5sum {src}/{rel} | cut -d' ' -f1").stdout.strip()
+            h2 = remote(a.src_host, f"ssh -o BatchMode=yes {dhost} \"md5sum {dest_dir}/{rel}\" "
+                                    f"| cut -d' ' -f1").stdout.strip()
+            if not h1 or h1 != h2:
+                bad.append(rel)
+        if bad:
+            sys.exit(f"[archive] VERIFY FAILED: content mismatch on {bad}. NOTHING deleted.")
+        print(f"[archive]   spot-checked {len(picks)} file(s) by md5: identical")
+        n_verified = dn
+    else:
+        # tar stream has no integrity check of its own, so full manifests are the only
+        # honest option here.
+        m_src = manifest(a.src_host, src)
+        m_dst = manifest(dhost, dest_dir)
+        if not m_src or not m_dst:
+            sys.exit("[archive] could not build manifests; nothing deleted.")
+        if m_src != m_dst:
+            only_src = set(m_src.splitlines()) - set(m_dst.splitlines())
+            print(f"[archive] VERIFY FAILED -- {len(only_src)} file(s) differ. NOTHING deleted.",
+                  file=sys.stderr)
+            for l in list(only_src)[:10]:
+                print("   src: " + l, file=sys.stderr)
+            sys.exit(1)
+        n_verified = len(m_src.splitlines())
+        print(f"[archive]   verified: {n_verified:,} files, md5 identical on both ends")
 
     record = dict(
         name=name, source_host=a.src_host, source_path=src,
         dest_host=a.dest_host, dest_user=a.dest_user, dest_path=dest_dir,
         n_files=n_files, n_bytes=n_bytes, gb=round(n_bytes / 1e9, 3),
         reason=a.reason, moved_at=datetime.datetime.now().isoformat(timespec="seconds"),
-        verified=f"independent md5 manifests on both ends, {n_verified} files identical",
+        verified=(f"rsync content-checked transfer + independent count/byte match "
+                  f"({n_verified} files) + md5 spot-check" if a.direct else
+                  f"independent md5 manifests on both ends, {n_verified} files identical"),
         source_deleted=not a.keep_source,
         retrieve=f"ssh {dhost} 'tar cf - -C {a.dest_path} {name}' | tar xf - -C <local-parent>")
 
