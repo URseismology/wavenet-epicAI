@@ -36,6 +36,20 @@ FPS_STATIONS_DEFAULT = os.path.join(HERE, "..", "metadata3", "fps_stations.csv")
 STATION_SUMMARY_DEFAULT = os.path.join(HERE, "..", "metadata3", "key_index_summary", "station_summary.csv")
 
 
+def _count_log_rows(path):
+    """Row count of an APPEND-ONLY log, by lines rather than pd.read_csv. These logs span
+    pipeline versions (inspector_log gained patch_level on 2026-09-25), so one file can
+    hold rows of two widths and pandas refuses to parse it. A monitoring command must
+    never be the thing that breaks, and it only needs a count."""
+    if not os.path.exists(path):
+        return 0
+    try:
+        with open(path) as f:
+            return max(sum(1 for _ in f) - 1, 0)
+    except OSError:
+        return 0
+
+
 def format_eta(hr):
     """Render an ETA in whichever unit keeps the number in a readable 1-24/1-7/1-4/1-12
     range (hours/days/weeks/months), falling back to years beyond a year -- PI request:
@@ -393,10 +407,10 @@ def cmd_status(args):
         if os.path.isdir(results_dir) else 0
 
     master_log = os.path.join(args.root, "master_log.csv")
-    n_merged = len(pd.read_csv(master_log)) if os.path.exists(master_log) else 0
+    n_merged = _count_log_rows(master_log)
 
     inspector_log = os.path.join(args.root, "inspector_log.csv")
-    n_purged = len(pd.read_csv(inspector_log)) if os.path.exists(inspector_log) else 0
+    n_purged = _count_log_rows(inspector_log)
 
     flagged_path = os.path.join(args.root, "state", "inspector_flagged.json")
     n_flagged = 0
@@ -520,7 +534,7 @@ def cmd_progress(args):
     # a stale number that looks like progress is worse than no number (that is exactly how
     # logger's death went unnoticed for 21 hours).
     inspector_log = os.path.join(args.root, "inspector_log.csv")
-    n_purged = len(pd.read_csv(inspector_log)) if os.path.exists(inspector_log) else 0
+    n_purged = _count_log_rows(inspector_log)
     n_indexed = len(glob.glob(os.path.join(args.root, "station_index", "*.json")))
 
     # Instrument-response coverage: a channel left in raw counts is not amplitude-comparable

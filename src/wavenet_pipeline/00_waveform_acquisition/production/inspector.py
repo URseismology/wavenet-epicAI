@@ -68,7 +68,20 @@ def save_json_atomic(path, obj):
 
 
 def append_csv(path, header, row):
+    """Append-only log. If the file exists with a DIFFERENT header (the schema gained
+    patch_level on 2026-09-25), rotate it aside rather than appending rows of a different
+    width -- a single file holding two schemas is unparseable by anything downstream, and
+    it broke `master.py progress` once already."""
     is_new = not os.path.exists(path)
+    if not is_new:
+        try:
+            with open(path) as f:
+                existing = f.readline().strip()
+            if existing and existing != ",".join(header):
+                os.replace(path, path + ".v1")
+                is_new = True
+        except OSError:
+            pass
     with open(path, "a") as f:
         if is_new:
             f.write(",".join(header) + "\n")
