@@ -23,17 +23,22 @@ from obspy import UTCDateTime
 
 
 # How many whole samples of day-boundary overlap may be trimmed off the front of new data
-# instead of refusing the day outright. The smoke test set this to 2, because the XD pair
-# only ever showed the single-extra-sample case. Production says otherwise: measured over
-# the first patched stations, EVERY refusal was an overlap of 10-19 samples (median 15,
-# max 19) -- day files that start a few seconds before midnight while the previous day ran
-# a few seconds past it. At 2 this refused 18% of all attempted days (NL.HGN alone lost 490
-# of 572). Trimming is the correct response: those leading samples cover a time range
-# already stored, so dropping them and appending the rest is exactly right. 60 samples
-# (1 minute at 1 Hz) clears every case observed, covers the smoke test's 42-second
-# straddling record, and is still 1/1440th of a day -- so a genuinely duplicated day is
-# still REFUSED rather than silently merged. Override with WAVENET_MAX_TRIM_SAMPLES.
-MAX_TRIM_SAMPLES = int(os.environ.get("WAVENET_MAX_TRIM_SAMPLES", "60"))
+# instead of refusing the day outright. Raised twice, each time by production evidence:
+#   2    -- the smoke test's value, from the XD pair's single-extra-sample case only.
+#           Refused 18% of all attempted days; NL.HGN alone lost 490 of 572.
+#   60   -- covered the dominant cluster, every refusal being 10-19 samples (median 15):
+#           day files starting seconds before midnight while the previous day ran seconds
+#           past it. Still refused AC.VLO's 29 days, whose overlaps are 136-342 samples.
+#   3600 -- current. A record straddling midnight can run minutes into the next day (the
+#           smoke test's own RUNG case ran 42 s), so minutes-scale overlap is a normal
+#           boundary artefact, not corruption.
+# Trimming is correct at any of these sizes: the leading samples cover a time range already
+# stored, so dropping them and appending the rest is exactly right. The guard exists to
+# catch a gross logic error -- a whole day re-appended -- and 3600 is still only 4% of a
+# day, so that case is still REFUSED. Trims are COUNTED (see orchestrator's n_days_trimmed)
+# rather than silent, because a threshold this permissive must not hide a station that is
+# routinely overlapping by minutes. Override with WAVENET_MAX_TRIM_SAMPLES.
+MAX_TRIM_SAMPLES = int(os.environ.get("WAVENET_MAX_TRIM_SAMPLES", "3600"))
 
 
 def align_to_integer_second(tr):

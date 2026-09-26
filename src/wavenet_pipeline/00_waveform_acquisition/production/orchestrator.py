@@ -27,6 +27,7 @@ selection (BH?/LH?) is unchanged from verification.
 """
 import os
 import random
+import re
 import sys
 import time
 import json
@@ -193,6 +194,8 @@ result = dict(idx=idx, network=network, station=station,
 t0 = time.time()
 year_errors = {}
 n_download_retries = 0
+n_days_trimmed = 0
+n_samples_trimmed = 0
 try:
     domain = RectangularDomain(minlatitude=lat - 0.5, maxlatitude=lat + 0.5,
                                 minlongitude=lon - 0.5, maxlongitude=lon + 0.5)
@@ -451,6 +454,13 @@ if result["download_ok"]:
                         units = units_out                                  # [PATCH 4] was: "m" if response_removed else "counts"
                         status = append_channel_data(grp, channel, data, tr.stats.sampling_rate,
                                                       tr.stats.starttime, units, azimuth=azimuth, dip=dip)
+                        if "trimmed" in status:
+                            # Visible, not silent: max_trim_samples is deliberately
+                            # permissive (3600), so a station routinely overlapping by
+                            # minutes must show up in the result rather than look clean.
+                            _m = re.search(r"trimmed (\d+) overlapping", status)
+                            n_days_trimmed += 1
+                            n_samples_trimmed += int(_m.group(1)) if _m else 0
                         if status.startswith("SKIPPED"):
                             day_notes[f"{day_str}/{channel}"] = status
                             continue
@@ -491,7 +501,9 @@ if result["download_ok"]:
                        n_channels_response_ok=len(channels_response_ok),
                        n_channels_total=len(channels_seen),
                        response_ok=bool(channels_seen) and channels_response_ok == channels_seen,
-                       response_failures=response_failures)
+                       response_failures=response_failures,
+                       n_days_trimmed=n_days_trimmed,
+                       n_samples_trimmed=n_samples_trimmed)
         if day_errors:
             result["day_errors"] = day_errors
     except Exception as e:

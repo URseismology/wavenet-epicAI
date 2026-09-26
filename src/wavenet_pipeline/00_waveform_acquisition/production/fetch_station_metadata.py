@@ -26,6 +26,7 @@ Usage:
     fetch_station_metadata.py --root ROOT --report         # coverage report over all
 """
 import argparse
+import glob
 import json
 import os
 import sys
@@ -101,48 +102,106 @@ def fetch_one(root, idx):
 
 
 def report_coverage(root):
-    """The gate: what fraction of stations have a usable response BEFORE processing runs."""
+    """The gate before processing resumes.
+
+    The question that matters is NOT "does every station have a response" -- plenty of
+    stations in the fixed 2,000 network have no BH?/LH? channels at all and therefore
+    neither waveforms nor a relevant response (X3.OBS01, for example, carries only
+    EDH/EL1/EL2/ELZ; it returned no data AND no response, which is correct, not a fault).
+    The real gate is: does every station that HAS waveform data also have a response?
+    Those are the stations that would otherwise be packaged in raw counts and silently
+    fail to be amplitude-comparable with anything else."""
     md = os.path.join(root, "station_metadata")
     manifest = pd.read_csv(os.path.join(root, "manifest", "fps_stations.csv"))
     n_total = len(manifest)
-    ok, failed, missing = [], [], []
+
+    has_data = set()
+    known = set()
+    results_dir = os.path.join(root, "results")
+    if os.path.isdir(results_dir):
+        for rf in glob.glob(os.path.join(results_dir, "*.json")):
+            try:
+                r = json.load(open(rf))
+            except (ValueError, OSError):
+                continue
+            key = f"{r.get('network')}.{r.get('station')}"
+            known.add(key)
+            if r.get("package_ok"):
+                has_data.add(key)
+
+    resp_ok, resp_none, not_queried = set(), set(), set()
     for _, row in manifest.iterrows():
         key = f"{row['network']}.{row['station']}"
         p = os.path.join(md, key + ".json")
         if not os.path.exists(p):
-            missing.append(key)
+            not_queried.add(key)
             continue
         try:
             s = json.load(open(p))
         except (ValueError, OSError):
-            missing.append(key)
+            not_queried.add(key)
             continue
-        (ok if s.get("ok") else failed).append(key)
+        (resp_ok if s.get("ok") else resp_none).add(key)
+
+    blocking = sorted(has_data & resp_none)            # data but no response -- the problem
+    benign = sorted(resp_none - has_data)              # no response and no data -- fine
+    unknown = sorted((resp_none | not_queried) - known)  # not processed yet, status unknown
+
     print(f"station response coverage over {n_total} stations:")
-    print(f"  with response metadata : {len(ok)} ({100*len(ok)/max(n_total,1):.1f}%)")
-    print(f"  queried, none found    : {len(failed)}")
-    print(f"  not yet queried        : {len(missing)}")
-    if failed:
-        print("  no-response stations (will be packaged in raw counts, explicitly):")
-        print("    " + ", ".join(sorted(failed)[:40]) + (" ..." if len(failed) > 40 else ""))
+    print(f"  response available        : {len(resp_ok)} ({100*len(resp_ok)/max(n_total,1):.1f}%)")
+    print(f"  not yet queried           : {len(not_queried)}")
+    print(f"  no response, but ALSO no waveform data (benign): {len(benign)}")
+    print(f"  >> HAS DATA but NO response (blocking)        : {len(blocking)}")
+    if blocking:
+        print("     " + ", ".join(blocking[:40]) + (" ..." if len(blocking) > 40 else ""))
+    if unknown:
+        print(f"  no response, station not processed yet (unknown): {len(unknown)}")
     out = os.path.join(md, "_coverage.json")
     with open(out, "w") as f:
-        json.dump(dict(n_total=n_total, ok=sorted(ok), failed=sorted(failed),
-                        missing=sorted(missing)), f, indent=2)
+        json.dump(dict(n_total=n_total, n_response_ok=len(resp_ok),
+                        blocking=blocking, benign=benign, unknown=unknown,
+                        not_queried=sorted(not_queried)), f, indent=2)
     print(f"  written: {out}")
-    return len(missing) == 0
+    clean = not blocking and not not_queried
+    print("  GATE: " + ("PASS -- safe to resume processing" if clean else
+                         "HOLD -- resolve the blocking/unqueried stations first"))
+    return clean
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", required=True)
     ap.add_argument("--idx", type=int, default=None, help="manifest row (SLURM array task)")
+    ap.add_argument("--count", type=int, default=1,
+                    help="how many consecutive stations this task handles. Batching matters: "
+                         "the per-task cost here is conda activation (tens of seconds), not "
+                         "the ~2s query, so one station per array task spends almost all of "
+                         "its wall time on overhead")
     ap.add_argument("--report", action="store_true")
     args = ap.parse_args()
     if args.report:
         sys.exit(0 if report_coverage(args.root) else 1)
-    idx = args.idx + int(os.environ.get("WAVENET_IDX_OFFSET", 0))
-    fetch_one(args.root, idx)
+
+    n_rows = len(pd.read_csv(os.path.join(args.root, "manifest", "fps_stations.csv")))
+    start = args.idx + int(os.environ.get("WAVENET_IDX_OFFSET", 0))
+    manifest = pd.read_csv(os.path.join(args.root, "manifest", "fps_stations.csv"))
+    md = os.path.join(args.root, "station_metadata")
+    n_done = n_skip = 0
+    for idx in range(start, min(start + args.count, n_rows)):
+        row = manifest.iloc[idx]
+        # Idempotent: a station already fetched successfully is not re-queried, so this is
+        # safe to re-run over a range that partly completed.
+        p = os.path.join(md, f"{row['network']}.{row['station']}.json")
+        if os.path.exists(p):
+            try:
+                if json.load(open(p)).get("ok"):
+                    n_skip += 1
+                    continue
+            except (ValueError, OSError):
+                pass
+        fetch_one(args.root, idx)
+        n_done += 1
+    print(f"[metadata] task done: {n_done} fetched, {n_skip} already had a response")
 
 
 if __name__ == "__main__":
