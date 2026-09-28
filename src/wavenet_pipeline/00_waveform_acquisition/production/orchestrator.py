@@ -90,6 +90,45 @@ PIPELINE_PATCH_LEVEL = 3
 DOWNLOAD_ATTEMPTS = int(os.environ.get("WAVENET_DOWNLOAD_ATTEMPTS", "4"))
 
 
+def canonical_sampling_rate(sr, rel_tol=1e-4):
+    """Collapse floating-point jitter in a raw miniSEED header's declared sampling rate.
+
+    Found 2026-09-28, from real production loss: II.NIL (a 30+ year GSN station) lost 591
+    of 4867 processed days -- 1963 individual channel-day REFUSEDs plus 226 outright
+    Stream.merge() crashes -- to "differing sampling rates" between record segments of the
+    SAME channel on the SAME day. Confirmed directly against the raw files: the identical
+    channel reports 1.0000000000 and 1.0000001192 across different segments (delta exactly
+    2**-23, a single float32 ULP), and elsewhere a delta of ~2.67e-6 relative (1.0 vs
+    0.999997329711914). obspy's Stream.merge() requires EXACT sampling_rate equality to
+    merge same-id traces (zero tolerance), so any such jitter crashes the whole day;
+    write_channel_day's own 1e-6 ABSOLUTE tolerance is tripped by the larger end of the
+    same jitter.
+
+    Fix: snap to a grid with ~1e-4 RELATIVE spacing (rel_tol), immediately after reading
+    each raw trace and before any merge/decimate/compare -- so every legitimate reading of
+    the same physical rate becomes numerically identical again. That is ~37x coarser than
+    the worst jitter observed (2.67e-6) and still 2-3 orders of magnitude tighter than any
+    genuine rate distinction, so it cannot plausibly merge two truly different rates.
+
+    Handles the power-of-ten boundary explicitly (this is not an edge case here -- 1 Hz,
+    a nominal rate this pipeline uses constantly, sits exactly on one): a naive
+    digits = N - floor(log10(sr)) gives 0.999997... one MORE digit of precision than
+    1.0000001..., because floor(log10(x)) is genuinely discontinuous at a power of ten --
+    so the two jittered readings of the same physical 1 Hz rate would round to DIFFERENT
+    grid points and the whole fix would silently fail on exactly the case that motivated
+    it. Detecting "within rel_tol of the next power of ten" and using that exponent instead
+    fixes it: both readings then land on the same grid point.
+    """
+    if sr is None or sr <= 0:
+        return sr
+    from math import floor, log10
+    exp = int(floor(log10(abs(sr))))
+    if abs(sr - 10 ** (exp + 1)) / (10 ** (exp + 1)) < rel_tol:
+        exp += 1
+    digits = 4 - exp
+    return round(sr, max(digits, 0))
+
+
 def _raw_qc(x, n_segments):
     """[PATCH 3] Non-destructive per-channel-day quality flags from the RAW counts (nothing is altered or removed).
     Flag = int32-saturated, or heavy-tailed (RMS / robust sigma > 30; quiet days were <= ~9, corrupt days > 100
@@ -372,6 +411,10 @@ if result["download_ok"]:
                 day_stream = None
                 for mf in files_by_day[day_str]:
                     st_part = read(mf)
+                    for tr_p in st_part:
+                        # Canonicalize BEFORE combining/merging -- this is what makes two
+                        # segments of the same real channel numerically mergeable again.
+                        tr_p.stats.sampling_rate = canonical_sampling_rate(tr_p.stats.sampling_rate)
                     day_stream = st_part if day_stream is None else day_stream + st_part
                 seg_count = {}
                 for tr_ in day_stream:                 # [PATCH 3] record segments per channel BEFORE merge (gaps / restarts)
