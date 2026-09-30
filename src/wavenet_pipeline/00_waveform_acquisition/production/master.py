@@ -637,9 +637,18 @@ def cmd_progress(args):
         print(f"  scratch quota       : {q['used_gb']:,.0f} GB used of {q['hard_gb']:,.0f} GB hard "
               f"({q['pct_of_hard']:.1f}%), soft {q['soft_gb']:,.0f} GB{warn}")
 
-    # Service health. For a SLURM-chained service the invariant is "exactly one link queued
-    # or running" -- zero looks exactly like normal quiet otherwise, which is how logger sat
-    # dead for 21 hours while every other number kept climbing. Report it explicitly.
+    # Service health. Zero links looks exactly like normal quiet otherwise, which is how
+    # logger sat dead for 21 hours while every other number kept climbing -- report it
+    # explicitly. The invariant is NOT "exactly one" though: the self-chain submits its
+    # successor at job START, before doing any real work (2026-09-30 design, see
+    # INSPECTOR_SLURM below) precisely so a crash mid-job still has a successor already
+    # queued -- so for the entire runtime of every healthy link, ONE running + ONE already-
+    # queued successor (2 total) is the normal steady state, not a duplicate. Confirmed the
+    # hard way, 2026-09-30: fixing the chain to actually keep running made "2" the common
+    # case, and the old `== 1` check called that a false "duplicate chain" on nearly every
+    # observation -- exactly the kind of false positive that trains people to ignore a
+    # monitor. >=3 is the real anomaly (e.g. someone manually resubmits without noticing one
+    # is already running/queued, or two independent chains got started).
     try:
         q = subprocess.run(["squeue", "-A", "tolugboj_lab", "-h", "-o", "%j|%T"],
                             capture_output=True, text=True, timeout=30).stdout
@@ -650,9 +659,9 @@ def cmd_progress(args):
                 live[name.strip().split(".")[0]] = live.get(name.strip().split(".")[0], 0) + 1
         orch = live.get("orchestrator", 0)
         insp = live.get("inspector", 0)
-        insp_str = ("OK (1 link)" if insp == 1 else
+        insp_str = ("OK (1-2 links)" if insp in (1, 2) else
                     "NOT RUNNING -- chain broken or intentionally off" if insp == 0 else
-                    f"{insp} links -- duplicate chain, investigate")
+                    f"{insp} links -- more than the running+queued-successor pair, investigate")
         print(f"  services           : orchestrator {orch} task(s) | inspector chain: {insp_str}")
     except Exception:
         pass
