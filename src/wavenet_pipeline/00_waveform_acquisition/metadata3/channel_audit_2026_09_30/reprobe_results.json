@@ -1,0 +1,270 @@
+[
+ {
+  "orig": "17.S20",
+  "cand": "16.MG14",
+  "band": "HH",
+  "dist_km": 16.1,
+  "epoch": [
+   "2023-10-21",
+   "2026-12-31"
+  ],
+  "verdict": "truly_empty"
+ },
+ {
+  "orig": "3R.A06",
+  "cand": "MU.HUIG",
+  "band": "HH",
+  "dist_km": 175.7,
+  "epoch": [
+   "2005-01-01",
+   "2026-09-30"
+  ],
+  "verdict": "truly_empty"
+ },
+ {
+  "orig": "4P.KSR37",
+  "cand": "TA.R37A",
+  "band": "LH",
+  "dist_km": 7.9,
+  "epoch": [
+   "2010-03-24",
+   "2012-03-03"
+  ],
+  "verdict": "overlap_data",
+  "day": "2012-01-03"
+ },
+ {
+  "orig": "4P.MOO36",
+  "cand": "TA.O36A",
+  "band": "LH",
+  "dist_km": 26.1,
+  "epoch": [
+   "2010-05-18",
+   "2012-03-14"
+  ],
+  "verdict": "overlap_data",
+  "day": "2012-01-04"
+ },
+ {
+  "orig": "4P.UTO17",
+  "cand": "UU.BSUT",
+  "band": "HH",
+  "dist_km": 19.7,
+  "epoch": [
+   "2012-09-19",
+   "2026-09-30"
+  ],
+  "verdict": "overlap_data",
+  "day": "2012-10-10"
+ },
+ {
+  "orig": "9G.RC030",
+  "cand": "CN.EDM",
+  "band": "BH",
+  "dist_km": 57.3,
+  "epoch": [
+   "1992-06-03",
+   "2012-07-16"
+  ],
+  "verdict": "no_overlap_but_data_elsewhere",
+  "day": "2010-01-10"
+ },
+ {
+  "orig": "GF.TEPE",
+  "cand": "KO.BALB",
+  "band": "BH",
+  "dist_km": 165.5,
+  "epoch": [
+   "2002-07-11",
+   "2014-01-23"
+  ],
+  "verdict": "overlap_data",
+  "day": "2014-01-01"
+ },
+ {
+  "orig": "8P.CAS04",
+  "cand": "NP.PLA",
+  "band": "HH",
+  "dist_km": 18.4,
+  "epoch": [
+   "2008-08-29",
+   "2026-09-30"
+  ],
+  "verdict": "truly_empty"
+ },
+ {
+  "orig": "MH.P0008",
+  "cand": "3J.OBS02",
+  "band": "BH",
+  "dist_km": 107.3,
+  "epoch": [
+   "2023-11-23",
+   "2025-08-03"
+  ],
+  "verdict": "truly_empty"
+ },
+ {
+  "orig": "MH.P0009",
+  "cand": "3J.OBS27",
+  "band": "BH",
+  "dist_km": 218.0,
+  "epoch": [
+   "2023-12-03",
+   "2025-08-11"
+  ],
+  "verdict": "truly_empty"
+ },
+ {
+  "orig": "MH.P0010",
+  "cand": "3J.OBS29",
+  "band": "BH",
+  "dist_km": 146.3,
+  "epoch": [
+   "2023-12-04",
+   "2025-08-12"
+  ],
+  "verdict": "truly_empty"
+ },
+ {
+  "orig": "MH.P0018",
+  "cand": "XE.EC05",
+  "band": "BH",
+  "dist_km": 488.8,
+  "epoch": [
+   "2018-04-18",
+   "2019-05-16"
+  ],
+  "verdict": "overlap_data",
+  "day": "2018-05-04"
+ },
+ {
+  "orig": "PR.SNC1",
+  "cand": "PR.CDVI",
+  "band": "BH",
+  "dist_km": 6.6,
+  "epoch": [
+   "2004-12-09",
+   "2022-05-18"
+  ],
+  "verdict": "no_overlap_but_data_elsewhere",
+  "day": "2005-08-31"
+ },
+ {
+  "orig": "MH.P0017",
+  "cand": "XE.WC05",
+  "band": "BH",
+  "dist_km": 306.2,
+  "epoch": [
+   "2018-04-27",
+   "2019-05-18"
+  ],
+  "verdict": "overlap_data",
+  "day": "2018-05-13"
+ },
+ {
+  "orig": "X9.T2S4A",
+  "cand": "X9.BFS4",
+  "band": "LH",
+  "dist_km": 3.6,
+  "epoch": [
+   "2005-12-31",
+   "2007-03-01"
+  ],
+  "verdict": "no_overlap_but_data_elsewhere",
+  "day": "2007-02-11"
+ },
+ {
+  "orig": "XF.DN3W",
+  "cand": "XF.DN3C",
+  "band": "BH",
+  "dist_km": 4.1,
+  "epoch": [
+   "1995-11-27",
+   "1996-12-31"
+  ],
+  "verdict": "overlap_data",
+  "day": "1995-12-13"
+ },
+ {
+  "orig": "XH.SAR",
+  "cand": "XH.KUL",
+  "band": "BH",
+  "dist_km": 34.2,
+  "epoch": [
+   "2002-12-22",
+   "2003-12-31"
+  ],
+  "verdict": "overlap_data",
+  "day": "2003-02-07"
+ },
+ {
+  "orig": "YC.MATA",
+  "cand": "TC.LCR2",
+  "band": "HH",
+  "dist_km": 45.7,
+  "epoch": [
+   "2000-01-01",
+   "2026-09-30"
+  ],
+  "verdict": "no_overlap_but_data_elsewhere",
+  "day": "2016-09-19"
+ },
+ {
+  "orig": "XC.FL006",
+  "cand": "Z9.E01",
+  "band": "BH",
+  "dist_km": 11.7,
+  "epoch": [
+   "2012-05-16",
+   "2014-05-15"
+  ],
+  "verdict": "overlap_data",
+  "day": "2014-01-06"
+ },
+ {
+  "orig": "RE.BRBY3",
+  "cand": "CI.SYP",
+  "band": "LH",
+  "dist_km": 6.1,
+  "epoch": [
+   "2001-06-14",
+   "2026-09-30"
+  ],
+  "verdict": "truly_empty"
+ },
+ {
+  "orig": "ZU.NMW20",
+  "cand": "AE.W18A",
+  "band": "LH",
+  "dist_km": 92.7,
+  "epoch": [
+   "2018-09-07",
+   "2026-09-30"
+  ],
+  "verdict": "no_overlap_but_data_elsewhere",
+  "day": "2024-05-24"
+ },
+ {
+  "orig": "ZU.MSW46",
+  "cand": "NM.PLAL",
+  "band": "LH",
+  "dist_km": 47.4,
+  "epoch": [
+   "1998-06-11",
+   "2021-03-10"
+  ],
+  "verdict": "no_overlap_but_data_elsewhere",
+  "day": "2001-04-15"
+ },
+ {
+  "orig": "ZU.TXH36",
+  "cand": "2T.EF77",
+  "band": "HH",
+  "dist_km": 18.9,
+  "epoch": [
+   "2021-08-18",
+   "2099-12-31"
+  ],
+  "verdict": "truly_empty"
+ }
+]

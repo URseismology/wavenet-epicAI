@@ -142,10 +142,44 @@ Primary output: `/RAID6/wavenet_output/`
 SSH: `ssh terravibranium-gpu`
 Hardware: RTX 3090, 24 GB VRAM
 
-### Bluehive (HPC — multi-sep array)
-SSH: `ssh tolugboj@bluehive.circ.rochester.edu` (2FA — use SSH ControlMaster)
+### Bluehive3 (HPC — PRODUCTION target as of 2026-09-29)
+SSH: `ssh bluehive3` (alias on axon-1) | `bluehive3.circ.rochester.edu` | User: `tolugboj`
+Account: `tolugboj_lab`. **Duo 2FA fires on EVERY connection** — a human opens one master
+connection interactively and everything else reuses it (`ssh -fN bluehive3`, check with
+`ssh -O check bluehive3`, close with `ssh -O exit bluehive3`).
+
+**Use BH3 for production/long compute.** The NCF campaign was migrated here 2026-09-29.
+Same CPU silicon as the old cluster (Xeon Gold 6126 both), but the newer stack (RHEL9,
+SLURM 24.05 vs 16.05.9) measured **2-3x faster on identical floating-point work**, and
+delivered far better scheduling throughput in practice (260+ concurrent tasks vs ~46).
+`/scratch/tolugboj_lab` is SHARED with the old cluster, so no data migration is needed and
+the same conda env runs unchanged.
+
+Partitions (walltime caps): `urseismo` 15d (our 5 dedicated nodes, `bhd[0044,0046-0047,
+0053-0054]` — physically DIFFERENT machines from old BH's urseismo nodes), `standard` 5d,
+`preempt` 2d, `interactive` 12h. **No `debug` partition here** (that's why old BH stays in
+rotation). `--qos` must match `-p` by name (`-p standard --qos standard`).
+
+> [!IMPORTANT]
+> BH3's login-node banner **forbids running AI coding assistants on it**. Get an allocation
+> first (`smux -c 4 --mem=8G -t 08:00:00 -J <name>`, or `salloc`), then work from the
+> allocated node. Submitting jobs (`sbatch`/`squeue`) from the login node is fine.
+> BH3 is also still flagged "in development, not production" — keep old BH as fallback for
+> anything deadline-critical.
+
+### Bluehive (legacy HPC — keep for TESTS and short jobs, not production)
+SSH: `ssh bluehive` (alias on axon-1) | `bluehive.circ.rochester.edu` (2FA — ControlMaster)
 Partition: `urseismo`, Account: `tolugboj_lab`
-**SLURM script does not yet exist. See docs/HANDOFF.md §6.**
+
+**Deliberately kept in rotation, not retired** (PI, 2026-09-29): it is still real, available
+compute, and it currently has MORE short-job capacity than BH3 — 91 `standard`, 21
+`interactive`, and 12 `debug` nodes, versus BH3's 20 / 1 / none. Use it for tests,
+debugging, and short jobs; use BH3 for long production runs. Do not leave it idle.
+
+> [!NOTE]
+> On axon-2 (the global-tomography machine) `bluehive` is deliberately ALIASED to
+> bluehive3, so that project cannot reach the legacy cluster by muscle memory. On axon-1
+> the two names remain distinct because this project uses both, for the split above.
 
 ### repovibranium (NAS backup — do not compute here)
 SSH: `ssh administrator@repovibranium.earth.rochester.edu`
@@ -161,6 +195,19 @@ Address: 10.17.6.17
 User: tolulopeolugboji
 OS: macOS
 Passwordless SSH key access confirmed working from axon-1.
+
+### axon-2 (added 2026-09-29 — PI's second Mac, mirrors axon-1 for a separate sub-project)
+SSH: `ssh axon-2` (alias in ~/.ssh/config on axon-1)
+Address: 10.17.6.91 | User: `tolulopeolugboji` | Hostname: `Tolulopes-iMac-2.local` | OS: macOS 26.6.2
+Passwordless SSH key access confirmed working from axon-1 (2026-09-29) — axon-1's key was
+added to axon-2's `authorized_keys` via a relay through `cerebrum`, which already had
+passwordless access; the SSH config's `ProxyJump cerebrum` only relays the network path,
+axon-1's own key still had to be separately authorized for the final hop.
+**Deliberately isolated from this project**: mirrors axon-1's code-server + Claude Code
+environment (Homebrew + launchd, same as axon-1 — not Docker/systemd) for a separate
+sub-project (global tomography, different code libraries), with no agent-to-agent contact
+between axon-1 and axon-2 sessions by design — see `~/global-tomography/CLAUDE.md` on
+axon-2 for that project's own rules; nothing about that project belongs in this file.
 
 ### mothership (added 2026-09-23 — AWS/EarthScope credentials host for the NCF pipeline)
 SSH: `ssh mothership` (alias in ~/.ssh/config on axon-1)

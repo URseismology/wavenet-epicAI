@@ -38,6 +38,9 @@ import numpy as np
 import pandas as pd
 from obspy import UTCDateTime, read, read_inventory
 from obspy.clients.fdsn.mass_downloader import Restrictions, MassDownloader, RectangularDomain
+from obspy.core.inventory import PolynomialResponseStage
+from obspy.signal.util import _npts2nfft
+from obspy.signal.invsim import cosine_taper, cosine_sac_taper, invert_spectrum
 
 from lockutil import scratch_quota
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rover_download"))
@@ -58,13 +61,35 @@ DOWNLOAD_END = (UTCDateTime(os.environ["WAVENET_END"]) if "WAVENET_END" in os.en
 
 # [PATCH 6] Per-run overrides (defaults reproduce the previous hard-coded behaviour exactly):
 #   WAVENET_START / WAVENET_END      download + processing window (ISO date/time)
-#   WAVENET_CHANNELS                 obspy channel selector, default "BH?,LH?"
-#   WAVENET_CHANNEL_PRIORITIES       comma list, default "LH?,BH?"
+#   WAVENET_CHANNELS                 obspy channel selector, default "LH?,MH?,BH?,SH?,HH?,EH?"
+#   WAVENET_CHANNEL_PRIORITIES       comma list, default "LH?,MH?,BH?,SH?,HH?,EH?"
+#   WAVENET_LOCATION_PRIORITIES      comma list, default "*" (accept every location code)
 #   WAVENET_SKIP_DOWNLOAD=1          reprocess raw files already in scratch_work/ (no network)
 #   WAVENET_DAY_START / _DAY_END     'YYYYMMDD' inclusive; process only these days (parallel date-range chunks)
 #   WAVENET_TAPER_PCT                per-end taper fraction applied to every processed day, default 0.05
-CHANNELS = os.environ.get("WAVENET_CHANNELS", "BH?,LH?")
-CHANNEL_PRIORITIES = os.environ.get("WAVENET_CHANNEL_PRIORITIES", "LH?,BH?").split(",")
+#
+# Channel defaults widened 2026-09-30 after auditing the 954 stations that returned nothing.
+# 312 of them HAVE a real seismometer that "BH?,LH?" simply never asked for (HH 659, EH 90,
+# SH 52, MH 31, CH 17 occurrences). Every band listed here is a high-gain seismometer (2nd
+# SEED char 'H') sampling at >= 1 Hz, ordered cheapest-first.
+#
+# Two rules are encoded in that order, both from the PI (2026-09-30):
+#   * "always choose the channels with lowest sample rate" -- the product is 1 Hz and
+#     response-removal cost scales with sampling rate, so LH before BH before HH.
+#   * the list FLOORS at LH (1 Hz) because Nyquist must stay >= 0.5 Hz for the 0.4 Hz
+#     lowpass. VH?/UH? are genuine high-gain seismometers at 0.1/0.01 Hz and are excluded
+#     for exactly that reason -- selecting them would silently destroy the target band.
+# Low-gain seismometers (?L?), accelerometers (?N?) and the state-of-health families
+# (VM mass position, LOG, ACE, Q*) are deliberately absent.
+CHANNELS = os.environ.get("WAVENET_CHANNELS", "LH?,MH?,BH?,SH?,HH?,EH?")
+CHANNEL_PRIORITIES = os.environ.get(
+    "WAVENET_CHANNEL_PRIORITIES", "LH?,MH?,BH?,SH?,HH?,EH?").split(",")
+# Accept EVERY location code. The previous hard-coded ["", "00", "10"] silently discarded
+# real instruments: in a 25-station sample of the "should have worked" category, 10 had ALL
+# their location codes outside that set (observed 01, 02, 30, 31, 32). Multiple location
+# codes usually mean several sensors at one site (different depths), not junk -- PI,
+# 2026-09-30. This is strictly more permissive, so it can only ever add data.
+LOCATION_PRIORITIES = os.environ.get("WAVENET_LOCATION_PRIORITIES", "*").split(",")
 SKIP_DOWNLOAD = os.environ.get("WAVENET_SKIP_DOWNLOAD", "0") == "1"
 DAY_START = os.environ.get("WAVENET_DAY_START")
 DAY_END = os.environ.get("WAVENET_DAY_END")
@@ -127,6 +152,67 @@ def canonical_sampling_rate(sr, rel_tol=1e-4):
         exp += 1
     digits = 4 - exp
     return round(sr, max(digits, 0))
+
+
+# One SLURM array task = one station = every day of that station's history sharing (almost
+# always) a single response epoch and sampling rate, hence a single nfft. Profiling
+# (2026-09-28, real NU.CORN data) showed 96.5% of remove_response's wall time is ObsPy's
+# evalresp call -- a function of (response epoch, delta, nfft) only, NEVER of the waveform
+# data -- so it's cached per (channel, epoch, nfft, output, water_level) here instead of
+# recomputed every day. Confirmed bit-exact (max abs diff 0.0) against tr.remove_response()
+# on real production data from both this campaign (PS.TGY, II.RAYN) and the separate
+# SAmericaNoise packaging pipeline before being ported in.
+_RESPONSE_CACHE = {}
+
+
+def cached_remove_response(tr, inv, output="DISP", water_level=60, pre_filt=None,
+                            zero_mean=True, taper=True, taper_fraction=0.05):
+    """Bit-exact reimplementation of Trace.remove_response(), reusing a cached evalresp
+    evaluation across calls sharing (channel, response epoch, nfft, output, water_level).
+    Falls back to the real ObsPy call for response types that bypass evalresp entirely
+    (pure polynomial stages), matching ObsPy's own special-casing."""
+    response = tr._get_response(inv)
+    if (not response.response_stages and response.instrument_polynomial) or \
+            (len(response.response_stages) == 1 and
+             isinstance(response.response_stages[0], PolynomialResponseStage)):
+        return tr.remove_response(inventory=inv, output=output, water_level=water_level,
+                                   pre_filt=pre_filt, zero_mean=zero_mean, taper=taper,
+                                   taper_fraction=taper_fraction)
+
+    data = tr.data.astype(np.float64)
+    npts = len(data)
+    if zero_mean:
+        data -= data.mean()
+    if taper:
+        data *= cosine_taper(npts, taper_fraction, sactaper=True, halfcosine=False)
+    nfft = _npts2nfft(npts)
+    data = np.fft.rfft(data, n=nfft)
+
+    sta_inv = inv.select(network=tr.stats.network, station=tr.stats.station,
+                          location=tr.stats.location, channel=tr.stats.channel,
+                          time=tr.stats.starttime)
+    chan = sta_inv[0][0][0]
+    key = (tr.id, str(chan.start_date), str(chan.end_date), nfft, output, water_level)
+    cached = _RESPONSE_CACHE.get(key)
+    if cached is None:
+        freq_response, freqs = response.get_evalresp_response(tr.stats.delta, nfft,
+                                                                output=output)
+        if water_level is None:
+            freq_response[0] = 0.0
+            freq_response[1:] = 1.0 / freq_response[1:]
+        else:
+            invert_spectrum(freq_response, water_level)
+        cached = (freq_response, freqs)
+        _RESPONSE_CACHE[key] = cached
+    freq_response, freqs = cached
+
+    if pre_filt:
+        data = data * cosine_sac_taper(freqs, flimit=pre_filt)
+    data = data * freq_response
+    data[-1] = abs(data[-1]) + 0.0j
+    data = np.fft.irfft(data)[0:npts]
+    tr.data = data
+    return tr
 
 
 def _raw_qc(x, n_segments):
@@ -269,7 +355,7 @@ try:
             channel=CHANNELS,
             reject_channels_with_gaps=False, minimum_length=0.0,
             channel_priorities=CHANNEL_PRIORITIES,
-            location_priorities=["", "00", "10"],
+            location_priorities=LOCATION_PRIORITIES,
         )
         # RETRY, because this failure is TRANSIENT and enormously expensive. Measured
         # 2026-09-25 against the key index: stations that recorded a year_error obtained a
@@ -432,8 +518,8 @@ if result["download_ok"]:
                     azimuth, dip = None, None
                     if inv is not None:
                         try:
-                            tr.remove_response(inventory=inv, output="DISP", water_level=60,
-                                                pre_filt=(0.001, 0.005, 0.4, 0.5))
+                            cached_remove_response(tr, inv, output="DISP", water_level=60,
+                                                    pre_filt=(0.001, 0.005, 0.4, 0.5))
                             response_removed = True
                             units_out, scale_ = _disp_units(inv, tr)      # [PATCH 4]
                             if scale_ != 1.0:

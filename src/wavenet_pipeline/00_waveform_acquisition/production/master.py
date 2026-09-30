@@ -670,7 +670,16 @@ def cmd_stop(args):
 ORCHESTRATOR_SLURM = """#!/bin/bash
 #SBATCH -A tolugboj_lab
 #SBATCH -t 00:30:00
-#SBATCH --mem-per-cpu=2G
+# Give a task everything one CPU is entitled to, not an arbitrary throttle. At 2G, 511 of
+# 2002 array tasks were OOM-killed (2026-09-29) with MaxRSS pinned at the 2048M ceiling --
+# while the nodes' real per-core share is ~7.6 GB (urseismo: 24 cores / 182 GB; standard:
+# 48-56 cores / 375-505 GB, i.e. 7.8-9.0 GB/core). A 1-CPU task at 7G therefore consumes
+# exactly its proportional slice, schedules on every partition, and blocks nobody.
+# Deliberately NOT --mem=0: that means "all memory on the node", which reserves the whole
+# node for a single 1-CPU task and would cut urseismo from 260+ concurrent tasks to 5.
+# NB: SLURM samples RSS periodically, so MaxRSS understates short spikes -- one killed task
+# reported 1260M against a 2048M limit. Do not size this off MaxRSS alone.
+#SBATCH --mem-per-cpu=7G
 #SBATCH -n 1
 #SBATCH -o {root}/logs/orchestrator_%A_%a.out
 #SBATCH -e {root}/logs/orchestrator_%A_%a.err
@@ -774,6 +783,15 @@ INSPECTOR_SLURM = """#!/bin/bash
 # unfinished. Two separate mechanisms, deliberately.
 # Guards: honour the STOP file, and refuse to chain if the previous link handed off less
 # than 5 minutes ago (belt-and-braces against a fast failure loop).
+# `sbatch` is NOT on PATH in a bare compute-node job shell until the slurm module loads --
+# confirmed the hard way, 2026-09-30: the chain silently died after exactly one link
+# because this call failed with "sbatch: command not found", written only to
+# inspector_chain.log (not this job's own stdout/stderr, so the job still reported
+# COMPLETED with no visible error). `module load` here is a near-instant env-var export,
+# not a real crash-risk window, so it stays consistent with "submit the successor before
+# doing any real work" -- it just makes "real work" start one statement later than before.
+module load slurm/24.05.0.b1 >/dev/null 2>&1
+
 CHAIN_STAMP={root}/state/inspector_last_chain
 NOW=$(date +%s)
 LAST=$(cat $CHAIN_STAMP 2>/dev/null || echo 0)
@@ -786,7 +804,8 @@ else
     sbatch --export=NONE -p ${{SLURM_JOB_PARTITION}} --qos ${{SLURM_JOB_PARTITION}} \\
            --dependency=afterany:$SLURM_JOB_ID --begin=now+20minutes \\
            {root}/inspector.slurm >> {root}/logs/inspector_chain.log 2>&1 \\
-        && echo "[inspector.slurm] successor queued." >&2
+        && echo "[inspector.slurm] successor queued." >&2 \\
+        || echo "[inspector.slurm] FAILED to queue successor -- chain is now broken, see inspector_chain.log" >&2
 fi
 
 # Keep every cache writer OFF $HOME. This is not hygiene, it is availability: the group's

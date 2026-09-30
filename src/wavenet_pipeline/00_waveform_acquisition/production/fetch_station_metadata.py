@@ -37,7 +37,12 @@ from obspy.clients.fdsn import Client
 
 # Tried in order. The IRIS federator routes across FDSN data centres, so it resolves most
 # stations on its own; the rest are fallbacks for centres it does not route to.
-PROVIDER_CHAIN = ["IRIS", "ORFEUS", "RESIF", "GFZ", "INGV", "ETH", "BGR", "KOERI",
+# Ordering matters for South American temporary-network archives (confirmed 2026-09-28,
+# SAmericaNoise survey): GFZ (GEOFON) hosts many of these -- 2B.NS25 and 3D.LT13 both
+# returned nothing from IRIS but a full response from GFZ. IRIS stays first since it
+# resolves permanent global-network stations (G, IU) directly and federates across most
+# other centres; GFZ moved up from 4th to 2nd rather than reached only after 3 failures.
+PROVIDER_CHAIN = ["IRIS", "GFZ", "ORFEUS", "RESIF", "INGV", "ETH", "BGR", "KOERI",
                   "NCEDC", "SCEDC", "NOA", "NIEP", "LMU", "KNMI"]
 CHANNELS = os.environ.get("WAVENET_CHANNELS", "BH?,LH?")
 

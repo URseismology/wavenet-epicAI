@@ -470,3 +470,63 @@ the wrong metric to read for data-volume progress:
 Last updated: 2026-09-25 (diagnosed why the station-count-vs-packaged-size progress
 looked inconsistent — confirmed as the two-tier design's expected shape, not a bug, with
 a rough ~3TB full-campaign size projection from real observed per-day rates).
+
+## Live operational state — 2026-09-29 18:20 EDT (session handoff snapshot)
+
+Written so a fresh session can pick up without the conversation that produced it. Deep
+narrative/reasoning for everything below is in
+`2026-09-29_bluehive3_migration_and_hang_misdiagnosis.md` — this section is just "what is
+currently running and what decisions are still open."
+
+**Campaign moved to BlueHive3 today.** Old `bluehive` cluster's orchestrator jobs were
+cancelled (checkpointing meant nothing was lost) and resubmitted on `bluehive3` via the
+same `master.py submit`. Live job IDs: `2011877`/`2011878` (standard, two sub-chunks),
+`2011879` (preempt), `2011880` (interactive), `2011881` (urseismo), `2011882` (logger),
+`2011883` (inspector). Check with:
+`ssh bluehive3 "... python3 master.py progress --root /scratch/tolugboj_lab/wavenet_ncf_production"`
+(needs `conda activate instaseis` first). Old `bluehive` is deliberately kept available for
+tests/short jobs, not retired — see CLAUDE.md's Infrastructure section.
+
+**A suspected multi-day "hang" on the old cluster was misdiagnosed, then corrected** —
+full account in the incident doc. Short version: it was mostly not a hang, it was
+correctly-running multi-decade stations (7,900-12,000 days) at the pre-patch rate. Three
+stations remain genuinely unexplained (`6H.CHID` idx 293, `X5.SHMN` idx 1059, `1E.CNF` idx
+1060 — 10-65x slower than their size predicts) and are still open if anyone wants to chase
+them via `salloc`/`smux` on bluehive3.
+
+**Response-caching patch deployed to `orchestrator.py` today at 10:21:08 EDT** — caches the
+per-channel `evalresp` computation (bit-exact, verified `maxdiff=0.0`) instead of
+recomputing it every station-day. Measured **27x median speedup** (34.33 → 1.27 sec/day)
+from real production data. This, not the cluster migration, is the primary reason
+throughput improved.
+
+**Channel audit in progress (not yet concluded as of this snapshot)** — of stations
+returning no data, a 21-station sample showed roughly half genuinely have no
+velocity/displacement sensor (magnetotelluric, infrasound, accelerometer-only) and roughly
+40% carry a seismometer on a band the pipeline doesn't request (`EH?`/`EL?`/`LL?` instead
+of `BH?`/`LH?`). Full audit of all ~954 no-data stations running on terravibranium:
+`/tmp/channel_audit_full.py` → `/tmp/channel_audit_results.csv` (includes lat/lon per
+station for an eventual "find a nearby station with the right channel" pass — that
+follow-up has NOT been done yet, explicitly deferred: PI wants analysis before any
+auto-fix). Categories: `has_BH_LH_should_have_worked` (investigate — pipeline miss),
+`missed_other_seismometer_band` (candidate for channel-list expansion, pending a
+scientific call on whether short-period/low-gain bands are worth it for ambient noise),
+`no_seismometer_on_station` (needs a nearby replacement station), `manifest_defect` (at
+least one: `nan.SABA` — literal NaN network code in the locked 2,000-station list).
+
+**SAmericaNoise packaging (terravibranium, separate from the above) had its per-station
+timeout removed today** (was 3h, killed 87 legitimately-large stations before being
+diagnosed as the same "big station, not a bug" pattern). Driver restarted 14:16 EDT,
+`WAVENET_STATION_TIMEOUT_S=0` now means true `None` (a naive huge number overflows
+Python's `selector.poll`, discovered the hard way). 711/896 stations, 27.9% of files as of
+this snapshot; the ten giant stations (G.HDC, G.PEL, G.FDF, G.SPB, IU.OTAV, ...) haven't
+started yet — footprint-first ordering puts them last.
+
+**Uncommitted local changes as of this snapshot** (not yet asked to commit):
+`CLAUDE.md`, `orchestrator.py` (cached-response import + call-site swap),
+`fetch_station_metadata.py` (provider chain reorder), and this doc plus the new incident
+doc are untracked/modified in the wavenet-epicAI repo.
+
+**Quota watch on bluehive3**: `/home` group quota at 98.4% of hard limit (already can't
+write); `/scratch` at 78.7% and climbing. Neither is blocking yet; both are worth checking
+again before assuming headroom.
