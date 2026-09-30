@@ -18,6 +18,19 @@ sendmail doesn't actually deliver (no running local mail queue) and SLURM's own
 attached, both confirmed by direct test 2026-09-30. terravibranium's Postfix is
 genuinely active (it already sends real RAID-monitoring alerts) and was confirmed to
 deliver real multi-line content end to end.
+
+FUTURE ENHANCEMENTS requested (PI, 2026-09-30, "looks good for now" -- not yet built):
+  - Provisioning size: how much of the project's actual scratch/home allocation is
+    CAMPAIGN footprint specifically, versus the group-wide quota numbers this already
+    reports. `scratch_pct`/`home_pct` today are the whole `tolugboj_lab` group's usage,
+    not this campaign's own share of it -- useful to know if this campaign is the
+    reason quota is tight, or if it's mostly unrelated group usage.
+  - Shard count and summary: a direct count/size of the actual `.h5` files in
+    `packaged_h5/` (e.g. `find ... -name '*.h5' | wc -l`, `du -sh`), reported alongside
+    the campaign's own self-reported `downloaded_gb`/`packaged_gb` estimate as an
+    independent, ground-truth cross-check -- the self-reported numbers could drift from
+    what's actually on disk, the same way "success flag" and "actual data obtained"
+    diverged earlier in this project (see [[feedback_measure_against_ground_truth]]).
 """
 import json, os, re, subprocess, sys, time
 
