@@ -19,16 +19,14 @@ attached, both confirmed by direct test 2026-09-30. terravibranium's Postfix is
 genuinely active (it already sends real RAID-monitoring alerts) and was confirmed to
 deliver real multi-line content end to end.
 
-FUTURE ENHANCEMENTS requested (PI, 2026-09-30, "looks good for now" -- not yet built):
-  - Provisioning size: how much of the project's actual scratch/home allocation is
-    CAMPAIGN footprint specifically, versus the group-wide quota numbers this already
-    reports. `scratch_pct`/`home_pct` today are the whole `tolugboj_lab` group's usage,
-    not this campaign's own share of it -- useful to know if this campaign is the
-    reason quota is tight, or if it's mostly unrelated group usage.
-  - Shard count and summary: a direct count/size of the actual `.h5` files in
-    `packaged_h5/` (e.g. `find ... -name '*.h5' | wc -l`, `du -sh`), reported alongside
-    the campaign's own self-reported `downloaded_gb`/`packaged_gb` estimate as an
-    independent, ground-truth cross-check -- the self-reported numbers could drift from
+PROVISIONING and SHARD sections (PI, 2026-09-30) added after the first report landed:
+  - Provisioning: number of jobs currently running/pending and which partitions they're
+    on (get_provisioning()) -- not storage quota share, that was an earlier, incorrect
+    guess at what "provisioning size" meant, corrected by the PI directly. Same
+    whole-account scope caveat as orchestrator_tasks: squeue has no per-root concept.
+  - Shard count and summary (get_shard_stats()): a direct find/du against packaged_h5/
+    on disk, reported alongside master.py's own self-reported packaged_gb as an
+    independent ground-truth cross-check -- the self-reported number could drift from
     what's actually on disk, the same way "success flag" and "actual data obtained"
     diverged earlier in this project (see [[feedback_measure_against_ground_truth]]).
 """
@@ -91,6 +89,49 @@ def run_progress():
     return r.stdout, real_err
 
 
+def get_provisioning():
+    """Number of jobs and which partitions are actually in use right now -- PI,
+    2026-09-30. Deliberately whole-account (squeue -u tolugboj), same scope caveat as
+    master.py's own orchestrator-task count: this is every job under the account, not
+    scoped to one campaign root, since BH3's queue itself has no per-root concept (see
+    disambiguation #0.4 in the 2026-09-30 handoff doc)."""
+    cmd = (f"export PATH={SLURM_BIN}:$PATH; squeue -u tolugboj -h -o '%P %T'")
+    r = subprocess.run(["bash", "-lc", cmd], capture_output=True, text=True, timeout=30)
+    counts = {}
+    total = 0
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        part, state = parts
+        counts.setdefault(part, {}).setdefault(state, 0)
+        counts[part][state] += 1
+        total += 1
+    return total, counts
+
+
+def get_shard_stats(root):
+    """Direct count/size of what's actually ON DISK in packaged_h5/, independent of
+    master.py's own self-reported downloaded/packaged GB estimate -- a ground-truth
+    cross-check, not a replacement for it (see the docstring's FUTURE ENHANCEMENTS note
+    this implements)."""
+    h5_dir = os.path.join(root, "packaged_h5")
+    r = subprocess.run(["bash", "-lc",
+                        f"find {h5_dir} -maxdepth 1 -name '*.h5' | wc -l"],
+                       capture_output=True, text=True, timeout=60)
+    try:
+        n_shards = int(r.stdout.strip())
+    except ValueError:
+        n_shards = None
+    r = subprocess.run(["bash", "-lc", f"du -sb {h5_dir} 2>/dev/null | cut -f1"],
+                       capture_output=True, text=True, timeout=120)
+    try:
+        bytes_on_disk = int(r.stdout.strip())
+    except ValueError:
+        bytes_on_disk = None
+    return n_shards, bytes_on_disk
+
+
 def parse_progress(out):
     """Pulls every field master.py's progress reporter prints, not just the ones an
     earlier, narrower version of this script checked -- full state, not a health-check
@@ -135,6 +176,8 @@ def parse_progress(out):
     m = re.search(r"scratch quota\s*:\s*([\d,]+)\s*GB used of\s*([\d,]+)\s*GB hard\s*"
                   r"\(([\d.]+)%", out)
     if m:
+        d["scratch_used_gb"] = int(m[1].replace(",", ""))
+        d["scratch_hard_gb"] = int(m[2].replace(",", ""))
         d["scratch_pct"] = float(m[3])
     m = re.search(r"orchestrator\s*(\d+)\s*task\(s\)\s*\|\s*inspector chain:\s*(.+)", out)
     if m:
@@ -154,6 +197,9 @@ def check():
         now["_stderr"] = (now.get("_stderr", "") +
                           " | WARNING: progress output did not parse as expected -- "
                           "raw output follows:\n" + out[-800:])
+
+    now["_n_jobs"], now["_partitions"] = get_provisioning()
+    now["_n_shards"], now["_shard_bytes"] = get_shard_stats(ROOT)
 
     state_file = os.path.join(STATE_DIR, re.sub(r"[^a-zA-Z0-9_.-]", "_", ROOT) + ".json")
     os.makedirs(STATE_DIR, exist_ok=True)
@@ -224,7 +270,31 @@ def fmt(now, prev):
         f"  home quota        : {now.get('home_pct','?')}%",
         f"  orchestrator tasks: {now.get('orchestrator_tasks','?')}",
         f"  inspector chain   : {now.get('inspector_chain','?')}",
+        "",
+        "PROVISIONING (jobs and partitions actually in use right now):",
+        f"  total jobs        : {now.get('_n_jobs', '?')}",
     ]
+    parts = now.get("_partitions") or {}
+    if parts:
+        for part in sorted(parts):
+            state_str = ", ".join(f"{n} {s}" for s, n in sorted(parts[part].items()))
+            lines.append(f"    {part:<14s}: {state_str}")
+    else:
+        lines.append("    (none running)")
+
+    lines += [
+        "",
+        "SHARDS ON DISK (direct count, independent of the self-reported GB above):",
+        f"  .h5 files         : {now.get('_n_shards', '?')}",
+    ]
+    if isinstance(now.get("_shard_bytes"), int):
+        measured_gb = now["_shard_bytes"] / 1e9
+        lines.append(f"  measured size     : {measured_gb:.2f} GB")
+        if isinstance(now.get("packaged_gb"), float):
+            delta_pct = (100 * abs(measured_gb - now["packaged_gb"]) /
+                        max(measured_gb, now["packaged_gb"], 1e-9))
+            lines.append(f"  vs self-reported  : {now['packaged_gb']:.2f} GB "
+                        f"({delta_pct:.1f}% difference)")
     return "\n".join(lines)
 
 
