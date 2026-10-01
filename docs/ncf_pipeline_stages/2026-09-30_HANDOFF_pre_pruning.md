@@ -671,3 +671,140 @@ their final repo location.
 5. **The redundant-band purge on terravibranium** (§3.3) is still unscheduled —
    in-flight stations during the band-selection deploy have mixed BH+LH content that
    should eventually be trimmed to LH-only.
+
+---
+
+## 10. Addendum — 2026-10-01, everything since §1-9 were written
+
+### 10.1 Twice-daily diagnostic monitor — built, tested, live
+
+`src/wavenet_pipeline/00_waveform_acquisition/production/campaign_monitor.py` +
+`monitor_chain.slurm` (committed `ace726c`, `57d90e0`, `e6dbe36`). Self-chained on BH3's
+`preempt` partition (same pattern as inspector, with the `module load`-before-`sbatch`
+fix applied from the start this time), reports every 12 hours to all three team emails
+(`tolugboj@ur.rochester.edu`, `cpenagon@u.rochester.edu`, `tbalamur@ur.rochester.edu`).
+Ends automatically via the same `state/STOP` file inspector/logger already honor.
+
+**Delivery mechanism required real investigation** — two no-credential paths were tried
+and both failed, confirmed by direct test, not assumed:
+- BH3's own `sendmail` exists but doesn't deliver (`postdrop: unable to look up
+  public/pickup` — no running local mail queue).
+- SLURM's own `--mail-type=FAIL` **works for a single recipient** but **silently drops
+  ALL recipients when given a comma-separated list** on this site (confirmed by
+  isolating the two variables separately: job with 1 address arrived, same content with
+  3 comma-separated addresses never arrived to anyone). Its notification format is also
+  fixed — `--comment` does not get surfaced in the body either, tested directly.
+- **Working path found**: terravibranium's Postfix is genuinely active (it already sends
+  real RAID-monitoring alerts, confirmed via `systemctl status postfix`, uptime >1 year).
+  The monitor composes the full report, then relays it through
+  `ssh tolugboj@terravibranium.earth.rochester.edu "mail -s ... <addr>"`, **one
+  invocation per recipient** (never a comma list, learning directly from the SLURM
+  failure above).
+
+**Report contents** (full digest every run, success context alongside any issues, not
+alert-only): stations reported/with-data, days checkpointed vs total, days lost to
+refusal, downloaded/packaged GB, rate/ETA, scratch/home quota, orchestrator task count,
+inspector chain health, **provisioning** (jobs running/pending broken down by partition
+— added after PI feedback; "provisioning" initially misread as storage quota share,
+corrected directly by the PI to mean compute jobs/partitions), and **shard count**
+(direct `find`/`du` against `packaged_h5/` on disk as a ground-truth cross-check against
+the campaign's own self-reported packaged GB — measured 512.62 GB vs self-reported
+512.30 GB, 0.1% difference, reassuring).
+
+`--root` is a parameter, verified working against both v1 and v2 with correct,
+independent numbers pulled from each (real backward-compatibility test, not assumed).
+
+**Two real bugs found by testing the monitor itself, not assumed fixed:**
+- `squeue` wasn't reachable in the nested shell this script runs under (the module
+  system's own init breaks on repeated sourcing in that context) — fixed by setting
+  `PATH` directly to the known SLURM bin path rather than depending on `module load`.
+- This cluster's benign startup warning (`export: _module_raw: not a function`, seen on
+  literally every single command all session) was being misread as a real stderr error
+  — filtered out specifically so it can never manufacture a false "issue."
+
+**Also fixed in the same pass**: `master.py`'s own inspector-chain health check had a
+false-positive baked in. Its "exactly one link" invariant didn't match the self-chain
+design it was checking, which deliberately keeps one running + one already-queued
+successor in flight the whole time a link is healthy (submit-before-work, for crash
+safety). This only surfaced once the §4.5 inspector fix made the chain actually run
+continuously — before that fix, the chain died too fast for "2" to ever show up.
+Corrected to treat 1-2 as the healthy range, `>=3` as the real anomaly. This fix is now
+in `master.py` itself, so it's correct for any future `init`, not just this run.
+
+### 10.2 BH3 partition/capacity investigation — capacity was never the constraint
+
+Checked directly (not assumed) whether BH3 had unused partitions that could speed up
+the campaign, or whether work should move to legacy BH. Findings:
+- Our account (`tolugboj_lab`) has access to 4 partitions beyond the 4 already used
+  (`standard`, `preempt`, `interactive`, `urseismo`): `fastx`, `gpu`, `h100`, `reserved`.
+  **None are useful for this workload** — `fastx`/`reserved` don't even appear in
+  `sinfo`'s node list (not general batch-compute partitions); `gpu`/`h100` are
+  GPU-gated (`gres=gpu:A100:4` etc.), and this workload is 1-CPU, no GPU use.
+- Capacity was never the bottleneck: at the time of checking, only ~69 jobs were running
+  total, against 105 of our own 120 `urseismo` cores idle and thousands idle on
+  `preempt` cluster-wide.
+- The real reason job count was low: **96.6-96.7% of stations were already reported**,
+  leaving only ~67 stations remaining — and ~68 tasks were already running, essentially
+  1:1. There was no backlog of unscheduled work waiting for a slot. Moving work to
+  legacy BH would not have helped, for the same reason — you can't parallelize a queue
+  that isn't actually queued.
+
+### 10.3 Stale v1 jobs — one cancelled after verification, four left alone
+
+Five v1-era jobs were found still running well past the v2 migration (1+ day runtime
+each): `2011879_129` (MN.RTC), `2011879_114` (MN.VTS), `2011881_15` (IC.QIZ),
+`2011881_16` (MN.BNI), `2011881_19` (G.AIS).
+
+**Verified before touching anything** (PI's explicit instruction) rather than assumed
+redundant:
+- Confirmed via `scontrol` + the actual running process's own `/proc/<pid>/environ`
+  (`WAVENET_IDX_OFFSET`) which manifest row each corresponds to, resolved to real
+  station codes -- not guessed from job array index alone.
+- Confirmed these write to **v1's own separate directories**
+  (`wavenet_ncf_production/{results,packaged_h5}/`), never v2's — zero path collision.
+- Confirmed **none had a v2 result yet** — contrary to an initial assumption, they were
+  NOT duplicating any currently-running v2 task. Cancelling them would only force v2 to
+  redo work that was progressing fine, not stop a race.
+- Confirmed none of the 5 appeared in the 954-station bug-affected list, so finishing
+  under the old config wasn't expected to produce worse data for these specific
+  stations.
+- Checked actual memory use directly (`ps` on the compute node, not inferred): four were
+  healthy (0.2-0.35 GB RSS, comfortably under the old 2G cap). **`IC.QIZ` (job
+  `2011881_15`) was found at 6.7 GB RSS — 3.3x over its nominal 2G cap, not yet
+  OOM-killed** — a real, live anomaly (cgroup limit not actually being enforced, or
+  about to be killed uncontrolled). This one was cancelled (PI approved after seeing the
+  specific evidence); the other four were deliberately left running.
+- Verified the cancellation: confirmed gone from `squeue`, confirmed no v2 result exists
+  for `IC.QIZ`, so v2 will process it fresh under the 7G cap when its array reaches that
+  row — no resume-state corruption risk.
+- **Verified the cancellation had no broader effect** (asked and checked directly,
+  PENDING job counts in `preempt`/`standard` were identical before and after) — this is
+  expected, not a sign anything is wrong: partitions are resource-isolated, so freeing a
+  slot on `urseismo` cannot unblock a job queued in a different partition.
+
+### 10.4 Live state as of 2026-10-01 (re-check before trusting — both move continuously)
+
+**BH3 v2 campaign**: 1933/1999 stations reported (96.7%), 1023 with real data, days
+checkpointed 607,543/2,739,232 (22.2%), packaged ~664 GB. **Scratch quota now at 86.3%**
+of hard limit (was 80.8% at the time §4.6 was written — climbing, worth watching, though
+the inspector chain is confirmed `OK (1-2 links)` and purging is active). Home quota
+unchanged at 98.4% (chronic, group-wide, not specific to this campaign). Monitor chain
+confirmed healthy and self-sustaining — already advanced to a new job (`2029664`,
+scheduled `2026-10-01T18:30:04`) without intervention.
+
+**Terravibranium SAmericaNoise packaging**: 40 workers, memory healthy (76/251 GB used),
+**zero new OOM kills** (flat at 77, unchanged since the band-selection deploy), 734
+stations fully complete (was 730). Real progress confirmed via file-level checkpoint
+activity, not just the slow-moving completed-station counter — remaining work is
+dominated by large, naturally slow stations (multi-hour each), not a stall.
+
+### 10.5 Immediate next actions, updated
+
+Items 1-5 in §9 above are still open and unchanged. Add:
+6. **Watch BH3 scratch quota** — climbed from 80.8% to 86.3% between §4.6 and this
+   addendum. Not yet an emergency (inspector is actively purging), but closer to the
+   hard limit than before; the twice-daily monitor will flag it automatically if it
+   crosses 90%.
+7. **Re-run the three backup mirror scripts** (§5.3) if not already done since this
+   addendum — they are one-time snapshots and significant additional packaging has
+   landed (664 GB now vs ~510 GB when last mirrored).
