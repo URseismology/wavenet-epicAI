@@ -1,0 +1,44 @@
+DELIVERED NCF NETWORK -- footprint, packaging and ray-path illumination
+generated 2026-10-01T18:18:04Z   cache scanned 2026-10-01T17:52:39Z
+
+FOOTPRINT
+  manifest stations                 : 1,999
+  delivered (packaged, with data)   : 1,023  (51.2%)
+  days of real data                 : 510,501
+  packaged on disk                  : 502.1 GB
+  median days per station           : 229
+
+RAY PATHS (all separations, gated only on concurrent recording days)
+  usable station pairs              : 7,575
+  median shared days per pair       : 493
+    pairs with >=   90 d overlap    : 7,575 (100.0%)
+    pairs with >=  180 d overlap    : 6,882 (90.9%)
+    pairs with >=  365 d overlap    : 6,233 (82.3%)
+    pairs with >=  730 d overlap    : 1,779 (23.5%)
+  median path length                : 7,752 km
+
+ILLUMINATION (3000 equal-area cells, 412 km side)
+  cells with >=1 path               : 3,000 (100.0%)
+  cells resolved (n>=10, A>=0.6, gap<=60.0)
+                                    : 1,490 (49.7%)
+  median paths per lit cell         : 46
+  median azimuthal spread A_c       : 0.607  (kappa = 2.30)
+  median Fresnel width              : 831 km
+  resolution-matched cells          : 2 (0.1%)
+  Gini of paths per cell            : 0.352  (0 = perfectly even)
+
+DELIVERED vs PLANNED (production band 110-1110 km, same day gates)
+  psi = f_path / f_sta^2            : 0.48
+    psi ~ 1  losses spread randomly
+    psi < 1  losses concentrated in dense clusters (cheap)
+    psi > 1  losses concentrated in sparse regions (expensive)
+
+RESTRICTION SWEEP
+      max km        pairs      % lit % resolved     Fresnel km
+        1110        1,222       18.5        1.4            186
+        1500        1,642       24.8        2.3            238
+        2000        1,732       27.4        2.5            238
+        3000        1,957       36.9        2.8            270
+        5000        2,586       56.1        5.8            393
+       10000        4,862       93.2       17.1            647
+        none        7,575      100.0       49.7            831

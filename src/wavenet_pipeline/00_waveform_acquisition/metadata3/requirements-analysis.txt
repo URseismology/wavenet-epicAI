@@ -1,0 +1,18 @@
+# Environment for measure_delivered_network.py stages 2-3 (analysis + figures) on axon-1.
+#
+# Stage 0-1 (the HDF5 _coverage scan) runs on BlueHive3 in the `instaseis` conda env and
+# needs only h5py/numpy/pandas, which are already present there. Nothing here is installed
+# on BH3 or terravibranium.
+#
+#   /usr/local/bin/python3.11 -m venv ~/venv-wavenet-analysis
+#   ~/venv-wavenet-analysis/bin/pip install -r requirements-analysis.txt
+#
+# Pinned to versions with prebuilt cp311 macOS x86_64 wheels, so nothing compiles.
+
+numpy==1.26.4
+pandas==2.2.3
+matplotlib==3.9.2
+cartopy==0.24.1
+scikit-learn==1.5.2
+pyarrow==17.0.0
+h5py==3.12.1

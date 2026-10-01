@@ -1,0 +1,15 @@
+{
+  "manifest_rows": 1999,
+  "results_reported": 1933,
+  "package_ok": 1023,
+  "h5_on_disk": 1080,
+  "classes": {
+    "delivered": 1023,
+    "reported_no_data": 910,
+    "in_flight_no_json": 57,
+    "not_yet_reported": 9
+  },
+  "sum_days_packaged": 406989,
+  "sum_h5_bytes": 502135655178,
+  "scan_utc": "2026-10-01T17:47:03Z"
+}
