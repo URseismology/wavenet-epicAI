@@ -283,10 +283,27 @@ def _raw_qc(x, n_segments):
     med = np.median(x)
     robust = float(np.median(np.abs(x - med)) * 1.4826 + 1e-12)
     rms, mx = float(np.sqrt(np.mean(x ** 2))), float(np.max(np.abs(x)))
+    ptp = float(np.ptp(x)) if x.size else 0.0
+
+    # DEAD CHANNEL. A channel carrying one single value has no signal in it at all, and
+    # that is a fact about the data, not a judgement about what looks reasonable. Found
+    # 2026-10-01 on YM.37: every sample of every day is exactly 2097151 == 2**21 - 1, a
+    # 22-bit digitizer railed at full scale. It packaged as a clean success -- units='m',
+    # response_ok=True -- because demeaning a constant gives zeros, so the shard held 93%
+    # zero days while reporting no problem at all.
+    #
+    # The existing saturation test could not catch it: it compares against 2**31 (int32),
+    # and real digitizers here rail at 22/24-bit full scale, three orders of magnitude
+    # lower. Both tests are kept -- they catch different hardware.
+    dead = bool(x.size and ptp == 0.0)
+    rails = (2 ** 21 - 1, 2 ** 22 - 1, 2 ** 23 - 1, 2 ** 24 - 1, 2 ** 31 - 1)
+    railed = bool(any(abs(mx - r) <= 1 for r in rails) and robust < 1.0)
+
     ratio, saturated = rms / robust, bool(mx >= 0.999 * 2 ** 31)
     return dict(rms=rms, robust_sigma=robust, max_abs=mx, rms_over_robust_sigma=float(ratio),
                 saturated=saturated, n_segments=int(n_segments),
-                flag=bool(saturated or ratio > 30 or n_segments > 1))
+                ptp=ptp, dead=dead, railed=railed,
+                flag=bool(saturated or dead or railed or ratio > 30 or n_segments > 1))
 
 
 _UNIT_SCALE = {"M/S": ("m", 1.0), "M": ("m", 1.0), "NM/S": ("m", 1e-9), "NM": ("m", 1e-9),
@@ -514,6 +531,8 @@ except Exception as e:
 # reprocessing from scratch.
 t0 = time.time()
 n_days_processed = 0
+n_dead_channel_days = 0      # channel-days dropped as dead/railed (see _raw_qc)
+dead_channels = {}           # channel -> count of dead days, reported in the result JSON
 n_days_refused = 0      # [PATCH 2]
 response_failures = {}     # channel -> why its response could not be removed
 channels_seen = set()
@@ -626,7 +645,21 @@ if result["download_ok"]:
                 day_traces = []
                 day_qc = {}
                 for tr in day_stream:
-                    day_qc[tr.stats.channel] = _raw_qc(tr.data, seg_count.get(tr.id, 1))
+                    qc = _raw_qc(tr.data, seg_count.get(tr.id, 1))
+                    day_qc[tr.stats.channel] = qc
+
+                    # Do not package a channel-day with no signal in it. Demeaning a
+                    # constant yields zeros, which pass every downstream check and enter
+                    # the archive looking complete (PI, 2026-10-01: use this to "flag bad
+                    # channels before packaging"). Dropped here, before response removal,
+                    # so the expensive work is skipped too. The day is recorded in the QC
+                    # sidecar either way, so this is a visible exclusion, not a silent one.
+                    if qc.get("dead") or qc.get("railed"):
+                        n_dead_channel_days += 1
+                        dead_channels.setdefault(tr.stats.channel, 0)
+                        dead_channels[tr.stats.channel] += 1
+                        continue
+
                     tr.detrend("linear")
                     tr.detrend("demean")
                     response_removed = False
@@ -661,7 +694,30 @@ if result["download_ok"]:
                         tr.filter("lowpass", freq=0.4, corners=4, zerophase=True)
                     tr.filter("highpass", freq=1.0 / 3600.0, corners=4, zerophase=True)
                     if tr.stats.sampling_rate >= 2:
-                        tr.decimate(factor=int(round(tr.stats.sampling_rate)), no_filter=True)
+                        # Decimation alone only lands on exactly 1 Hz when the native rate
+                        # is an INTEGER multiple of it. It usually is, but not always: a
+                        # 20.1613 Hz channel decimated by 20 gives 1.00806 Hz, and the
+                        # shard then carries sampling_rate=1.00806 while claiming a place
+                        # on the shared 1 Hz absolute grid. That breaks the grid's whole
+                        # premise -- "two stations are time-aligned if you index the same
+                        # range" -- because 0.8% of rate error accumulates to ~700 s of
+                        # drift per day, so correlating such a channel against a true 1 Hz
+                        # station is meaningless. Measured 2026-10-01: 54 of 2,044 channels
+                        # in v1's response-corrected set sit at 1.0081 Hz, plus 3 at
+                        # 0.9921, so this is already in delivered data.
+                        #
+                        # NOT the same thing as canonical_sampling_rate() above, which
+                        # collapses float32 ULP jitter (~2.7e-6 relative). This is a
+                        # genuinely different declared rate, three orders of magnitude
+                        # larger, and must be RESAMPLED rather than snapped.
+                        #
+                        # Ported from terravibranium's sam_package_one.py, which has had
+                        # this guard; BH3's orchestrator never received it.
+                        factor = int(round(tr.stats.sampling_rate))
+                        if factor and abs(tr.stats.sampling_rate / factor - 1.0) < 1e-6:
+                            tr.decimate(factor=factor, no_filter=True)
+                        else:
+                            tr.resample(1.0)
                     align_to_integer_second(tr)                            # [PATCH 1] sample 0 exactly on an integer UTC second
                     tr.detrend("demean")
                     tr.taper(max_percentage=TAPER_PCT)                     # [PATCH 6] was hard-coded 0.05
@@ -749,6 +805,11 @@ if result["download_ok"]:
                 # resubmit will retry it), record what happened.
                 day_errors[day_str] = f"{type(de).__name__}: {de}"
 
+        if n_dead_channel_days:
+            # Visible exclusion, not a silent one: these channel-days carried a single
+            # constant value (dead/railed digitizer) and were dropped before packaging.
+            result["n_dead_channel_days"] = n_dead_channel_days
+            result["dead_channels"] = dict(dead_channels)
         result.update(preprocess_ok=n_days_processed > 0, package_ok=n_days_processed > 0,
                        preprocess_elapsed_s=time.time() - t0, n_days_processed=n_days_processed,
                        n_processed=len(channel_meta), channel_meta=channel_meta,

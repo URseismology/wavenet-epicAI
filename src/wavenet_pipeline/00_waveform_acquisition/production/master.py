@@ -330,7 +330,8 @@ def cmd_init(args):
         path = os.path.join(args.root, name)
         with open(path, "w") as f:
             f.write(template.format(root=args.root, here=HERE,
-                                     offsets_dir=TIMING_OFFSETS_DEFAULT))
+                                     offsets_dir=TIMING_OFFSETS_DEFAULT,
+                                     discovery_manifest=args.discovery_manifest or ""))
         print(f"[master] wrote {path}")
 
     # Partition/QOS choice is a SUBMIT-time decision (see cmd_submit), not baked into the
@@ -386,6 +387,12 @@ def cmd_submit(args):
         args.root,
         len(pd.read_csv(os.path.join(args.root, "manifest", "fps_stations.csv"))),
         getattr(args, "allow_missing_responses", False))
+    if getattr(args, "dry_run", False):
+        n = len(pd.read_csv(os.path.join(args.root, "manifest", "fps_stations.csv")))
+        print(f"[master] DRY RUN -- response gate passed; would submit {n} station(s) "
+              f"from {args.root} across '{args.orchestrator_partitions or ORCHESTRATOR_PARTITIONS_DEFAULT}' "
+              f"at array-limit {args.array_limit}. Nothing submitted.")
+        return
     n_rows = len(pd.read_csv(os.path.join(args.root, "manifest", "fps_stations.csv")))
 
     defaults_path = os.path.join(args.root, "state", "partition_defaults.json")
@@ -799,6 +806,10 @@ sleep $(( (SLURM_ARRAY_TASK_ID % 20) * 2 ))
 source /scratch/tolugboj_lab/softwares/anaconda/anaconda3/2021.05/etc/profile.d/conda.sh
 conda activate instaseis
 export WAVENET_PROD_ROOT={root}
+# Baked in at init, NOT inherited: _sbatch uses --export=NONE (see its comment),
+# so anything set in the submitting shell never reaches the job. Relying on
+# inheritance would mean the discovery pinning silently switches itself off.
+export WAVENET_DISCOVERY_MANIFEST={discovery_manifest}
 for attempt in 1 2 3 4; do
     python3 {here}/orchestrator.py $SLURM_ARRAY_TASK_ID && exit 0
     echo "[orchestrator.slurm] attempt $attempt failed (transient import race), retrying..." >&2
@@ -933,6 +944,11 @@ def main():
                     help=f"single partition for logger/inspector (default: {SERVICE_PARTITION_DEFAULT})")
     p.add_argument("--station-summary", default=None,
                     help="defaults to metadata3/key_index_summary/station_summary.csv (for size-sort)")
+    p.add_argument("--discovery-manifest", default=None,
+                   help="path to discovery/discover_stations.py output. Baked into the\n"
+                        "generated orchestrator.slurm so downloads are pinned to the\n"
+                        "endpoint the federator routed each station to. Omitted = old\n"
+                        "unpinned behaviour.")
     p.add_argument("--no-size-sort", action="store_true",
                     help="skip the two-tier size sort entirely (equal-count split across all partitions)")
     p.add_argument("--carry-forward-from", default=None,
@@ -950,6 +966,10 @@ def main():
     p.add_argument("--service-partition", default=None, help="override the partition set at init")
     # Both default OFF now (PI, 2026-10-01): the logger is out of the design, and the
     # inspector purges raw SEED, which we keep until packaging is verified.
+    p.add_argument("--dry-run", action="store_true",
+                   help="print what WOULD be submitted and exit. `submit` launches a full "
+                        "array the moment it is run -- a 1,001-task array was started by "
+                        "accident on 2026-10-01 just by testing the response gate.")
     p.add_argument("--allow-missing-responses", action="store_true",
                    help="submit even if Stage 1.5 has not populated station_metadata/. "
                         "Produces raw counts; only for a deliberate exception.")
