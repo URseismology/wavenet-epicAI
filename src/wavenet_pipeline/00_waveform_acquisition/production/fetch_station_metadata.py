@@ -44,7 +44,14 @@ from obspy.clients.fdsn import Client
 # other centres; GFZ moved up from 4th to 2nd rather than reached only after 3 failures.
 PROVIDER_CHAIN = ["IRIS", "GFZ", "ORFEUS", "RESIF", "INGV", "ETH", "BGR", "KOERI",
                   "NCEDC", "SCEDC", "NOA", "NIEP", "LMU", "KNMI"]
-CHANNELS = os.environ.get("WAVENET_CHANNELS", "BH?,LH?")
+# MUST match orchestrator.py's CHANNELS. This was left at the old narrow "BH?,LH?" when
+# the download side was widened to six bands (4dd8859, 2026-09-30), so responses were only
+# ever fetched for BH/LH. Measured 2026-10-01: all 77 stations the coverage gate reported
+# as "HAS DATA but NO response" carry ONLY HH/EH/SH/MH channels (HH 69, EH 20, SH 7, MH 3)
+# and zero BH/LH -- the fetcher could not match them, so they were guaranteed to package in
+# raw counts. Exactly the same defect class as the stage never being wired in at all: a fix
+# applied on one side of the pipeline and not the other.
+CHANNELS = os.environ.get("WAVENET_CHANNELS", "LH?,MH?,BH?,SH?,HH?,EH?")
 
 
 def station_window(root, network, station):

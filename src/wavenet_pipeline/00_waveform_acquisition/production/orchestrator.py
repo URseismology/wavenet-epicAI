@@ -133,6 +133,12 @@ DOWNLOAD_ATTEMPTS = int(os.environ.get("WAVENET_DOWNLOAD_ATTEMPTS", "4"))
 DISCOVERY_MANIFEST = os.environ.get("WAVENET_DISCOVERY_MANIFEST", "")
 _DISCOVERY_CACHE = {}
 
+# Packaging waveforms with no instrument response produces raw counts, which are not
+# amplitude-comparable across stations and so cannot be cross-correlated meaningfully.
+# The pipeline now refuses rather than recording the degradation and carrying on; see the
+# guard in the response-removal block. Set to 1 only for a deliberate exception.
+ALLOW_RAW_COUNTS = os.environ.get("WAVENET_ALLOW_RAW_COUNTS", "0") == "1"
+
 
 def discovery_lookup(network, station):
     """
@@ -573,6 +579,31 @@ if result["download_ok"]:
         else:
             inv, inv_source = None, "NONE -- no response available, data stays in raw counts"
         result["inventory_source"] = inv_source
+
+        # REFUSE TO PACKAGE UNCORRECTABLE DATA (PI, 2026-10-01: "data that is not correct
+        # is not useful data ... it has to be packaged correctly").
+        #
+        # We have real waveforms but no response anywhere, so every sample would land in
+        # raw counts -- not amplitude-comparable across stations, and therefore useless for
+        # the cross-correlation work this archive exists for. Previously the pipeline
+        # packaged it anyway and recorded the fact, which is how 36.2% of v2's packaged
+        # stations ended up uncorrected: a recorded degradation still silently fills the
+        # archive with data nobody can use. Failing here instead means the station stays
+        # visibly incomplete and is re-run once Stage 1.5 (fetch_station_metadata.py) has
+        # its response, rather than being marked done with bad data.
+        #
+        # This fires ONLY when waveforms exist and no response could be found. A station
+        # with no usable channels never reaches this point (it has no waveforms), so the
+        # legitimate "this site has no seismometer" case is unaffected.
+        # WAVENET_ALLOW_RAW_COUNTS=1 overrides, for the deliberate exception.
+        if inv is None and not ALLOW_RAW_COUNTS:
+            raise RuntimeError(
+                f"refusing to package {network}.{station} in raw counts: waveforms "
+                f"downloaded but NO instrument response available from "
+                f"{ROOT}/station_metadata/ or the MassDownloader sidecar. Run "
+                f"fetch_station_metadata.py --root {ROOT} first (see "
+                f"docs/ncf_pipeline_stages/2026-09-25_production_migration_decisions.md), "
+                f"or set WAVENET_ALLOW_RAW_COUNTS=1 to accept uncorrected data.")
 
         for day_str in sorted(files_by_day):
             if day_str in done_days:

@@ -5,16 +5,30 @@ logger, inspector) against a given root directory + station manifest slice. Run 
 Bluehive itself (needs `sbatch`/`squeue` on $PATH), not from axon-1 directly.
 
 Roles, for reference (full detail in each actor's own module docstring):
+  - fetch_station_metadata.py  STAGE 1.5, one task per station: fetch the instrument
+                               response independently of waveforms. REQUIRED before submit.
   - orchestrator.py  (SLURM array, one task per station) download -> preprocess -> package
-  - logger.py        (one long-lived job) serial-merges finished shards into the master h5
-  - inspector.py      (one long-lived job) verifies each merge, then purges raw SEED
+  - inspector.py     (one long-lived job) verifies each merge, then PURGES raw SEED.
+                     OFF by default since 2026-10-01 -- see cmd_submit.
+  - logger.py        DEPRECATED (PI, 2026-10-01), no longer part of the design. Submitted
+                     only with an explicit --logger.
 
 Typical flow for a NEW root (small sanity check before any full-scale run -- required,
 see docs/ncf_pipeline_stages/PROGRESS.md's "verify before scaling" discipline):
     python master.py init   --root ROOT --manifest fps_stations.csv --n-stations 20
+    # STAGE 1.5 -- without this every station packages in uncorrectable raw counts, and
+    # `submit` now refuses to start. Run as an array, one --idx per station, then gate:
+    python fetch_station_metadata.py --root ROOT --idx N
+    python fetch_station_metadata.py --root ROOT --report   # blocking count must be ZERO
     python master.py submit --root ROOT --array-limit 20
     python master.py status --root ROOT           # poll until done
-    python master.py stop   --root ROOT            # writes the STOP file logger/inspector watch for
+    python master.py stop   --root ROOT            # writes the STOP file the inspector watches
+
+Why Stage 1.5 is enforced rather than documented: it was documented from 2026-09-25 and
+nothing ran it, so the v2 campaign packaged ~1,000 stations with an empty
+station_metadata/ and left 36.2% of them in raw counts -- unrescalable after the fact, and
+only repairable by re-downloading. The directory is now created by init and checked by
+submit.
 
 Scaling to the full 2,000 once the small run is clean:
     python master.py init   --root ROOT --manifest fps_stations.csv   # no --n-stations = all rows
@@ -177,7 +191,14 @@ TIMING_OFFSETS_DEFAULT = "/scratch/tolugboj_lab/wavenet_ncf_migration/timing_off
 
 def cmd_init(args):
     os.makedirs(args.root, exist_ok=True)
-    for sub in ("manifest", "results", "packaged_h5", "scratch_work", "state", "master", "logs"):
+    # station_metadata/ is where Stage 1.5 (fetch_station_metadata.py) writes each
+    # station's response. It was MISSING from this list until 2026-10-01, which is the
+    # whole reason v2 packaged 36.2% of its stations in uncorrectable raw counts: the
+    # directory never existed, orchestrator.py's lookup always missed, and the pipeline
+    # fell through to the MassDownloader sidecar without complaint. Creating it here is
+    # necessary but not sufficient -- cmd_submit also gates on it being populated.
+    for sub in ("manifest", "results", "packaged_h5", "scratch_work", "state", "master",
+                "logs", "station_metadata"):
         os.makedirs(os.path.join(args.root, sub), exist_ok=True)
 
     manifest = pd.read_csv(args.manifest or FPS_STATIONS_DEFAULT)
@@ -325,7 +346,46 @@ def cmd_init(args):
         ), f)
 
 
+def _require_station_metadata(root, manifest_rows, allow_missing):
+    """
+    Refuse to submit a campaign whose instrument responses have not been fetched.
+
+    Stage 1.5 (fetch_station_metadata.py) is cheap, independent of waveform availability,
+    and verifiable up front -- that is the entire point of decoupling it (PI, 2026-09-25).
+    Nothing enforced it until 2026-10-01, so v2 ran to ~1,000 stations with an EMPTY
+    station_metadata/ and left 36.2% of them in raw counts, which cannot be rescaled after
+    the fact and cost a full re-download to repair. A campaign that starts without
+    responses is not a campaign worth starting.
+    """
+    d = os.path.join(root, "station_metadata")
+    n = len(glob.glob(os.path.join(d, "*.xml"))) if os.path.isdir(d) else 0
+    frac = n / float(max(manifest_rows, 1))
+    print(f"[master] Stage 1.5 responses: {n} StationXML for {manifest_rows} manifest rows "
+          f"({frac:.0%})")
+    if frac >= 0.5:
+        return
+    msg = (f"REFUSING TO SUBMIT: only {n} of {manifest_rows} stations have an instrument "
+           f"response in {d}.\n"
+           f"           Without it every station packages in RAW COUNTS, which are not "
+           f"amplitude-comparable and cannot be corrected afterwards.\n"
+           f"           Run Stage 1.5 first:\n"
+           f"             python3 {os.path.join(HERE, 'fetch_station_metadata.py')} "
+           f"--root {root} --idx N     # one per station, as an array\n"
+           f"             python3 {os.path.join(HERE, 'fetch_station_metadata.py')} "
+           f"--root {root} --report    # gate: blocking count must be ZERO\n"
+           f"           See docs/ncf_pipeline_stages/2026-09-25_production_migration_decisions.md")
+    if allow_missing:
+        print("[master] WARNING -- " + msg)
+        print("[master] proceeding anyway because --allow-missing-responses was passed")
+        return
+    raise SystemExit("[master] " + msg)
+
+
 def cmd_submit(args):
+    _require_station_metadata(
+        args.root,
+        len(pd.read_csv(os.path.join(args.root, "manifest", "fps_stations.csv"))),
+        getattr(args, "allow_missing_responses", False))
     n_rows = len(pd.read_csv(os.path.join(args.root, "manifest", "fps_stations.csv")))
 
     defaults_path = os.path.join(args.root, "state", "partition_defaults.json")
@@ -389,14 +449,27 @@ def cmd_submit(args):
             sub_lo = sub_hi + 1
     print(f"[master] orchestrator fully submitted across {len(orch_ids)} partitions: {orch_ids}")
 
-    if not args.no_logger:
+    # The logger is no longer part of the design (PI, 2026-10-01) -- it is submitted only
+    # if explicitly asked for, and is expected to be removed entirely.
+    if args.logger:
         logger_id = _sbatch(["-p", service_partition, "--qos", service_partition,
                               os.path.join(args.root, "logger.slurm")])
         print(f"[master] logger submitted on '{service_partition}': {logger_id}")
-    if not args.no_inspector:
+
+    # The inspector is OFF unless explicitly requested (PI, 2026-10-01). It purges verified
+    # raw SEED to reclaim scratch, which is only safe when we trust packaging to be
+    # correct. After the raw-counts defect -- where 36.2% of packaged stations were written
+    # uncorrectable and the raw they came from had already been purged, forcing a
+    # re-download -- raw is kept so a station can be RE-PACKAGED without re-fetching.
+    # Turn it back on once a campaign's packaging has been verified end to end.
+    if args.inspector:
         inspector_id = _sbatch(["-p", service_partition, "--qos", service_partition,
                                  os.path.join(args.root, "inspector.slurm")])
         print(f"[master] inspector submitted on '{service_partition}': {inspector_id}")
+    else:
+        print("[master] inspector NOT submitted -- raw SEED will be retained so stations "
+              "can be re-packaged without re-downloading. Pass --inspector to enable "
+              "purging once packaging is verified.")
 
 
 def _sbatch(argv, extra_env=None):
@@ -875,8 +948,15 @@ def main():
     p.add_argument("--orchestrator-partitions", default=None,
                     help="override the partitions set at init (comma list)")
     p.add_argument("--service-partition", default=None, help="override the partition set at init")
-    p.add_argument("--no-logger", action="store_true")
-    p.add_argument("--no-inspector", action="store_true")
+    # Both default OFF now (PI, 2026-10-01): the logger is out of the design, and the
+    # inspector purges raw SEED, which we keep until packaging is verified.
+    p.add_argument("--allow-missing-responses", action="store_true",
+                   help="submit even if Stage 1.5 has not populated station_metadata/. "
+                        "Produces raw counts; only for a deliberate exception.")
+    p.add_argument("--logger", action="store_true", help="submit the (deprecated) logger")
+    p.add_argument("--inspector", action="store_true",
+                   help="submit the inspector, which PURGES verified raw SEED to reclaim "
+                        "scratch. Off by default so stations stay re-packageable.")
     p.set_defaults(func=cmd_submit)
 
     p = sub.add_parser("status", help="print progress counts + squeue")
