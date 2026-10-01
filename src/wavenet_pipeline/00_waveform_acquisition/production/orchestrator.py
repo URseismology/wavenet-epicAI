@@ -114,6 +114,60 @@ PIPELINE_PATCH_LEVEL = 3
 # Attempts per YEAR of download. See the retry block for why this matters so much.
 DOWNLOAD_ATTEMPTS = int(os.environ.get("WAVENET_DOWNLOAD_ATTEMPTS", "4"))
 
+# ---- optional discovery manifest (see ../discovery/discover_stations.py) ----
+# Purely additive and fully optional. With no manifest -- or a manifest that does not
+# mention this station -- every code path below behaves exactly as it did before, so an
+# existing campaign is unaffected and this file stays safe to deploy mid-run.
+#
+# Why it exists: MassDownloader() with no pinned providers performs its own federated
+# client discovery. Built once per station and reused across every year (below), a single
+# failed discovery pass makes every subsequent year query a provider set that does not
+# hold the data; ObsPy reports that as "no data available" and returns cleanly, so the
+# station records zero bytes, raises nothing, and never retries. Measured 2026-10-01:
+# 763 of 910 stations the campaign called empty have real, routable data.
+#
+# NOTE this deliberately does NOT change PIPELINE_PATCH_LEVEL. Patch level describes the
+# DATA LAYOUT (schema v2, absolute-time grid). Where the bytes were fetched from does not
+# change the channels selected, the response removal, or the grid, so shards produced with
+# and without a manifest are interchangeable and must not be marked as mixed.
+DISCOVERY_MANIFEST = os.environ.get("WAVENET_DISCOVERY_MANIFEST", "")
+_DISCOVERY_CACHE = {}
+
+
+def discovery_lookup(network, station):
+    """
+    Return {"providers": [...], "year_min": int, "year_max": int} for this station, or
+    None. Any problem at all -- no env var, missing file, unreadable file, absent station,
+    station not routable -- returns None, which restores the pre-existing behaviour.
+    """
+    if not DISCOVERY_MANIFEST:
+        return None
+    if "df" not in _DISCOVERY_CACHE:
+        try:
+            _DISCOVERY_CACHE["df"] = pd.read_csv(DISCOVERY_MANIFEST)
+        except Exception as exc:
+            print(f"[discovery] manifest unreadable ({exc}); using default download path",
+                  flush=True)
+            _DISCOVERY_CACHE["df"] = None
+    df = _DISCOVERY_CACHE["df"]
+    if df is None or "status" not in df.columns:
+        return None
+    try:
+        m = df[(df["network"].astype(str) == str(network))
+               & (df["station"].astype(str) == str(station))]
+        if not len(m) or str(m.iloc[0]["status"]) != "ROUTED":
+            return None
+        row = m.iloc[0]
+        provs = [p for p in str(row.get("obspy_providers", "")).split(";") if p]
+        y0, y1 = row.get("year_min"), row.get("year_max")
+        if not provs or pd.isna(y0) or pd.isna(y1):
+            return None
+        return {"providers": provs, "year_min": int(y0), "year_max": int(y1),
+                "n_channel_epochs": int(row.get("n_channel_epochs") or 0)}
+    except Exception as exc:
+        print(f"[discovery] lookup failed ({exc}); using default download path", flush=True)
+        return None
+
 
 def canonical_sampling_rate(sr, rel_tol=1e-4):
     """Collapse floating-point jitter in a raw miniSEED header's declared sampling rate.
@@ -341,9 +395,25 @@ n_download_retries = 0
 try:
     domain = RectangularDomain(minlatitude=lat - 0.5, maxlatitude=lat + 0.5,
                                 minlongitude=lon - 0.5, maxlongitude=lon + 0.5)
-    mdl = None if SKIP_DOWNLOAD else MassDownloader()  # one client-discovery pass reused across all years below
+    # With a discovery manifest: pin the providers that actually hold this station, so no
+    # client discovery happens at job time at all. Without one: unchanged behaviour.
+    disco = discovery_lookup(network, station)
+    if disco:
+        mdl = None if SKIP_DOWNLOAD else MassDownloader(providers=disco["providers"])
+        print(f"[discovery] {network}.{station} pinned to {disco['providers']} "
+              f"years {disco['year_min']}-{disco['year_max']} "
+              f"({disco['n_channel_epochs']} channel-epochs)", flush=True)
+    else:
+        mdl = None if SKIP_DOWNLOAD else MassDownloader()  # one client-discovery pass reused across all years below
+
     loop_year_start = station_year_start if station_year_start is not None else DOWNLOAD_START.year
     loop_year_end = station_year_end if station_year_end is not None else DOWNLOAD_END.year
+    if disco:
+        # Discovery's epochs come from the federator's own channel listing, which is more
+        # precise than the S3-prefix-derived bounds above. Keep the same +/-1 year margin
+        # those bounds use, for the same reason (a year edge should not clip real data).
+        loop_year_start = disco["year_min"] - 1
+        loop_year_end = disco["year_max"] + 1
     for year in ([] if SKIP_DOWNLOAD else range(loop_year_start, loop_year_end + 1)):
         year_start = max(DOWNLOAD_START, UTCDateTime(year, 1, 1))
         year_end = min(DOWNLOAD_END, UTCDateTime(year, 12, 31, 23, 59, 59))
@@ -397,6 +467,21 @@ try:
                    n_download_retries=n_download_retries)
     if year_errors:
         result["year_errors"] = year_errors
+
+    # CONTRACT CHECK. Discovery asserted this station has real, routable channels. If the
+    # download then produced nothing AND no year raised an error, that is a contradiction,
+    # not a result -- it is exactly the silent failure that cost the campaign ~655
+    # stations (zero bytes, no exception, nothing retried, recorded as if it were truth).
+    # Recorded, deliberately non-fatal: the task still exits as it always did, so the
+    # inspector/logger see unchanged semantics, but the condition can no longer pass as
+    # "this station has no data". Sweep for it with: jq 'select(.discovery_contradiction)'
+    if disco and download_bytes == 0 and not year_errors:
+        result["discovery_contradiction"] = (
+            f"discovery routed {disco['n_channel_epochs']} channel-epochs to "
+            f"{disco['providers']} over {disco['year_min']}-{disco['year_max']}, "
+            f"but the download returned 0 bytes with no year error -- retry this station")
+        print(f"[discovery] CONTRADICTION {network}.{station}: "
+              f"{result['discovery_contradiction']}", flush=True)
 except Exception as e:
     result.update(download_elapsed_s=time.time() - t0, download_error=f"{type(e).__name__}: {e}")
 

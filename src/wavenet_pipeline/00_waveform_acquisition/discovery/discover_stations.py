@@ -164,18 +164,25 @@ def discover_one(net, sta, channels, attempts, timeout, session):
             starts = sorted(p[4] for p in rows)
             ends = sorted(p[5] for p in rows)
 
-            # How the downloader should construct a client for each centre. A name obspy
-            # already knows is preferred; for anything it does not (AUSPASS, observed
-            # 2026-10-01), fall back to the base URL the federator itself just gave us.
-            # obspy's Client accepts a base_url, so an unknown centre is a routing detail
-            # rather than a dead end -- and nothing has to be hardcoded per centre.
+            # How the downloader should construct a client for each centre.
+            #
+            # ALWAYS prefer the DATASELECTSERVICE URL the federator itself returned, over
+            # obspy's built-in provider registry. Learned the hard way 2026-10-01: BL.CDCB
+            # routes to DATACENTER=USPSC, and obspy's "USP" shortcut points at
+            # http://sismo.iag.usp.br, which exposes NO dataselect service at all -- so
+            # pinning by name can never download, while the federator's own
+            # http://seisrequest.iag.usp.br does have one. The federator is authoritative
+            # about where its data lives; obspy's table is a convenience that can be stale
+            # or point at a different host entirely. Using the URL also removes any need to
+            # hardcode a mapping per data centre (AUSPASS, etc.).
             specs = []
             for d in dcs:
-                if d in DATACENTER_TO_OBSPY:
+                ds = parsed[d]["dataselect"] or ""
+                base = ds.split("/fdsnws")[0] if "/fdsnws" in ds else ds
+                if base:
+                    specs.append(base)
+                elif d in DATACENTER_TO_OBSPY:      # no URL given; fall back to the name
                     specs.append(DATACENTER_TO_OBSPY[d])
-                else:
-                    ds = parsed[d]["dataselect"] or ""
-                    specs.append(ds.split("/fdsnws")[0] if "/fdsnws" in ds else ds)
 
             rec.update(
                 datacenters=";".join(dcs),
@@ -274,9 +281,16 @@ def main(argv=None):
             for d in str(s).split(";"):
                 if d:
                     c[d] += 1
+        # Show the endpoint that will ACTUALLY be used, not obspy's registry name -- the
+        # two can differ, and reporting the name here once hid that USP's registry entry
+        # has no dataselect service at all.
+        endpoint = {}
+        for row in routed.itertuples():
+            for d in str(row.datacenters).split(";"):
+                if d and d not in endpoint:
+                    endpoint[d] = str(row.obspy_providers).split(";")[0]
         for d, n in c.most_common():
-            mapped = DATACENTER_TO_OBSPY.get(d, "** UNMAPPED **")
-            print("    {:<14} {:>5}   -> obspy provider {}".format(d, n, mapped))
+            print("    {:<14} {:>5}   -> {}".format(d, n, endpoint.get(d, "?")))
 
         span = (routed["year_max"] - routed["year_min"] + 1)
         print()
