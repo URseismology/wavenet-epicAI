@@ -42,8 +42,47 @@ from obspy.clients.fdsn import Client
 # returned nothing from IRIS but a full response from GFZ. IRIS stays first since it
 # resolves permanent global-network stations (G, IU) directly and federates across most
 # other centres; GFZ moved up from 4th to 2nd rather than reached only after 3 failures.
+# Fallback chain, tried in order when the federator cannot be consulted. It is a FALLBACK
+# now, not the primary route: a fixed list of obspy provider names cannot know where a
+# given station's metadata actually lives, and silently returns "no response available"
+# for anything held elsewhere. Measured across the full 1,999-station network 2026-10-01,
+# stations route to data centres this list does not contain at all -- AUSPASS (38
+# stations), USPSC (37), ICGC (3), SED (2), BATS (1), UIB-NORSAR (1) -- and obspy's own
+# registry does not even have names for AUSPASS, BATS or SED. Worse, obspy's "USP" entry
+# points at a host with NO dataselect service, so a name that IS in the list can still be
+# the wrong endpoint. The federator knows; ask it first (see federator_endpoints).
 PROVIDER_CHAIN = ["IRIS", "GFZ", "ORFEUS", "RESIF", "INGV", "ETH", "BGR", "KOERI",
                   "NCEDC", "SCEDC", "NOA", "NIEP", "LMU", "KNMI"]
+
+# Optional discovery manifest (discovery/discover_stations.py). When present, the endpoint
+# it recorded for a station is tried BEFORE the fixed chain above, so metadata is fetched
+# from wherever the federator says the data actually is. Absent or unreadable, behaviour is
+# exactly the old fixed-chain behaviour -- this is strictly additive.
+DISCOVERY_MANIFEST = os.environ.get("WAVENET_DISCOVERY_MANIFEST", "")
+_DISCO = {}
+
+
+def federator_endpoints(network, station):
+    """Endpoints the federator routed this station to, most specific first. [] if unknown."""
+    if not DISCOVERY_MANIFEST:
+        return []
+    if "df" not in _DISCO:
+        try:
+            import pandas as _pd
+            _DISCO["df"] = _pd.read_csv(DISCOVERY_MANIFEST)
+        except Exception:
+            _DISCO["df"] = None
+    df = _DISCO["df"]
+    if df is None:
+        return []
+    try:
+        m = df[(df["network"].astype(str) == str(network))
+               & (df["station"].astype(str) == str(station))]
+        if not len(m):
+            return []
+        return [p for p in str(m.iloc[0].get("obspy_providers", "")).split(";") if p]
+    except Exception:
+        return []
 # MUST match orchestrator.py's CHANNELS. This was left at the old narrow "BH?,LH?" when
 # the download side was widened to six bands (4dd8859, 2026-09-30), so responses were only
 # ever fetched for BH/LH. Measured 2026-10-01: all 77 stations the coverage gate reported
@@ -81,7 +120,12 @@ def fetch_one(root, idx):
 
     status = dict(network=network, station=station, idx=int(idx), ok=False,
                    provider=None, n_channels=0, n_with_response=0, epochs=[], errors={})
-    for prov in PROVIDER_CHAIN:
+    # Federator-routed endpoints first (where the data actually is), then the fixed chain.
+    # Client() accepts either a registered provider name or a base URL, so a centre obspy
+    # has never heard of (AUSPASS, BATS, SED) is reachable by URL alone.
+    chain = federator_endpoints(network, station) + [
+        p for p in PROVIDER_CHAIN if p not in federator_endpoints(network, station)]
+    for prov in chain:
         try:
             inv = Client(prov, timeout=90).get_stations(
                 network=network, station=station, location="*", channel=CHANNELS,

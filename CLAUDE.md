@@ -360,6 +360,31 @@ Push: `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519" git push`
 
 ---
 
+## Pipeline principles (added 2026-10-01) — read before changing any acquisition stage
+
+`docs/PIPELINE_PRINCIPLES.md` is mandatory reading before modifying or reviewing any stage
+of the NCF acquisition pipeline, and during any handoff. Each principle came from a defect
+that silently destroyed or withheld real data while the pipeline reported success. The
+short form, with the full reasoning and the incident behind each one in that document:
+
+1. **Silence is not success.** Distinguish "the service said no" from "we failed to ask";
+   a zero result against an asserted precondition is a contradiction, not an answer.
+2. **No case is benign until retrieval is exhausted** (PI). 213 of 360 stations written off
+   as "benign" turned out to hold real, routable data.
+3. **A fixed list of providers/channels/endpoints will be wrong.** Prefer an authoritative
+   lookup (the FDSN federator); keep lists as fallback, never duplicated across stages.
+4. **A fix is not deployed until something forces it to run.** Stage 1.5 was correct and
+   documented for a week while every new campaign silently skipped it.
+5. **Never package data you cannot correct** (PI) — fail the unit of work instead.
+6. **Keep raw until the product is verified.** The inspector purges raw SEED and is now
+   OFF by default.
+7. **Verify the artifact, not the label** — amplitude, inode, bytes; not the flag.
+8. **Keep testing after production** (PI). Every defect here was found while the campaign
+   was reporting healthy.
+9. **Prove the environment, not just the code** (`--export=NONE`, `--wrap`/sh, `set -u`,
+   MaxArraySize, size-sorted manifest indices).
+10. **Isolate changed pipeline code** beside the running copy, with checksums recorded.
+
 ## Rules — read before every task
 
 ### Never do these
