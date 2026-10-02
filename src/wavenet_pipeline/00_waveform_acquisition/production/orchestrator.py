@@ -476,7 +476,16 @@ try:
                 n_download_retries += 1
                 if attempt < DOWNLOAD_ATTEMPTS:
                     time.sleep(10 * attempt + random.uniform(0, 5))
-                    mdl = MassDownloader()
+                    # Rebuild with the SAME pinning as the original instance. Missing this
+                    # cost the first corrected campaign almost everything: the initial
+                    # downloader was pinned to the federator's endpoint, but every retry
+                    # rebuilt it UNPINNED, dropping straight back into the federated
+                    # client-discovery failure that caused the original 763 "no data"
+                    # stations. 106 of 110 stations hit a retry, so nearly all of them
+                    # silently finished on the unpinned path -- TA.N49A downloaded 39 files
+                    # in 78 s and reported success, where the pinned path fetches 3,696.
+                    mdl = (MassDownloader(providers=disco["providers"]) if disco
+                           else MassDownloader())
         if last_err:
             # One bad year doesn't sink the whole station -- keep whatever other years
             # succeeded. Recorded, not silently dropped (see result["year_errors"]).

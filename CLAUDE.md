@@ -384,6 +384,18 @@ short form, with the full reasoning and the incident behind each one in that doc
 9. **Prove the environment, not just the code** (`--export=NONE`, `--wrap`/sh, `set -u`,
    MaxArraySize, size-sorted manifest indices).
 10. **Isolate changed pipeline code** beside the running copy, with checksums recorded.
+11. **When a defect appears right after you changed something, audit your own change
+    first.** Four external mechanisms were hypothesised and disproved before the cause
+    turned out to be a one-line gap in that morning's own commit — pinning applied at
+    construction but not in the retry loop. Grep your diff's call sites before theorising.
+12. **A fix applied at one call site is not applied.** This recurred five times in a single
+    day across `CHANNELS`, Stage 1.5, the resample guard, provider pinning, and a verbatim
+    port across a different obspy/scipy pair.
+13. **Bound the test, not the dataset.** `WAVENET_START`/`WAVENET_END` exist so a check
+    covers a week; take the window from the discovery manifest's real epochs rather than
+    guessing a year.
+14. **A check that cannot fail cleanly will produce false findings.** Validate the
+    validator against a known-good case before trusting a failing result.
 
 ## Rules — read before every task
 

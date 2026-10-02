@@ -145,6 +145,77 @@ checksums of both.
 
 ---
 
+## 11. When a defect appears right after you changed something, audit your own change first.
+
+The costliest hour of 2026-10-01 was spent here. The corrected campaign launched at 01:33
+and by 02:30 its output was 3.6% complete, with 75% of stations missing components. Four
+mechanisms were hypothesised and tested in turn — `location_priorities=["*"]`, reuse of one
+`MassDownloader` across the year loop, provider throttling at 48-way concurrency, and
+scratch quota. **All four were wrong**, and each cost a download cycle to disprove.
+
+The actual cause was a one-line gap in a change made six hours earlier. Pinning the
+downloader to the federator's endpoint was applied to the initial construction and **not to
+the rebuild inside the retry loop**, 130 lines further down:
+
+```python
+mdl = MassDownloader()          # retry path -- no providers, falls back to federated discovery
+```
+
+106 of 110 stations hit a retry, so nearly all of them silently finished on the unpinned
+path. `TA.N49A` downloaded 39 files in 78 s and reported `package_ok=True`; the pinned path
+fetches 3,696 files across all six channels.
+
+**Apply:** before theorising about ObsPy, the provider, or the cluster, `grep` every call
+site of whatever you most recently touched. A plausible external mechanism is far more
+expensive to disprove than your own diff is to re-read.
+
+## 12. A fix applied at one call site is not applied.
+
+This is principle 3's sibling and it recurred five separate times in one day:
+
+- `CHANNELS` widened in `orchestrator.py`, not in `fetch_station_metadata.py` → 77 stations
+  could never obtain a response.
+- Stage 1.5 built and consumed, never produced by `master.py` → 36.2% raw counts.
+- The non-integer-rate `resample` guard present in terravibranium's packager, absent in
+  BH3's orchestrator → 54 channels on a wrong time grid.
+- Provider pinning applied at construction, not at retry → the campaign above.
+- `resample(1.0)` ported verbatim across a different obspy/scipy pair → crashed every day
+  of every affected station.
+
+**Apply:** when changing a constant, a client construction, or a selection rule, grep the
+whole acquisition tree for other uses *before* committing. Prefer one shared definition
+over a correct copy.
+
+## 13. Bound the test, not the dataset.
+
+`orchestrator.py` has `WAVENET_START`/`WAVENET_END` and `WAVENET_DAY_START`/`DAY_END`
+precisely so a test can cover a week. They went unused for most of a day: canaries
+downloaded entire multi-year station histories to answer questions five days would settle —
+`3D.MM05` pulled 32 GB to demonstrate it returns three components, and `7B.SA01` fetched
+104 days to show `units='m'`. Bounded, the same checks ran in minutes.
+
+Related: pick test windows **from the discovery manifest's real epochs**. Guessing a year
+produced three separate zero-byte runs that looked like failures and were not.
+
+**Apply:** every verification run gets an explicit window. If a test needs a station's whole
+history, say why.
+
+## 14. A check that cannot fail cleanly will produce false findings.
+
+The hour-one sampler reported 14 of 14 stations with findings. Two of its checks were wrong:
+
+- It flagged an "all-zero day" on every station because it inspected only the first hour of
+  each covered day, and first days often start late. `N4.V58A` day 0 has 15,900 nonzero
+  samples of 86,400; days 1-4 have 86,399.
+- It compared packaged components against a station's **all-time** channel availability
+  rather than the window actually downloaded, which would have been wrong had epochs
+  differed.
+
+The real defect was buried among the false ones, which delayed recognising it.
+
+**Apply:** validate the validator against a known-good case before trusting a failing
+result. A checker that reports 100% failure is more likely broken than the pipeline is.
+
 ## Review checklist for any acquisition-stage change
 
 - [ ] If this produces nothing, can the caller tell "service said no" from "we failed to ask"?
@@ -154,3 +225,27 @@ checksums of both.
 - [ ] Is there a post-production check that would catch this recurring?
 - [ ] Has it been verified against the artifact (amplitude, inode, bytes) or only the flag?
 - [ ] Is the changed code isolated from the running code, with checksums recorded?
+- [ ] Have you grepped **every** call site of what you changed, not just the one you edited?
+- [ ] Does your verification run have an explicit bounded window, with the epoch taken from
+      the discovery manifest rather than guessed?
+- [ ] If a check reports everything failing, have you validated the check itself first?
+
+## How long this took, and why
+
+Recorded because the time cost is the argument for the checklist above.
+
+| | |
+|---|---|
+| Measuring the delivered network, finding 910 "no data" stations | ~1 h |
+| Diagnosing it (obspy's `http://` vs `https://`, federator routing) | ~1 h |
+| Finding the raw-counts defect and that Stage 1.5 was never wired | ~1.5 h |
+| Dead channels, sampling rates, guards, canaries | ~2 h |
+| **Diagnosing a one-line gap in my own change** | **~2 h, four wrong hypotheses** |
+
+The last row is the outlier, and it is the cheapest one to have avoided: the answer was a
+`grep` of the function I had edited that morning. Every other defect that day was someone
+else's unwired fix or a genuine external surprise; that one was self-inflicted and then
+self-obscured by looking outward first.
+
+The second largest avoidable cost was unbounded test downloads — hours of wall-clock spent
+fetching multi-year histories to answer questions that five days of data settle.
