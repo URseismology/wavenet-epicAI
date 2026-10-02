@@ -37,18 +37,30 @@ Measured against `JM.YHJB`, independently proven to hold data (plain dataselect 
 2015-06-01: 555,008 bytes, HTTP 200), varying only the window length with the orchestrator's
 exact Restrictions and domain:
 
-| window | expected files | delivered |
-|---|---|---|
-| 1 day | 3 | **3** |
-| 1 week | 21 | 3 |
-| 1 month | 93 | 24 |
-| 3 months | 276 | 39 |
-| 1 year | 1098 | **0** |
+| window | expected files | delivered | fraction |
+|---|---|---|---|
+| 1 day | 3 | **3** | 100% |
+| 1 week | 21 | 3 | 14% |
+| 1 month | 93 | 24 | 26% |
+| 3 months | 276 | 60 | 22% |
+| 6 months | 549 | 59 | 11% |
+| 1 year | 1095 | 474 | 43% |
 
-`chunklength_in_sec=86400` was not enough — it chunks the download, but ObsPy still resolves
-availability across the whole window at once, and with EarthScope's `fdsnws-availability`
-retired MassDownloader falls back to "unreliable availability" over that span, then reports
-"No data available for request" per interval and raises nothing.
+**The mechanism, from the server's own responses.** EarthScope returns **HTTP 502 and 504**
+on the larger requests — `Error: 502 : while resolving source_ids, datasources status: 502`,
+service version 1.1.80. MassDownloader logs these at ERROR level and carries on, so the
+affected intervals are simply absent from the result with nothing raised. The loss scales
+with request size because the service times out on big queries, not because of anything in
+our parameters.
+
+`chunklength_in_sec=86400` does not protect against this: it chunks the download, but the
+per-call query still spans the whole window.
+
+> **Correction (2026-10-02).** An earlier version of this table recorded the 1-year arm as
+> delivering 0 files. That figure was taken from a campaign result JSON while this test was
+> still running — the exact error this log's method note warns about. Measured, the 1-year
+> arm delivers 474 of 1095. The conclusion is unchanged (one day is the only window that
+> delivers completely), but the number was wrong and is corrected here.
 
 Same defect existed in v1, only wider (one call spanning decades). `2b74f3a` narrowed it to
 a year and was credited as a fix; the loss got smaller rather than going away.
@@ -68,6 +80,12 @@ routing (identical in both discovery manifests), not the launch path (12 rerun t
 At least one (`XW.LIRA`) recovered once requests went day-granular — 0 → 264 files — so some
 fraction of this class is I-2 and will resolve on its own. Re-count after the campaign
 before investigating further.
+
+**Likely partly server-side.** The I-2 measurement caught EarthScope returning HTTP 502/504
+on larger requests. A station whose every year-chunk hit a 502 would present exactly as this
+class does: routed, zero bytes, nothing raised. That is consistent with these stations
+failing identically under sequential rerun, clean launch path, and matching code — none of
+which change what the server does.
 
 **Deliberately not chased now** (PI, 2026-10-02): edge cases are not the priority; most
 stations are.
