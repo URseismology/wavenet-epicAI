@@ -717,7 +717,16 @@ if result["download_ok"]:
                         if factor and abs(tr.stats.sampling_rate / factor - 1.0) < 1e-6:
                             tr.decimate(factor=factor, no_filter=True)
                         else:
-                            tr.resample(1.0)
+                            # window='hann' is REQUIRED on this stack, not cosmetic.
+                            # obspy 1.2.2 defaults to window='hanning' and passes it to
+                            # scipy.signal.get_window; scipy >= 1.10 removed that spelling,
+                            # so the bare resample(1.0) raises "ValueError: Unknown window
+                            # type." on every day. BH3 runs exactly that pair (obspy 1.2.2
+                            # + scipy 1.10.1); terravibranium runs obspy 1.4.2 + scipy 1.15
+                            # where the bare call works, which is why porting it verbatim
+                            # from there looked right and failed here. Verified directly:
+                            # 'hann' and 'blackman' succeed, 'hanning' and the default fail.
+                            tr.resample(1.0, window="hann")
                     align_to_integer_second(tr)                            # [PATCH 1] sample 0 exactly on an integer UTC second
                     tr.detrend("demean")
                     tr.taper(max_percentage=TAPER_PCT)                     # [PATCH 6] was hard-coded 0.05
