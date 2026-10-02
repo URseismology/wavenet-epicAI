@@ -90,6 +90,11 @@ CHANNEL_PRIORITIES = os.environ.get(
 # codes usually mean several sensors at one site (different depths), not junk -- PI,
 # 2026-09-30. This is strictly more permissive, so it can only ever add data.
 LOCATION_PRIORITIES = os.environ.get("WAVENET_LOCATION_PRIORITIES", "*").split(",")
+# Length of ONE download request, in days. Must match the checkpoint granularity (1 day).
+# Anything longer silently returns a fraction of the days asked for -- see the measured
+# table at the download loop. Configurable only so the tradeoff can be re-measured, never
+# to be raised without re-running that measurement.
+WINDOW_DAYS = int(os.environ.get("WAVENET_DOWNLOAD_WINDOW_DAYS", "1"))
 SKIP_DOWNLOAD = os.environ.get("WAVENET_SKIP_DOWNLOAD", "0") == "1"
 DAY_START = os.environ.get("WAVENET_DAY_START")
 DAY_END = os.environ.get("WAVENET_DAY_END")
@@ -169,7 +174,11 @@ def discovery_lookup(network, station):
         if not provs or pd.isna(y0) or pd.isna(y1):
             return None
         return {"providers": provs, "year_min": int(y0), "year_max": int(y1),
-                "n_channel_epochs": int(row.get("n_channel_epochs") or 0)}
+                "n_channel_epochs": int(row.get("n_channel_epochs") or 0),
+                # Exact channel-epoch bounds. Day-granular requests make the difference
+                # between these and the year bounds material: a station that opened in
+                # September costs 8 months of pointless requests if bounded by year alone.
+                "start_utc": row.get("start_utc"), "end_utc": row.get("end_utc")}
     except Exception as exc:
         print(f"[discovery] lookup failed ({exc}); using default download path", flush=True)
         return None
@@ -421,13 +430,26 @@ try:
     # With a discovery manifest: pin the providers that actually hold this station, so no
     # client discovery happens at job time at all. Without one: unchanged behaviour.
     disco = discovery_lookup(network, station)
+
+    # ONE construction site, used for the initial build AND every retry rebuild.
+    # There were two before, and the retry one was missed when pinning was added -- the
+    # downloader silently reverted to federated discovery on any retry, 106 of 110
+    # stations hit a retry, and the campaign finished at a median 3.6% of each station's
+    # span while reporting success. A factory makes a second site impossible to forget;
+    # _mdl_builds records what was actually used so the invariant can be asserted rather
+    # than assumed.
+    _mdl_builds = []
+
+    def new_downloader():
+        provs = disco["providers"] if disco else None
+        _mdl_builds.append(tuple(provs) if provs else ())
+        return MassDownloader(providers=provs) if provs else MassDownloader()
+
+    mdl = None if SKIP_DOWNLOAD else new_downloader()
     if disco:
-        mdl = None if SKIP_DOWNLOAD else MassDownloader(providers=disco["providers"])
         print(f"[discovery] {network}.{station} pinned to {disco['providers']} "
               f"years {disco['year_min']}-{disco['year_max']} "
               f"({disco['n_channel_epochs']} channel-epochs)", flush=True)
-    else:
-        mdl = None if SKIP_DOWNLOAD else MassDownloader()  # one client-discovery pass reused across all years below
 
     loop_year_start = station_year_start if station_year_start is not None else DOWNLOAD_START.year
     loop_year_end = station_year_end if station_year_end is not None else DOWNLOAD_END.year
@@ -437,9 +459,59 @@ try:
         # those bounds use, for the same reason (a year edge should not clip real data).
         loop_year_start = disco["year_min"] - 1
         loop_year_end = disco["year_max"] + 1
-    for year in ([] if SKIP_DOWNLOAD else range(loop_year_start, loop_year_end + 1)):
-        year_start = max(DOWNLOAD_START, UTCDateTime(year, 1, 1))
-        year_end = min(DOWNLOAD_END, UTCDateTime(year, 12, 31, 23, 59, 59))
+    # Request window must match the checkpoint granularity: ONE DAY.
+    #
+    # Year-long windows silently return a fraction of the days they are asked for. Measured
+    # 2026-10-02 against JM.YHJB, a station independently proven to hold data (a plain
+    # dataselect GET for 2015-06-01 returns 555,008 bytes, HTTP 200), using the
+    # orchestrator's exact Restrictions and domain, varying ONLY the window length:
+    #
+    #     window     expected files   delivered
+    #     1 day            3              3      <- complete
+    #     1 week          21              3
+    #     1 month         93             24
+    #     3 months       276             39
+    #     1 year        1098              0      <- what production was asking for
+    #
+    # chunklength_in_sec=86400 was NOT enough: it chunks the DOWNLOAD, but ObsPy still
+    # resolves availability across the whole window in one shot, and EarthScope's retired
+    # fdsnws-availability service makes MassDownloader fall back to "unreliable
+    # availability" over that span -- which then reports "No data available for request"
+    # per interval and raises nothing. A silent partial, not an error, which is why every
+    # result JSON said success while the shards held a median of 70 days each.
+    #
+    # Every verification this pipeline ever passed used a short window; only production
+    # used a year. That is the test/deploy gap, and the fix is to make production ask the
+    # way the tests asked. Cost is more HTTP calls, but MassDownloader skips files already
+    # on disk, so a resumed or retried station re-requests only what it is missing.
+    day_windows = []
+    if not SKIP_DOWNLOAD:
+        cur = max(DOWNLOAD_START, UTCDateTime(loop_year_start, 1, 1))
+        stop = min(DOWNLOAD_END, UTCDateTime(loop_year_end, 12, 31, 23, 59, 59))
+        # Tighten to the exact channel epochs where discovery gives them. At day
+        # granularity this is the difference between sweeping whole empty years and
+        # requesting only days the station was actually recording. Open-ended epochs
+        # (end_utc = 2599-12-31) collapse to DOWNLOAD_END via the min/max above.
+        if disco:
+            for field, op in (("start_utc", "lo"), ("end_utc", "hi")):
+                raw = disco.get(field)
+                if raw is None or (isinstance(raw, float) and raw != raw):
+                    continue
+                try:
+                    t = UTCDateTime(str(raw))
+                except Exception:
+                    continue
+                if op == "lo":
+                    cur = max(cur, t - 86400)       # one day of margin, as the year bounds use
+                else:
+                    stop = min(stop, t + 86400)
+        while cur < stop:
+            day_windows.append(cur)
+            cur += WINDOW_DAYS * 86400
+    for day_start in day_windows:
+        year = day_start.year
+        year_start = day_start
+        year_end = min(DOWNLOAD_END, day_start + WINDOW_DAYS * 86400)
         if year_start > year_end:
             continue
         restrictions = Restrictions(
@@ -476,16 +548,7 @@ try:
                 n_download_retries += 1
                 if attempt < DOWNLOAD_ATTEMPTS:
                     time.sleep(10 * attempt + random.uniform(0, 5))
-                    # Rebuild with the SAME pinning as the original instance. Missing this
-                    # cost the first corrected campaign almost everything: the initial
-                    # downloader was pinned to the federator's endpoint, but every retry
-                    # rebuilt it UNPINNED, dropping straight back into the federated
-                    # client-discovery failure that caused the original 763 "no data"
-                    # stations. 106 of 110 stations hit a retry, so nearly all of them
-                    # silently finished on the unpinned path -- TA.N49A downloaded 39 files
-                    # in 78 s and reported success, where the pinned path fetches 3,696.
-                    mdl = (MassDownloader(providers=disco["providers"]) if disco
-                           else MassDownloader())
+                    mdl = new_downloader()   # same pinning as the initial build
         if last_err:
             # One bad year doesn't sink the whole station -- keep whatever other years
             # succeeded. Recorded, not silently dropped (see result["year_errors"]).
@@ -499,6 +562,22 @@ try:
                    n_download_retries=n_download_retries)
     if year_errors:
         result["year_errors"] = year_errors
+
+    # ASSERT THE INVARIANT. Discovery said where this station's data lives; every
+    # downloader built for it must have been pinned there. A single unpinned build means
+    # the job silently fell back to federated discovery, which is how the first corrected
+    # campaign produced a median 3.6% of each station's span while reporting success.
+    # Recorded, and fatal -- an unpinned download is not a smaller result, it is a
+    # different and untrustworthy one.
+    result["downloader_builds"] = len(_mdl_builds)
+    if disco:
+        unpinned = [i for i, p in enumerate(_mdl_builds) if not p]
+        if unpinned:
+            raise RuntimeError(
+                f"{network}.{station}: {len(unpinned)} of {len(_mdl_builds)} downloader "
+                f"build(s) ran UNPINNED despite a discovery manifest routing this station "
+                f"to {disco['providers']}. The result cannot be trusted -- see the retry "
+                f"path in the download loop.")
 
     # CONTRACT CHECK. Discovery asserted this station has real, routable channels. If the
     # download then produced nothing AND no year raised an error, that is a contradiction,
