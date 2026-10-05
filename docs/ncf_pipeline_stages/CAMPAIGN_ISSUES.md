@@ -256,6 +256,23 @@ directory structure should make the wrong-code mistake impossible first (see `SC
 
 ---
 
+## R-10 · 108 manifest rows have no usable target
+
+**Identified** 2026-10-05 · **Status** OPEN · **Severity** low, but it corrupts every ratio
+
+`manifest/fps_stations.csv` has `days = NaN` for 108 of 1,999 rows. Those stations cannot be
+scored for completeness, so `campaign_report.py` excludes them from every ratio and reports
+them separately rather than scoring them as zero.
+
+Found only because the denominator check was made explicit: the first version tested
+`days <= 0`, and `NaN <= 0` is False, so NaN passed straight through. Exactly the shape of
+error the check exists to prevent — the same family as dividing by an open-ended 2599 epoch.
+
+**Repair.** Recompute `days` for those rows from the key index, or mark them explicitly
+unknown. Until then they are counted as stations but never as a target.
+
+---
+
 ## Closed
 
 **I-2 · the window-truncation measurement itself** — see R-1, fixed `9844584`.
