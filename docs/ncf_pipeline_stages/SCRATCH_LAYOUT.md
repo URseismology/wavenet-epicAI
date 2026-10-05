@@ -109,23 +109,34 @@ No compatibility symlinks were left for these. They are superseded verification 
 nothing live references, and an old script that reaches for one should fail loudly and point
 here rather than silently resolve through an indirection. Nothing was deleted.
 
-**Lab-root `wavenet*` entries went from 23 to 8.**
+**Lab-root `wavenet*` entries went from 23 to 5.**
 
 ### Archived 2026-10-05 → `ncf_archive/`
 Four empty marker directories, 1 KB each: `wavenet_ncf_hgntest.MOVED`,
 `wavenet_ncf_oldtrim_wiped.MOVED`, `wavenet_ncf_prepatch_incomplete.MOVED`,
 `wavenet_ncf_v2test.MOVED`.
 
-### Retired in name but holding real data — PI decision needed
-| Path | Size | Note |
-|---|---|---|
-| `wavenet_ncf_v1_retired` | **71 GB** | Named retired, not empty. Not moved. |
-| `wavenet_ncf_ratejitter_wiped` | **17 GB** | Named wiped, not empty. Not moved. |
-| `wavenet_ncf_migration` | — | 35 slurm references. Purpose unclear; not moved. |
-| `wavenet_ncf_prepatch_backup.MOVED` | — | 1 slurm reference, so not treated as dead. |
+### Retired roots — ARCHIVED 2026-10-05 → `wavenet_ncf/archive/retired_roots/`
 
-Nothing above was deleted. Per project rule, primary data is never moved or deleted without
-PI approval.
+All three were named as if dead and all three held real data, which is why they sat
+untouched until the PI approved the move. Nothing was deleted. Contents recorded here so the
+names stop being the only description:
+
+| Directory | Size | What is actually inside |
+|---|---|---|
+| `wavenet_ncf_v1_retired` | **71 GB** | 276 entries: 197 v1 result JSONs plus **79 packaged `.h5` shards**. Not empty despite "retired". Last written 2026-09-26. |
+| `wavenet_ncf_ratejitter_wiped` | **17 GB** | 24 entries: result JSONs plus **6 `.h5` shards** with their `.daystate.json` checkpoints (e.g. `II.NIL`). Not wiped despite the name. Last written 2026-09-27. |
+| `wavenet_ncf_migration` | **9.8 GB** | 25 entries, **no shards** — tooling and logs from the old-cluster→BH3 migration: `audit_excluded_stations.py`, `backup_partials.slurm`, `backup_prepatch_partials.py`, `completed_prepatch_stations.csv`, `fetch_meta{,_batch}.slurm`, `logs/`, `repro_EI_IMAY_2023`. Last written 2026-09-28. |
+
+**Lesson, recorded because it nearly caused a deletion:** a directory name is not a statement
+about its contents. Two of these three said "retired"/"wiped" while holding 88 GB and 85
+shards between them. Check before trusting a name here.
+
+### Archive size
+
+`wavenet_ncf/archive/` is **1.2 TB**, dominated by retained raw SEED inside the archived test
+roots rather than by packaged output. Prunable later; retained for now because raw SEED lets a
+station be re-packaged without re-downloading.
 
 ---
 

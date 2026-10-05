@@ -47,6 +47,24 @@ import time
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# Which code path gets BAKED INTO a root's generated orchestrator.slurm.
+#
+# It used to be HERE -- wherever master.py happened to live at `init` time -- and that is
+# how a 1,999-station campaign ran to completion against the wrong code tree (2026-10-05).
+# production_v2's slurm was generated 2026-09-30 pointing at `wavenet_ncf_framework`; every
+# later fix was deployed to `wavenet_ncf_framework_recovery`; nothing re-checks the binding,
+# so the campaign silently ran code with no daily-window fix and no provider pinning. 0 of
+# 2,042 job logs carried a `[discovery] pinned` line and 536 stations returned zero bytes
+# with no error at all, because the contradiction guard needs a discovery entry to fire.
+#
+# A root outlives the directory its code was sitting in, so the baked path must be stable
+# across code swaps. CANONICAL_CODE is a symlink that is repointed when the code tree is
+# replaced; the root's slurm never changes. Falls back to HERE when that layout is absent
+# (a laptop, a different cluster), and WAVENET_CODE_ROOT overrides both.
+CANONICAL_CODE = "/scratch/tolugboj_lab/wavenet_ncf/code/CURRENT/production"
+CODE_ROOT = (os.environ.get("WAVENET_CODE_ROOT")
+             or (CANONICAL_CODE if os.path.isdir(CANONICAL_CODE) else HERE))
 FPS_STATIONS_DEFAULT = os.path.join(HERE, "..", "metadata3", "fps_stations.csv")
 STATION_SUMMARY_DEFAULT = os.path.join(HERE, "..", "metadata3", "key_index_summary", "station_summary.csv")
 
@@ -329,7 +347,7 @@ def cmd_init(args):
                             ("inspector.slurm", INSPECTOR_SLURM)):
         path = os.path.join(args.root, name)
         with open(path, "w") as f:
-            f.write(template.format(root=args.root, here=HERE,
+            f.write(template.format(root=args.root, here=CODE_ROOT,
                                      offsets_dir=TIMING_OFFSETS_DEFAULT,
                                      discovery_manifest=args.discovery_manifest or ""))
         print(f"[master] wrote {path}")
