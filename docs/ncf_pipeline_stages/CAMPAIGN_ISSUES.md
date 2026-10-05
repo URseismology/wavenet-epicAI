@@ -307,6 +307,22 @@ of day iterations in one process. The failure needs ~1,500+ days of history to a
 and no test had that shape. Same family as R-1: the test and production differed in the one
 dimension that mattered.
 
+### OUTSTANDING: deployed code and repo currently DISAGREE
+
+The two speculative changes (`RECYCLE_EVERY`, `del mdl`) are **deployed to
+`wavenet_ncf/code/CURRENT` but NOT committed to the repo**. `orchestrator.py` is modified in
+the working tree. That divergence is the R-2 root cause in miniature and should not be left
+standing.
+
+PI deferred resolving it (2026-10-05). Two clean endings when it is picked up:
+
+* **Revert both** — repo and deployed return to the verified state, giving a clean baseline
+  for the OOM measurement. This is the option that makes diagnosis easiest.
+* **Commit them as explicitly speculative** — repo matches deployed, confound stays documented
+  above.
+
+Either is acceptable. The in-between state is not.
+
 ### Repair
 
 1. The 182 stations need re-running; they are failures, not partial successes.
