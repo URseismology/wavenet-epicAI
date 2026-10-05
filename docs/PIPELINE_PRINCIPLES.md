@@ -249,3 +249,27 @@ self-obscured by looking outward first.
 
 The second largest avoidable cost was unbounded test downloads — hours of wall-clock spent
 fetching multi-year histories to answer questions that five days of data settle.
+
+## 15. Measure and log before you patch. A speculative fix destroys the baseline.
+
+When production breaks, the first move is to MEASURE and LOG, never to patch. A fix deployed
+into a running campaign without a hypothesis, a test and a verification trail is bad form even
+when it is harmless, because it removes the clean baseline needed to find the real cause.
+
+**Incident, 2026-10-05.** 182 campaign tasks were OOM-killed. Within minutes two changes went
+into `orchestrator.py` mid-campaign (`RECYCLE_EVERY=365`, `del mdl`) on a hypothesis that was
+then disproved by its author's own tests. Neither could corrupt data, but both changed the
+memory profile, so every future RSS measurement must be split by whether a task started before
+or after that deploy — and tasks within one job span both. The cause is still unknown and is
+now harder to establish than before the "fix".
+
+**Mid-campaign is not the problem; unverified is.** The same day, two other mid-campaign
+changes were legitimate because each carried a trail: the slurm repoint was proven by a
+six-station canary showing `[discovery] pinned` before the full launch, and the response
+fetcher fix was verified on three known-bad stations before deploy.
+
+**If the bleeding must be stopped now**, prefer a CONFIGURATION mitigation that leaves code
+untouched — more memory, fewer concurrent tasks — because configuration is trivially
+reversible and does not confound the diagnosis. And once speculative changes are already in,
+resist adding a corrective: a third code state makes the measurement worse, not better.
+Record the confound with its deploy time instead.
