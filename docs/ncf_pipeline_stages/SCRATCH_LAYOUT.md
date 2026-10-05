@@ -84,6 +84,33 @@ and after launch, confirm it actually took effect **in the data**:
 
 ---
 
+## Testing policy (PI, 2026-10-05)
+
+Four rules. They exist because production code and data trees stay clean only if nothing
+speculative touches them.
+
+1. **A test never RUNS inside production.** It gets its own root under `wavenet_ncf/run/`,
+   with its own manifest, results and logs. A test that executes in the production root can
+   corrupt it, and worse, its artifacts become indistinguishable from campaign output after
+   the fact.
+2. **A test MAY SAVE into production — but only after it succeeds, and then it is cleaned and
+   archived.** Run-location and save-location are different decisions. Keeping the two
+   separate is what lets a successful test contribute its data without any failed test ever
+   leaving a trace.
+3. Together these keep the production **code tree and data tree isolated and clean**.
+4. **Production changes only on a FAILED test.** A passing test changes nothing — that is the
+   point of isolation. Changes are a response to failure, never a side effect of testing.
+
+Worked example — the 2026-10-05 recovery test:
+
+- ran in `wavenet_ncf/run/TEST_recovery_20261005`, nothing written to production (rule 1);
+- its 40 stations are real missing stations, so once it passes, the recovered shards are
+  migrated into the production root and the test root archived (rule 2);
+- the production root was untouched while the test ran (rule 3);
+- had the binding check failed, the test would have aborted before submitting and the fix
+  would have been applied to production code — the only circumstance in which production
+  changes (rule 4).
+
 ## Directory inventory, 2026-10-05
 
 ### Code trees — CONSOLIDATED 2026-10-05
