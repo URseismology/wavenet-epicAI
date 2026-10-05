@@ -35,7 +35,9 @@ is data. The only thing separating the live code from the fixed code is the suff
     /scratch/tolugboj_lab/wavenet_ncf/code/RETIRED_sep24  -> superseded, do not deploy here
     /scratch/tolugboj_lab/wavenet_ncf/run/PRODUCTION      -> the live campaign data root
     /scratch/tolugboj_lab/wavenet_ncf/run/PRODUCTION_v1_complete
-    /scratch/tolugboj_lab/wavenet_ncf/archive/            -> dead directories
+    /scratch/tolugboj_lab/wavenet_ncf/archive/            -> superseded roots + dead dirs
+    /scratch/tolugboj_lab/wavenet_ncf/analysis/           -> was delivered_network_analysis (20 GB)
+    /scratch/tolugboj_lab/wavenet_ncf/debug/              -> was claude_debug
 
 > **This is a transitional state and it has a real cost.** These are symlinks; the actual
 > directories are still `wavenet_*` siblings in the shared lab root. So two namespaces
@@ -96,14 +98,18 @@ and after launch, confirm it actually took effect **in the data**:
 | `wavenet_ncf_production_v2` | 1,442 | **LIVE.** 917 GB. The campaign. |
 | `wavenet_ncf_production` | 1,090 | v1, complete, 768 GB. Reference baseline. |
 
-### Data roots — tests and canaries (11, all superseded)
-`wavenet_launchverify` (1) · `wavenet_preflight` (1) · `wavenet_retryfix` (1) ·
-`wavenet_ncf_canary` (33) · `wavenet_ncf_canary2` (1) · `wavenet_ncf_canary_clean` (0) ·
-`wavenet_ncf_canary_full` (7) · `wavenet_ncf_comptest` (3) · `wavenet_ncf_96test` (18) ·
-`wavenet_ncf_quicktest` (6) · `wavenet_ncf_xd_pair_test` (2) · `wavenet_ncf_yeartest` (0)
+### Data roots — tests and canaries: ARCHIVED 2026-10-05
+All twelve moved to `wavenet_ncf/archive/test_roots/`: `wavenet_launchverify`,
+`wavenet_preflight`, `wavenet_retryfix`, `wavenet_ncf_canary`, `wavenet_ncf_canary2`,
+`wavenet_ncf_canary_clean`, `wavenet_ncf_canary_full`, `wavenet_ncf_comptest`,
+`wavenet_ncf_96test`, `wavenet_ncf_quicktest`, `wavenet_ncf_xd_pair_test`,
+`wavenet_ncf_yeartest`.
 
-Shard counts are small; these are throwaway verification roots, not data to preserve.
-Archive them at the next consolidation.
+No compatibility symlinks were left for these. They are superseded verification roots that
+nothing live references, and an old script that reaches for one should fail loudly and point
+here rather than silently resolve through an indirection. Nothing was deleted.
+
+**Lab-root `wavenet*` entries went from 23 to 8.**
 
 ### Archived 2026-10-05 → `ncf_archive/`
 Four empty marker directories, 1 KB each: `wavenet_ncf_hgntest.MOVED`,
@@ -128,11 +134,12 @@ PI approval.
 Three jobs are still running and hold absolute paths into both code trees and the production
 root, so the physical work waits for quiescence:
 
-1. Adopt a prefix convention that makes the kind obvious: `code_*` vs `run_*`.
-2. Archive the 11 superseded test roots.
-3. **Remove the hard-wire.** `orchestrator.slurm` should resolve the code tree through
+1. Move the remaining six `wavenet_ncf_*` siblings physically inside `wavenet_ncf/`, so the
+   lab root holds ONE entry for this project. Blocked only by the three running jobs, which
+   hold absolute paths into both code trees and the production root.
+2. **Remove the hard-wire.** `orchestrator.slurm` should resolve the code tree through
    `ncf/code/CURRENT` rather than baking an absolute path at init time, so a root cannot
    drift away from the code it is meant to run.
-4. Have the orchestrator record its own resolved path and md5 into each result JSON and as
+3. Have the orchestrator record its own resolved path and md5 into each result JSON and as
    an HDF5 attribute, so "which code produced this shard" is answerable **from the data**.
    This is a backstop, not the fix — the structure should make the mistake impossible first.
