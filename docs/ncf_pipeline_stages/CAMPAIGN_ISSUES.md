@@ -1,7 +1,14 @@
-# NCF campaign — issue log and repair plan
+# NCF campaign (BlueHive3) — issue log and repair plan
 
 **Authoritative copy: this file (versioned in the repo). Mirrored to
 `/scratch/tolugboj_lab/wavenet_ncf/ISSUES.md` so it is readable at the point of work.**
+
+**Scope: the BlueHive3 global FPS campaign only** — `wavenet_ncf_production` (v1) and
+`wavenet_ncf_production_v2`, past and current. The South America noise packaging on
+terravibranium is a different pipeline with a different codebase, different storage and a
+different station set; its issues live in `TERRAVIBRANIUM_ISSUES.md` and must not be mixed in
+here. Two logs, because a repair plan that spans two pipelines is a repair plan nobody can
+execute.
 
 Every issue that affects **packaged data** and therefore the eventual re-download /
 re-packaging campaign. Each entry states when it was identified, what is wrong, how to
@@ -246,26 +253,6 @@ script mtimes, and not at all for a shard whose packaging spanned a code edit.
 **Fix (proposed).** The orchestrator should record its own resolved path and md5 into every
 result JSON and as an HDF5 attribute. This is a **backstop**, not the primary control — the
 directory structure should make the wrong-code mistake impossible first (see `SCRATCH_LAYOUT.md`).
-
----
-
-## R-9 · terravibranium packaging: 9 stations with raw-counts channels
-
-**Identified** 2026-10-05 · **Status** OPEN · **Severity** medium · **Separate pipeline**
-
-South America noise packaging (`/RAID6/lab_archive/packaged_v2`, 895 shards, 427 GB). Same class
-as R-3 but a different codebase (`sam_package_one.py`).
-
-| Station | Uncorrected | Days |
-|---|---|---|
-| `AS.ZOBO` | 2 of 3 | **3,914** |
-| `SR.BOCO` | 3 of 3 | **1,220** |
-| `XF.HB30` | 6 of 6 | 41 |
-| `TC.ICR3` | 3 of 3 | 36 |
-| 5 others | — | 1-86 |
-
-`AS.ZOBO` and `SR.BOCO` are the substantial ones. **Repair after that campaign finishes**, and
-only once the code-provenance question (R-8) is settled for that pipeline.
 
 ---
 
