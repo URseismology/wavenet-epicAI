@@ -307,21 +307,26 @@ of day iterations in one process. The failure needs ~1,500+ days of history to a
 and no test had that shape. Same family as R-1: the test and production differed in the one
 dimension that mattered.
 
-### OUTSTANDING: deployed code and repo currently DISAGREE
+### RESOLVED: speculative changes REVERTED, baseline is clean
 
-The two speculative changes (`RECYCLE_EVERY`, `del mdl`) are **deployed to
-`wavenet_ncf/code/CURRENT` but NOT committed to the repo**. `orchestrator.py` is modified in
-the working tree. That divergence is the R-2 root cause in miniature and should not be left
-standing.
+The two speculative changes (`RECYCLE_EVERY`, `del mdl`) were **reverted on 2026-10-05** and
+the revert deployed, so repo and deployed tree now match exactly (md5 `0ed15903...`). The
+verified fixes are untouched: `WINDOW_DAYS` (daily windows), `discovery_lookup` (pinning) and
+epoch bounding all remain.
 
-PI deferred resolving it (2026-10-05). Two clean endings when it is picked up:
+PI's reason, and it is the right one: the code must sit in the state that PRODUCED this
+failure, or the eventual measurement has nothing clean to measure against. The earlier
+confound — tasks within one job spanning two code states — ends here. Anything starting after
+the revert runs the verified code.
 
-* **Revert both** — repo and deployed return to the verified state, giving a clean baseline
-  for the OOM measurement. This is the option that makes diagnosis easiest.
-* **Commit them as explicitly speculative** — repo matches deployed, confound stays documented
-  above.
+**Known consequence, accepted deliberately:** long-history stations will keep OOMing, because
+nothing now mitigates it. Those failures join the existing 182 and are re-run together. A
+clean baseline was judged worth more than a speculative patch.
 
-Either is acceptable. The in-between state is not.
+**If the bleeding needs stopping before the diagnosis**, use a CONFIGURATION mitigation that
+leaves code untouched — raise `--mem-per-cpu` above 7G in `orchestrator.slurm`, or lower
+concurrency. Configuration is trivially reversible and does not confound the measurement.
+See `docs/PIPELINE_PRINCIPLES.md` §15.
 
 ### Repair
 
