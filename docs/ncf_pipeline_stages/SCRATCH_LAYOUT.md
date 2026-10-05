@@ -1,6 +1,12 @@
-# /scratch/tolugboj_lab — what is production, what is retired
+# wavenet_ncf on BlueHive scratch — what is production, what is retired
 
-**Read this before launching, deploying, or deleting anything here.**
+**Lives at `/scratch/tolugboj_lab/wavenet_ncf/README.md`. Read it before launching,
+deploying, or deleting anything in this project.**
+
+`/scratch/tolugboj_lab` is a SHARED lab root — 101 directories, ~80 belonging to other
+people and other projects (`global-tomography`, `planetary_seismo`, `Prj10_*`, several
+`*_WS` workspaces). Nothing here describes those. This project should occupy exactly one
+entry in that root, and today it occupies twenty-one.
 
 Written 2026-10-05 after a 1,999-station campaign ran to completion against the wrong code
 tree. The fixes were real, deployed, and verified — into a directory production never used.
@@ -25,14 +31,21 @@ is data. The only thing separating the live code from the fixed code is the suff
 
 ## Use these names. They are the only ones guaranteed current.
 
-    /scratch/tolugboj_lab/ncf/code/CURRENT        -> the code tree to deploy to and run from
-    /scratch/tolugboj_lab/ncf/code/RETIRED_sep24  -> superseded, do not deploy here
-    /scratch/tolugboj_lab/ncf/run/PRODUCTION      -> the live campaign data root
-    /scratch/tolugboj_lab/ncf/run/PRODUCTION_v1_complete
+    /scratch/tolugboj_lab/wavenet_ncf/code/CURRENT        -> deploy to and run from here
+    /scratch/tolugboj_lab/wavenet_ncf/code/RETIRED_sep24  -> superseded, do not deploy here
+    /scratch/tolugboj_lab/wavenet_ncf/run/PRODUCTION      -> the live campaign data root
+    /scratch/tolugboj_lab/wavenet_ncf/run/PRODUCTION_v1_complete
+    /scratch/tolugboj_lab/wavenet_ncf/archive/            -> dead directories
 
-These are symlinks, so nothing moved and no running job was disturbed. When the physical
-consolidation happens, **these names do not change** — only their targets do. Anything that
-refers to them keeps working.
+> **This is a transitional state and it has a real cost.** These are symlinks; the actual
+> directories are still `wavenet_*` siblings in the shared lab root. So two namespaces
+> describe the same thing, and a reader must understand the indirection before they
+> understand the layout. That is worse than one namespace, and it is the price of not
+> disturbing three jobs holding ~6 days of accumulated download.
+>
+> The end state is ONE directory: everything physically inside `wavenet_ncf/`, the lab root
+> gaining one entry and losing twenty-one. These names are chosen so they do not change when
+> that happens — only their targets do.
 
 ---
 
