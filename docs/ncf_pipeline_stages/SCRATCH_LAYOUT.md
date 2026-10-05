@@ -86,11 +86,24 @@ and after launch, confirm it actually took effect **in the data**:
 
 ## Directory inventory, 2026-10-05
 
-### Code trees
+### Code trees — CONSOLIDATED 2026-10-05
+
+Both now live inside the project. Neither sits at the lab root any more.
+
 | Path | Status |
 |---|---|
-| `wavenet_ncf_framework_recovery` | **CURRENT.** Has the daily-window fix and pinning. Deploy here. |
-| `wavenet_ncf_framework` | **RETIRED** (Sep 24). Has neither fix. Still executed by jobs `2041206`/`2041269`, submitted before the repoint — do not move until they finish. |
+| `wavenet_ncf/code/CURRENT` → `code/current_tree` | **The only tree to deploy to or run from.** Has the daily-window fix (`WINDOW_DAYS`) and provider pinning (`discovery_lookup`). Was `wavenet_ncf_framework_recovery`. |
+| `wavenet_ncf/archive/retired_roots/wavenet_ncf_framework` | **RETIRED** (Sep 24). Has **neither** fix. This is the tree the 1,999-station campaign actually ran. |
+
+**`CURRENT` is a symlink and that is the point.** Generated roots bake *this* path, never the
+physical directory, so swapping the code tree repoints one symlink and every root follows.
+`master.py` emits it via `CODE_ROOT` (falls back to `HERE` off-cluster; `WAVENET_CODE_ROOT`
+overrides). Before this, `master.py` baked wherever it happened to live at `init` time, which
+is the whole cause of the incident above.
+
+Jobs `2041206`/`2041269` were executing the retired tree and were cancelled 2026-10-05 after
+~3 days — they were producing data from the known-defective path. Their raw SEED is retained
+(239 GB across `MN.PDG` and `MN.BNI`), so a relaunch resumes rather than re-downloads.
 
 ### Data roots — production
 | Path | Shards | Status |
@@ -109,7 +122,7 @@ No compatibility symlinks were left for these. They are superseded verification 
 nothing live references, and an old script that reaches for one should fail loudly and point
 here rather than silently resolve through an indirection. Nothing was deleted.
 
-**Lab-root `wavenet*` entries went from 23 to 5.**
+**Lab-root `wavenet*` entries went from 23 to 3**: `wavenet_ncf/`, `wavenet_ncf_production/` (v1, complete), `wavenet_ncf_production_v2/` (live). The last two move inside at the next quiet moment.
 
 ### Archived 2026-10-05 → `ncf_archive/`
 Four empty marker directories, 1 KB each: `wavenet_ncf_hgntest.MOVED`,
@@ -145,12 +158,13 @@ station be re-packaged without re-downloading.
 Three jobs are still running and hold absolute paths into both code trees and the production
 root, so the physical work waits for quiescence:
 
-1. Move the remaining six `wavenet_ncf_*` siblings physically inside `wavenet_ncf/`, so the
-   lab root holds ONE entry for this project. Blocked only by the three running jobs, which
-   hold absolute paths into both code trees and the production root.
-2. **Remove the hard-wire.** `orchestrator.slurm` should resolve the code tree through
+1. Move the two remaining production roots inside `wavenet_ncf/run/`, so the lab root holds
+   ONE entry for this project. Done for everything else.
+2. ~~Remove the hard-wire.~~ **DONE 2026-10-05** — `orchestrator.slurm` should resolve the code tree through
    `ncf/code/CURRENT` rather than baking an absolute path at init time, so a root cannot
    drift away from the code it is meant to run.
-3. Have the orchestrator record its own resolved path and md5 into each result JSON and as
+3. Prune `wavenet_ncf/archive/` (currently **1.2 TB**, mostly retained raw SEED in archived
+   test roots).
+4. Have the orchestrator record its own resolved path and md5 into each result JSON and as
    an HDF5 attribute, so "which code produced this shard" is answerable **from the data**.
    This is a backstop, not the fix — the structure should make the mistake impossible first.
