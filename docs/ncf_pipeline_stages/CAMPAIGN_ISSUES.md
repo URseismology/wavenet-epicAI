@@ -256,6 +256,68 @@ directory structure should make the wrong-code mistake impossible first (see `SC
 
 ---
 
+## R-11 · Tasks OOM-killed during packaging, cause NOT established
+
+**Identified** 2026-10-05 · **Status** OPEN, cause unknown · **Severity** high — 182 stations
+failed · **Evaluate after the campaign, do not chase live**
+
+**Symptom.** 182 tasks of the 2026-10-05 relaunch killed with `OUT_OF_MEMORY`, MaxRSS
+**6.8-7.2 GB against a 7 GB limit**, after 1.5-2.3 h. The slurm wrapper then treated the kill
+as a transient import race and retried the whole station four times, compounding it.
+
+### What is VERIFIED
+
+| | |
+|---|---|
+| Phase | **Packaging**, not download. 91 of 92 checkable OOM tasks wrote a day-state checkpoint **during their own run**. |
+| Scales with | **History length.** 0% OOM below 500 target days · 5% at 500-1,500 · **16% at 1,500-4,000**. Median target 1,924 days for killed tasks vs 728 for completed. |
+| Does NOT scale with | **Per-day cost.** OOM is *higher* for low-rate stations (15%) than 100 Hz HH/EH ones (6%) — the opposite of what response-removal cost predicts. |
+
+So memory grows with the NUMBER OF DAYS packaged, not with the size of any one day.
+
+### What is DISPROVEN — including my own reasoning
+
+1. *"It dies in the download loop."* No. Checkpoints written during the run prove packaging.
+2. *"Response removal on 100 Hz days."* No. Rejected by the sampling-rate test above.
+3. *"The HDF5 handle is held open and its chunk cache accumulates."* No. `with h5py.File(h5_path, "a")`
+   sits INSIDE the per-day loop and is opened and closed every day, deliberately, to bound
+   crash damage.
+
+**The cause is not established.** Memory grows with days packaged and nothing yet identifies
+what grows.
+
+### Measurement is CONFOUNDED by my own changes — read this before evaluating
+
+Two speculative changes were deployed to `orchestrator.py` on 2026-10-05 **while the campaign
+was running**, both resting on hypotheses since weakened:
+
+* `RECYCLE_EVERY=365` — rebuild the MassDownloader every 365 windows.
+* `del mdl` + `gc.collect()` before packaging begins.
+
+Neither is validated. Neither can corrupt data (freeing an unused object; rebuilding a
+*pinned* downloader via the factory), but both change the memory profile, so **any RSS
+measurement must be split by whether the task started before or after that deploy.** Tasks in
+jobs `2062581`/`2062582` span both. This is exactly why speculative fixes during production
+are expensive: they cost the ability to measure cleanly.
+
+### Why no test caught it
+
+Every verification run used short windows or small stations, so none ever executed thousands
+of day iterations in one process. The failure needs ~1,500+ days of history to appear at all,
+and no test had that shape. Same family as R-1: the test and production differed in the one
+dimension that mattered.
+
+### Repair
+
+1. The 182 stations need re-running; they are failures, not partial successes.
+2. **Diagnosis, after the campaign:** run one reliably-OOMing long-history station with RSS
+   sampled per day and identify what grows. One job, not a campaign.
+3. **Mitigation available regardless of cause:** raise `--mem-per-cpu` for long-history
+   stations. Treats the symptom knowingly; the ceiling is 7 GB and consumption scales with
+   days.
+
+---
+
 ## R-10 · 108 manifest rows have no usable target
 
 **Identified** 2026-10-05 · **Status** OPEN · **Severity** low, but it corrupts every ratio
