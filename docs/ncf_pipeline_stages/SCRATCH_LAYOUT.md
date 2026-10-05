@@ -98,8 +98,14 @@ speculative touches them.
    separate is what lets a successful test contribute its data without any failed test ever
    leaving a trace.
 3. Together these keep the production **code tree and data tree isolated and clean**.
-4. **Production changes only on a FAILED test.** A passing test changes nothing — that is the
-   point of isolation. Changes are a response to failure, never a side effect of testing.
+4. **Production changes only on a verified diagnosis.** A passing test changes nothing — that
+   is the point of isolation. And a FAILING test is not enough either: a failure authorizes an
+   INVESTIGATION, not a change. All five conditions must hold — an observed production
+   failure; a falsifiable hypothesis naming the mechanism, written before the fix; that
+   hypothesis verified against evidence; a fix verified in isolation against the failing case;
+   and scope limited to what the hypothesis implicates. Missing any one: log it, and if the
+   bleeding must be stopped, mitigate by CONFIGURATION rather than code. Full rule and its
+   seven corollaries: `docs/PIPELINE_PRINCIPLES.md` §16.
 
 Worked example — the 2026-10-05 recovery test:
 

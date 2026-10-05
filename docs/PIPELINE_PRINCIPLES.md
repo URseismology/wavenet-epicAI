@@ -273,3 +273,58 @@ untouched — more memory, fewer concurrent tasks — because configuration is t
 reversible and does not confound the diagnosis. And once speculative changes are already in,
 resist adding a corrective: a third code state makes the measurement worse, not better.
 Record the confound with its deploy time instead.
+
+## 16. Production changes only on a verified diagnosis — the five conditions
+
+The premise, PI 2026-10-05: *"Code always works, until a bug is found. There are always bugs.
+Just bugs that haven't yet been found. They will be found, code will be fixed. Code will work,
+until..."*
+
+So these rules are not an attempt to prevent bugs. That is not on offer. They govern the
+RESPONSE to a bug, because the response is where you either keep or destroy your ability to
+understand the system. The year-window defect sat in this pipeline from v1 through two
+campaigns that were each credited as fixes; it surfaced eventually, as it always would. What
+mattered was that the response preserved enough evidence to find it.
+
+### The rule
+
+A production change requires ALL FIVE:
+
+| | |
+|---|---|
+| **a** | an **observed failure in production** — not a suspicion, not a code smell |
+| **b** | a **falsifiable hypothesis naming the mechanism**, written down BEFORE the fix |
+| **c** | that hypothesis **verified against evidence**, with the obvious alternatives ruled out |
+| **d** | a fix **verified in isolation** against the failing case, exercising the dimension that failed |
+| **e** | **scope limited** to what the hypothesis implicates |
+
+Missing any one: **log it**, and if the bleeding must be stopped, **mitigate by configuration**.
+
+This refines the earlier "production changes only on a FAILED test", which made a failure
+SUFFICIENT. It is not. On 2026-10-05 a genuine failure (182 OOM-killed tasks) was treated as
+licence to patch; the failure was real and everything after it was not.
+
+### Corollaries
+
+1. **A failure authorizes an INVESTIGATION, not a change.** This is the condition that was
+   missing and the one that was violated.
+2. **Plausible is not verified.** PI: there is no such thing as plausibility — only correct
+   logic or incorrect data. Three plausible explanations for the OOM were offered and all
+   three were disproved by their own author's tests.
+3. **If the cause cannot be established, mitigate by CONFIGURATION, never by code.** Memory,
+   concurrency, walltime: reversible, and they do not confound the diagnosis.
+4. **Preserve the failing state until it is measured.** A fix deployed before measurement
+   destroys the baseline. This is why the speculative OOM changes were reverted rather than
+   kept (R-11).
+5. **Verify in the dimension that failed.** R-1 and R-11 both hid because every test differed
+   from production in exactly the dimension that mattered — short windows, small stations.
+6. **Verified at one call site is not verified everywhere.** Grep the diff's call sites; this
+   recurred five times in a single day (principle 12).
+7. **A revert needs less justification than a patch.** Reverting restores a verified state;
+   patching creates an unverified one. Let the asymmetry bias you toward reverting.
+
+### Scope
+
+This is the rule DURING AN ACTIVE CAMPAIGN. Between campaigns, ordinary development applies:
+changes go through the normal isolated-test cycle and do not need a production failure to
+justify them.
