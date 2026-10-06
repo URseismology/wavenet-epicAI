@@ -280,6 +280,50 @@ directory structure should make the wrong-code mistake impossible first (see `SC
 
 ---
 
+## R-13 · Stations silently skipped by the scratch-quota guard
+
+**Identified** 2026-10-05 · **Status** OPEN, stations captured, need re-running · **Severity**
+high — the failure leaves NO record
+
+**Symptom.** `[orchestrator] REFUSING to start <KEY>: scratch at 95.2% of hard limit`. The task
+exits in ~45 s having done nothing, and **writes no result JSON**. All 14 confirmed cases have
+zero result records, so the station is not a "failed station" anyone can find later — it is
+invisible, traceable only by grepping a log file. Same shape as R-2: produces nothing, leaves
+no evidence it was attempted.
+
+**Blocked stations** (captured to `<root>/quota_blocked_stations.txt` before logs roll):
+
+```
+AI.BELA  AK.DCPH  AT.SMY   CA.CARA  CI.CIA   CI.ISA   CI.PDM
+DK.NEEM  G.CCD    G.SSB    TT.TAMR  TT.THTN  X5.CTSN  X5.NOTN
+```
+
+**Root cause — a stale calibration, not a wrong idea.** The guard refuses rather than risk a
+half-written shard, which is correct. But the threshold is a PERCENTAGE of quota, and the code
+comment still reads `/scratch here is quota-limited (10 TB soft / 11 TB hard)`. At 11 TB, 5%
+was ~550 GB and refusing was prudent. **The real quota is 102/104 TB, so the same 5% is 4.9
+TB** — far more than any station needs. A sensible guard became obstructive purely because the
+filesystem grew 10x underneath it.
+
+**Two defects, worth separating:**
+
+1. *Calibration* — fix by configuration: `WAVENET_QUOTA_STOP_PCT` (default 95). PI, 2026-10-05:
+   there is ample headroom now, and **future campaigns should be configured so this is
+   non-blocking**. Raised on the R-1 rerun; the current campaign is unblocked by reclaiming
+   space instead.
+2. *Silence* — the guard should record the refusal where the pipeline looks for outcomes, not
+   only in a log. A station that is skipped must leave a result record saying so, or it cannot
+   be counted, reported or retried. This is the more important of the two and is **not yet
+   fixed**.
+
+**Space reclaimed 2026-10-05:** 1.1 TB of raw SEED from `archive/test_roots/*/scratch_work`
+(superseded canary runs). Packaged shards in those roots were preserved.
+
+**Repair.** Re-run the 14 once the threshold is raised. They need a full download — nothing of
+theirs exists.
+
+---
+
 ## R-12 · 240 ROUTED stations return no response from any provider
 
 **Identified** 2026-10-05 · **Status** OPEN, not yet investigated · **Severity** medium
