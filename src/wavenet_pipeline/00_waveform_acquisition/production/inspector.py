@@ -46,6 +46,7 @@ import glob
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 
@@ -147,7 +148,7 @@ def verify_shard(shard_path, station_key, expected_channel_meta):
     return True, "ok", channels
 
 
-def station_record(r, shard_path, channels, purged, offsets_path):
+def station_record(r, shard_path, channels, purged, offsets_path, archived_to=None):
     """One row of the global index -- the input to an on-demand master build, and the
     thing that lets a consumer refuse to silently mix patch levels."""
     starts = [c["start_time"] for c in channels.values() if c["start_time"]]
@@ -164,13 +165,13 @@ def station_record(r, shard_path, channels, purged, offsets_path):
         n_days_qc_flagged=r.get("n_days_qc_flagged", 0),
         download_year_range=r.get("download_year_range"),
         timing_offsets=offsets_path or "",
-        raw_purged=bool(purged),
+        raw_purged=bool(purged), archived_to=archived_to,
         verified_at=time.strftime("%Y-%m-%dT%H:%M:%S"))
 
 
 INDEX_CSV_COLUMNS = ["network", "station", "idx", "patch_level", "n_channels", "channels",
                      "earliest_start", "n_days_processed", "n_days_refused",
-                     "n_days_qc_flagged", "shard_bytes", "raw_purged", "timing_offsets",
+                     "n_days_qc_flagged", "shard_bytes", "raw_purged", "archived_to", "timing_offsets",
                      "shard_path", "verified_at"]
 
 
@@ -274,13 +275,68 @@ def one_pass(args, state, verified, flagged, held):
                       flush=True)
                 continue
 
-        purged = False
-        if raw_present and not args.dry_run:
-            shutil.rmtree(raw_dir, ignore_errors=True)
-            purged = True
+        # ---- ARCHIVE, don't purge (PI, 2026-10-06) ----
+        #
+        # This used to `shutil.rmtree(raw_dir)`. Deleting raw SEED was defensible while
+        # re-downloading was assumed cheap. It is not: the R-1 validation recovered 0.70x of
+        # what we already held, because daily windows draw HTTP 429/503 and MassDownloader
+        # drops the throttled intervals silently (R-14). For some of this data the raw SEED on
+        # scratch is the only copy we can still obtain, so a purge is irreversible LOSS, not
+        # a space optimisation.
+        #
+        # So: verify the shard (above), then MOVE the raw to terravibranium, then free the
+        # local copy. Scratch quota is the binding constraint on BH3 (104 TB, ~5 TB free)
+        # while terravibranium has 78 TB free, and the archive keeps future re-packaging
+        # possible without re-downloading anything.
+        #
+        # Deletion happens ONLY after the remote copy is verified by file count and byte
+        # total. A transfer that cannot be verified leaves the local copy untouched and the
+        # station HELD -- the failure mode must be "kept twice", never "lost once".
+        purged = archived_to = None
+        if raw_present and not args.dry_run and args.archive_host:
+            dest = "{}/{}".format(args.archive_root.rstrip("/"), station_key)
+            rs = subprocess.run(
+                ["rsync", "-a", "--partial", "-e", "ssh -o BatchMode=yes",
+                 raw_dir.rstrip("/") + "/", "{}:{}/".format(args.archive_host, dest)],
+                capture_output=True, text=True)
+            ok_remote = False
+            if rs.returncode == 0:
+                loc_n = sum(len(f) for _, _, f in os.walk(raw_dir))
+                loc_b = sum(os.path.getsize(os.path.join(d, f))
+                            for d, _, fs in os.walk(raw_dir) for f in fs)
+                chk = subprocess.run(
+                    ["ssh", "-o", "BatchMode=yes", args.archive_host,
+                     "find {} -type f -printf '%s\\n' 2>/dev/null | "
+                     "awk '{{n++; b+=$1}} END {{print n\" \"b+0}}'".format(dest)],
+                    capture_output=True, text=True)
+                try:
+                    rn, rb = chk.stdout.split()
+                    ok_remote = (int(rn) == loc_n and int(rb) == loc_b)
+                except Exception:
+                    ok_remote = False
+                if not ok_remote:
+                    print("[inspector] {} -> ARCHIVE MISMATCH (local {} files/{} B, remote "
+                          "'{}') -- keeping local copy".format(
+                              station_key, loc_n, loc_b, chk.stdout.strip()), flush=True)
+            else:
+                print("[inspector] {} -> rsync failed rc={}: {}".format(
+                    station_key, rs.returncode, rs.stderr.strip()[:160]), flush=True)
+            if ok_remote:
+                shutil.rmtree(raw_dir, ignore_errors=True)
+                purged, archived_to = True, "{}:{}".format(args.archive_host, dest)
+                print("[inspector] {} -> archived to {} and freed locally".format(
+                    station_key, archived_to), flush=True)
+            else:
+                held[str(idx)] = dict(station=station_key,
+                                      reason="archive to terravibranium not verified")
+                continue
+        elif raw_present and not args.dry_run:
+            # No archive host configured: hold rather than delete. Never silently purge.
+            held[str(idx)] = dict(station=station_key,
+                                  reason="no --archive-host given; raw kept")
 
         save_json_atomic(os.path.join(index_dir, f"{station_key}.json"),
-                          station_record(r, shard, channels, purged, offsets_path))
+                          station_record(r, shard, channels, purged, offsets_path, archived_to))
         verified.add(idx)
         state["verified_idx"] = sorted(verified)
         save_json_atomic(state_path, state)
@@ -326,7 +382,24 @@ def main():
     ap.add_argument("--timing-offsets-dir", default=None,
                     help="banked pre-patch timing offsets; a patch_level<2 station is not "
                          "purged until its offsets are present here")
-    ap.add_argument("--dry-run", action="store_true", help="verify and index but never purge")
+    ap.add_argument("--archive-host", default=os.environ.get("WAVENET_ARCHIVE_HOST"),
+
+                   help="ssh target that raw SEED is MOVED to before the local copy is\n"
+
+                        "freed, e.g. tolugboj@terravibranium.earth.rochester.edu. Without\n"
+
+                        "it the inspector HOLDS raw rather than deleting it.")
+
+    ap.add_argument("--archive-root",
+
+                   default=os.environ.get("WAVENET_ARCHIVE_ROOT",
+
+                                          "/RAID6/lab_archive/wavenet_ncf_raw_seed"),
+
+                   help="directory on --archive-host to move raw SEED into")
+
+    ap.add_argument("--dry-run", action="store_true",
+                    help="verify and index, but neither archive nor free raw SEED")
     args = ap.parse_args()
 
     state_dir = os.path.join(args.root, "state")
