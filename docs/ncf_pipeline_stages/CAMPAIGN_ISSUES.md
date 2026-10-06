@@ -280,6 +280,65 @@ directory structure should make the wrong-code mistake impossible first (see `SC
 
 ---
 
+## R-14 · Daily windows are rate-limited at scale — R-1 BLOCKED
+
+**Identified** 2026-10-06 · **Status** OPEN, blocking the R-1 repair · **Severity** high
+
+**The R-1 validation test FAILED its own pre-committed threshold.** 20 of 20 stations
+finished, 20 of 20 logged `[discovery] pinned`, so the test is valid. Median
+`test_days / production_days` = **0.70x**, against a rule fixed before any result existed:
+`>= 2.0 run the full repair, < 1.2 DO NOT`.
+
+Re-downloading truncated stations with daily windows obtained LESS data than the year-window
+campaign already holds.
+
+**Root cause.** Daily windows make ~1,300 requests per station instead of ~20, and providers
+throttle. `ZT.WTBG` swept 1,344 days and obtained 20; its log carries **20x HTTP 503 and 19x
+HTTP 429 (Too Many Requests)** alongside 1,390 "No data available". MassDownloader logs each
+rejection and continues — the same silent-loss mechanism as the original year-window defect,
+reached from the opposite direction.
+
+**So the window fix is correct in isolation and wrong at scale.** The 2026-10-02 measurement
+(1 day delivers 3/3 files, 1 year 474/1095) was right about a SINGLE window and said nothing
+about request RATE. Both facts are true; neither alone is actionable.
+
+**What this invalidates.** The 1,316,822-day R-1 projection assumed truncated days are
+recoverable by re-download. On this evidence they are not — at least not at daily granularity.
+Do not quote that figure until a window/rate strategy is validated.
+
+**Next step — find the window that is both complete and unthrottled.** The two measurements
+bracket it: 1 day is complete but throttled; 1 year is unthrottled but 43% complete. A sweep
+of intermediate windows (1, 3, 7, 14, 30 days) measuring BOTH delivered-fraction and HTTP
+429/503 rate, with inter-request pacing as a second variable, is the bounded test that would
+settle it. Until then R-1 stays blocked.
+
+---
+
+## R-15 · Fragmented days merge non-deterministically
+
+**Identified** 2026-10-06 · **Status** OPEN · **Severity** low — a few days per station
+
+Two runs of IDENTICAL code on IDENTICAL raw data can produce different samples for a day
+assembled from many overlapping fragments. Found while verifying the R-11 cache fix was
+behaviour-preserving: 21 of 24 channels were bit-identical, and `II.ALE`'s three BH channels
+differed on exactly one day index (7696 = 1991-01-21) by 0.2% relative — four orders above
+float32 rounding, so real.
+
+**Cause.** `mseed_files` comes from `os.listdir()`, which is unsorted; `files_by_day[day].append()`
+preserves that arbitrary order; the day loop merges in that order. Day 7696 has **12 overlapping
+fragments**, and ObsPy's overlap resolution depends on the order segments are added.
+
+Eliminated first: partial final-day write (7696 is not last in either run), changed raw input
+(zero files added in 12 h), and float32 rounding.
+
+**Scope is small** — only days assembled from multiple overlapping fragments, a few per station.
+
+**Fix.** Sort `mseed_files` before grouping. One line, deterministic by construction. It changes
+which samples win on overlapping fragments, so it is a processing change and wants its own
+isolated test, not a drive-by edit.
+
+---
+
 ## R-13 · Stations silently skipped by the scratch-quota guard
 
 **Identified** 2026-10-05 · **Status** OPEN, stations captured, need re-running · **Severity**
@@ -360,8 +419,24 @@ genuine absence. Only what survives that is a real decision about excluding stat
 
 ## R-11 · Tasks OOM-killed during packaging, cause NOT established
 
-**Identified** 2026-10-05 · **Status** OPEN, cause unknown · **Severity** high — 182 stations
-failed · **Evaluate after the campaign, do not chase live**
+**Identified** 2026-10-05 · **Status** SOLVED 2026-10-06 — cause found and fix verified ·
+**Severity** was high, 182 stations failed
+
+> **RESOLVED.** Cause: the same unbounded evalresp cache that OOM-killed 76 stations on
+> terravibranium on 2026-09-30, never propagated to BH3. `_RESPONSE_CACHE` is a plain dict at
+> `orchestrator.py:234`, keyed on `nfft` which derives from each file's own sample count, so
+> partial and gap-filled days mint near-but-not-equal entries of 39-79 MB each that are never
+> evicted (349 distinct `nfft` for `G.CRZF`).
+>
+> Verified by isolated before/after on the same three stations: `G.PAF` went from **7,163 MB
+> at 2,902 days to 1,406 MB at 2,894 days** — same work, 5.1x less memory. `G.CRZF` reached
+> MORE days (2,153 vs 1,910) at 1,545 MB against 7,174 MB.
+>
+> Output verified bit-identical on 21 of 24 channels; the 3 that differ are R-15, a separate
+> pre-existing nondeterminism unrelated to the cache.
+>
+> The fix (byte-capped LRU, 512 MB, `WAVENET_RESP_CACHE_MB`) is ported from terravibranium's
+> live script and NOT yet deployed to production.
 
 **Symptom.** 182 tasks of the 2026-10-05 relaunch killed with `OUT_OF_MEMORY`, MaxRSS
 **6.8-7.2 GB against a 7 GB limit**, after 1.5-2.3 h. The slurm wrapper then treated the kill

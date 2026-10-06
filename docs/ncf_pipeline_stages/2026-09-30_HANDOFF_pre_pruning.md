@@ -593,8 +593,11 @@ ssh bluehive3 "bash /scratch/tolugboj_lab/mirror_to_repo.sh"
 | `/tmp/sam_package_one.py.bak_precache`, `.bak_preband`, `.bak_preband2` | Patch history backups |
 | `/tmp/sam_package_driver2.py` | Driver (unchanged this session) |
 | `/RAID6/lab_archive/sam_packaging_run.log` | Campaign log |
-| `/RAID6/lab_archive/packaging_results/` | Per-station results + per-file checkpoints |
-| `/RAID6/lab_archive/wavenet_ncf_packaged_h5/` | NEW — terra mirror destination (§5) |
+| `/RAID6/lab_archive/packaging_results/` | Per-station results (`n_files`/`n_ok`/`n_err`/`h5_bytes`) + per-file `done_files.json` checkpoints |
+| `/RAID6/lab_archive/packaged_v2/` | **The actual SAmericaNoise packaging output** (`OUT_H5` in `sam_package_one.py`) — missing from this table originally; not to be confused with the BH3 mirror destination below, which is a separate directory with separate source data |
+| `/tmp/sam_packaging_status.py` | **The status/progress/ETA tool for this pipeline** — supersedes `project_eta.py` below. Non-blocking, point-in-time report modeled on BH3's `master.py progress` (§10.8): stations complete (clean/errored/timed-out), packaged bytes, daily-file counts, and a rate/ETA derived from a persistent snapshot log (`packaging_results/state/progress_snapshots.jsonl`) across calls, plus a cost-model ETA kept only as a secondary cross-check. See §10.7-10.8. |
+| `/tmp/project_eta.py` | Superseded by `sam_packaging_status.py` (§10.7) — kept for reference only, do not use for a current status check. ETA-only, no state/progress reporting; depends on a static, can-go-stale `/tmp/sam_inventory.json` snapshot and `exec`s `sam_package_one.py` directly to reuse its file-listing logic. See §10.6. |
+| `/RAID6/lab_archive/wavenet_ncf_packaged_h5/` | NEW — terra mirror destination for BH3's campaign (§5), unrelated source data from `packaged_v2/` above despite living in the same parent directory |
 
 ### On BlueHive3 (not in git — deployed campaign)
 
@@ -808,3 +811,360 @@ Items 1-5 in §9 above are still open and unchanged. Add:
 7. **Re-run the three backup mirror scripts** (§5.3) if not already done since this
    addendum — they are one-time snapshots and significant additional packaging has
    landed (664 GB now vs ~510 GB when last mirrored).
+
+### 10.6 Addendum — 2026-10-01 (later): terravibranium had no documented progress/ETA
+tool, and this document's own file table for it was incomplete
+
+A fresh session asked for a terravibranium packaging status report and initially
+conflated `/RAID6/lab_archive/wavenet_ncf_packaged_h5/` (the BH3 mirror destination,
+§5) with SAmericaNoise's own packaging output — an easy mistake because this
+document's §6 "On terravibranium" table never listed the real output directory at
+all. Corrected directly above. **Verified, not assumed**, that the two are unrelated:
+`sam_package_one.py:118` hardcodes `OUT_H5 = "/RAID6/lab_archive/packaged_v2"` as its
+own write target; `G.HDC` (a real SAmericaNoise source station,
+`PrjXX_SAmericaNoise/2_Data/2_RoverDB/G/G-HDC`) is correctly absent from
+`packaged_v2/` because it's still the single largest pending station; and the two
+directories' result-JSON schemas differ (`n_files`/`n_ok`/`h5_bytes` here vs.
+`package_ok`/`download_bytes` on BH3) — no cross-contamination.
+
+**No progress/ETA tool for this pipeline was documented anywhere** (checked every
+doc under `docs/ncf_pipeline_stages/`, the repo's `production/` directory, running
+processes, and crontab on terravibranium — none exists as a maintained, committed
+tool). `campaign_monitor.py` only touches terravibranium as a mail relay; it does not
+report on SAmericaNoise packaging at all.
+
+**Found by inspecting the live code's own file outputs**, not by searching docs:
+`sam_package_driver2.py` writes `packaging_results/*.json` per station;
+`sam_package_one.py` writes `done_files.json` per-file checkpoints and `packaged_v2/*.h5`.
+Grepping `/tmp/*.py` for scripts that *read* `done_files.json` surfaced
+`/tmp/project_eta.py` — written earlier this session for a different stated purpose
+(projecting the all-channel-vs-lowest-band speedup before the band-selection fix was
+deployed, §3.5), but its mechanism — real remaining file counts per station, read from
+live checkpoints, costed by measured per-trace response-removal time — still gives a
+correct live ETA now that band selection is deployed; just read the "ETA lowest-band"
+line as the current estimate, not the "ETA all-channel" comparison line.
+
+**What it does well**: real, checkpoint-grounded remaining-work estimate. Run via
+`/home/tolugboj/miniconda/envs/wavenet/bin/python3 /tmp/project_eta.py` — needs the
+`wavenet` conda env for `obspy`. **What it does NOT do, and never claimed to**: report
+total packaged bytes, stations-complete count, or error counts — i.e. it is an ETA tool
+only, not a full progress/state tool. **Fragility worth knowing**: depends on a static
+`/tmp/sam_inventory.json` snapshot (3 days stale at time of use — acceptable only
+because the source ROVER archive is fixed, not growing) and `exec`s
+`sam_package_one.py` directly to reuse its file-listing/band-selection logic, so it will
+silently drift if that worker script changes without a matching update here.
+
+**Full packaging state at this check** (ground truth, not from any single tool —
+assembled from `du`/`find` on `packaged_v2/` + a scan of `packaging_results/*.json` +
+`project_eta.py`'s remaining-work model, because no one tool currently gives all three):
+- 306 GB packaged on disk (`packaged_v2/`, 885 `.h5` files), cross-checked against the
+  sum of completed stations' own reported `h5_bytes` (288.5 GB) — same order, the gap is
+  filesystem overhead, not a discrepancy.
+- 846/898 target stations complete (94.2%) — 834 clean, 12 with some file-level errors
+  (not yet triaged), 40 workers still active.
+- 52 stations / 157,312 files remaining, concentrated in the largest multi-decade
+  stations by design (footprint-first ordering processes smallest stations first):
+  `G.HDC`, `G.PEL`, `G.FDF`, `G.SPB`, `IU.OTAV`, `G.MPG` (BH+LH, full ~15.9x
+  band-selection speedup) plus several single-band stations that get no speedup.
+- ETA: 31.0h / 1.3 days from `project_eta.py`'s live model; 157,312 files / 3,740
+  files/hr (the §3.4 measured post-fix aggregate rate) ≈ 42h / 1.75 days as a
+  cross-check. Same range — call it **~1.3-1.75 days from 2026-10-01**.
+
+**Open gap, since closed — see §10.7**: no committed, single-command tool gave this whole
+picture at once the way `master.py progress` does for BH3. `project_eta.py` only ever
+did the ETA piece.
+
+### 10.7 `sam_packaging_status.py` — built, tested, deployed to supersede `project_eta.py`
+
+Promoted `project_eta.py`'s mechanism into a proper single-command status tool,
+**`/tmp/sam_packaging_status.py`** on terravibranium (not in git, same convention as
+every other `sam_*` operational script here — see the caveat on `/tmp` volatility
+already noted in §10.6). Run via:
+```
+ssh tolugboj@terravibranium.earth.rochester.edu \
+  "/home/tolugboj/miniconda/envs/wavenet/bin/python3 /tmp/sam_packaging_status.py 40"
+```
+(needs the `wavenet` conda env for obspy/h5py; the trailing `40` is the worker count,
+matching whatever `sam_package_driver2.py` was actually launched with.)
+
+**What it adds over `project_eta.py`** (read-only throughout — never touches
+`packaging_results/`, `packaged_v2/`, or any worker process):
+- **STATE**: stations complete (split clean / file-errored / timed-out, not lumped
+  together), active worker count, packaged bytes both self-reported and measured
+  directly on disk, `sam_inventory.json` staleness.
+- **PROGRESS**: a *live-measured* files/hr rate — two snapshots of real total-files-done
+  (completed stations' `n_ok+n_err`, plus real `done_files.json` length for everything
+  still in flight), `RATE_WINDOW_S` apart (default 120s, 300s used for testing here).
+  This replaces trusting a historical number like the §3.4 "3,740 files/hr" figure, which
+  can go stale as the campaign's remaining-station mix changes.
+- **ETA**: the same real-band-selector cost model as `project_eta.py` (reuses
+  `select_lowest_rate_band()` from the actual deployed worker via `exec`, rather than
+  reimplementing channel-selection logic a second time — removes one drift risk), now
+  cross-checked against the live-measured rate, with an explicit warning printed if the
+  two estimates disagree by more than 2x.
+
+**Bug caught and fixed during testing, before trusting any output**: the first version
+classified a timed-out station as "finished" for rate/ETA purposes because it has a
+`result.json` — but a timeout result carries no `n_ok`/`n_err` fields at all (just a
+timeout flag), so trusting it would silently under-count real checkpointed progress for
+exactly the stations most likely to still have substantial work left. Fixed to use
+`done_files.json`'s real per-file count for any station that isn't genuinely
+clean-or-errored, confirmed by rerunning and comparing output before/after the fix.
+
+**What running it actually found — the 2-day ETA estimated earlier in this document
+(§10.4, and the "~1.3-1.75 days" figure above) does not hold up against direct
+measurement:**
+
+| | value |
+|---|---:|
+| target stations (`sam_inventory.json`, files>0) | 896 |
+| complete, clean | 826 |
+| complete, with file-level errors | 12 |
+| timed out, flagged for retry | 8 |
+| remaining (not started, in flight, or timed out) | 58 |
+| packaged, measured on disk | 327.9 GB |
+| files remaining | 157,928 |
+| **measured live rate** (two independent runs, 120s and 300s windows) | **~504-540 files/hr** |
+| ETA, cost model (per-trace response-removal cost only) | 32.7h (1.4 days) |
+| **ETA, measured-rate model** | **292.6h (12.2 days)** |
+
+The two ETAs disagree by **~9x** — the tool flags this automatically rather than
+reporting either number quietly. Checked `ps` directly for what the 40 live workers are
+actually processing right now: none of the cost model's "largest remaining" stations
+(`G.HDC`, `G.PEL`, etc. — the multi-decade giants) have started yet, because
+footprint-first ordering queues them behind smaller-file-count stations still ahead of
+them. The stations actually running (`WI.MAGL`, `BL.BEB*`, `OV.JUDI`, `XJ.CHAC`, and
+others, several already 20+ hours into a single station) are disproportionately the
+**HH-only networks flagged back in `project_eta.py`'s own original docstring**
+("many pending WI./BL. stations are HH-only at 100 Hz") — stations with no cheaper band
+to fall back to, so band selection buys them nothing, and each file costs the full
+20.25 s/trace HH rate. The cost model's 2-file-per-station header sample likely also
+understates this for any station whose band availability changes over its lifetime
+(explicitly called out as a real possibility in `select_lowest_rate_band()`'s own
+docstring: "band coverage changes over a station's lifetime").
+
+**Not yet confirmed, flagged as a hypothesis rather than asserted as fact**: the above is
+the most plausible explanation for the gap, not a proven root cause — it has not been
+tested by, say, sampling more than 2 files per station or directly timing a currently-
+running HH-only station's real per-file cost. **Treat the measured-rate ETA (~12 days)
+as the trustworthy number for planning purposes until that's done**, not the cost-model
+ETA (~1.4 days), since the measured number is a direct observation and the model number
+rests on an assumption now showing real evidence of failing for the current station mix.
+
+**Superseded**: `/tmp/project_eta.py` — kept on terravibranium for reference, not
+deleted, but `sam_packaging_status.py` should be used instead going forward for anyone
+checking terravibranium's packaging status.
+
+### 10.8 `sam_packaging_status.py` redesigned to match BH3's `master.py progress` model
+(PI direction, 2026-10-01, same day as §10.7)
+
+The §10.7 version above measured its rate by sleeping in-process for 120-300s between two
+snapshots -- it worked, but it's a worse design than the one already proven for BH3:
+**PI pointed at `master.py`'s own `cmd_progress`** (same file, `production/master.py:454`)
+as the model to follow instead. That command is a non-blocking, point-in-time report: it
+appends one snapshot (`t`, files/days done, packaged bytes) to a persistent log on every
+call, and computes rate/ETA from the delta against the *previous call's* snapshot -- the
+first call ever has no rate yet (documented, expected), and accuracy improves the more the
+tool is actually used, rather than depending on an arbitrary in-script wait.
+
+**Rebuilt to match this exactly**: `sam_packaging_status.py` now appends to
+`/RAID6/lab_archive/packaging_results/state/progress_snapshots.jsonl` (mirroring BH3's
+`<root>/state/progress_snapshots.jsonl`) on every invocation, reports "no prior snapshot
+yet" on a first call or after a long gap, and derives `rate = d_files / dt * 3600` from
+consecutive snapshots otherwise -- same formula shape as `master.py`'s
+`rate_days_per_hr`. Output format also now mirrors `master.py`'s progress bar + indented
+section style (`[####----] N/M stations reported (X%)`) rather than the three-heading
+layout from §10.7.
+
+The §10.7 cost-model ETA is kept, but now explicitly as a secondary cross-check line
+underneath the snapshot-derived rate, not a co-equal estimate -- consistent with what
+§10.7's own findings already showed (the cost model is the one that was wrong, 9x off).
+
+**Tested**: first call after redeploy correctly showed "no prior snapshot yet" and wrote
+the first snapshot; same ground-truth numbers as §10.7's table (846/896 stations
+reported, 328.0 GB packaged, 157,886 files remaining by the inventory count / 157,876 by
+the live disk scan — both estimates of "files remaining" agree to within 0.01%, well
+under the tool's own 2% staleness-warning threshold, so `sam_inventory.json`'s 70h age is
+confirmed not to be causing a material error here). A second call later the same session, after enough real wall-clock time had passed doing
+this documentation work (~2 min, 14 files), gave the first real cross-call rate: **556
+files/hr -> ETA ~283.7h (11.8 days)** — consistent with §10.7's blocking-sleep
+measurements (~504-540 files/hr, ~12.2 days), confirming the redesign measures the same
+real thing the old mechanism did, just without blocking. The two "files remaining"
+cross-checks (inventory-based 157,872 vs. live-disk-scan 157,861) also still agree to
+within 0.01%, so `sam_inventory.json`'s staleness remains a non-issue in practice so far.
+
+Usage is unchanged from §10.7's command; `n_workers` still defaults to 40 and should be
+passed explicitly if the driver is ever relaunched with a different worker count.
+
+### 10.9 Addendum — 2026-10-01: PI asked whether HH-only stations should be scheduled
+last; testing this also corrects the ETA guidance in §10.7-10.8
+
+**Premise tested against real data, not assumed**: classified all 825 completed stations
+by the band actually present in their output `.h5` (ground truth, not inferred from a
+2-file sample) and computed real `elapsed_s/n_ok`. Confirmed strongly:
+
+| band | n | median s/file | mean s/file | median file-count |
+|---|---:|---:|---:|---:|
+| LH | 34 | 0.38 | 0.41 | 515 |
+| BH | 467 | 12.63 | 17.55 | 202 |
+| HH | 324 | 30.62 | 51.37 | 173 |
+
+**The real finding is sharper than "HH is slow"**: file count is *inversely* correlated
+with per-file cost here — HH stations (most expensive per file) have the *smallest*
+median file count, LH stations (cheapest per file) have the *largest* (~3x HH's). The
+driver's "footprint-first" ordering sorts ascending by raw file count, which was always
+intended as a proxy for processing cost — for this archive, that proxy is backwards: it
+systematically runs the most expensive-per-file stations first and defers the cheapest to
+last.
+
+**Tested the fix by simulation, not by touching the live queue**: per "verify before
+scaling," did not reorder the running campaign to test this. Instead ran an offline
+greedy 40-worker list-scheduling simulation on the real remaining 70-job set (file counts
+from `real_files()`, band from a header read + the real `select_lowest_rate_band()`, cost
+from the table above):
+
+| | |
+|---|---:|
+| remaining jobs | 70 |
+| HH total projected cost | 568.1h (83.0%) |
+| BH total projected cost | 110.1h (16.1%) |
+| LH total projected cost | 6.4h (0.9%) |
+| makespan, current order (ascending file count) | 38.4h |
+| makespan, descending-cost order (LPT) | 37.5h |
+
+**Reordering is a minor lever here, not the fix**: only ~1h of a ~38h total. With HH
+alone at 83% of remaining compute-hours across 44 stations and 40 workers, there isn't
+enough slack left for sequencing to exploit — the floor is set by the intrinsic volume of
+HH work, which no reordering removes. The PI's premise (HH is the bottleneck) is
+correct; the specific fix (reorder so HH runs last) would not meaningfully change total
+completion time, because practically all of what's left over the next ~38h is HH's
+cost, in almost any order.
+
+**This also corrects §10.7-10.8's ETA guidance**: the ~292h (12.2 days) measured-rate ETA
+reported there should **not** be trusted as the better number after all. It reflects a
+transient, non-representative snapshot — whichever small-but-expensive (mostly HH)
+stations happen to be running right now — extrapolated across the entire remaining file
+count. That's optimistic for the currently-running mix but pessimistic overall, because
+the large, nearly-free LH giants (`G.HDC` etc.) haven't started yet and will raise the
+aggregate files/hr substantially once they do. The simulation above (~37-38h, using
+empirically-measured real per-band costs rather than the old theoretical per-trace
+table) is now the better estimate — reassuringly close to the original cost-model's
+32.7h, which earlier looked wrong only because it was being compared against a biased
+measured-rate snapshot, not because the per-trace cost assumptions were actually bad.
+**Re-run `sam_packaging_status.py` again in a few hours and check whether the
+snapshot-derived rate trends upward** (as LH giants start contributing) — that would
+confirm this reasoning directly rather than leaving it as an inference.
+
+**Recommendation, not yet actioned — needs PI sign-off before touching
+`sam_package_driver2.py`**: reordering won't shorten total completion time meaningfully,
+but a cost-based (not file-count-based) ascending sort could still be worth it for a
+different reason this project already cares about — getting the cheap LH/BH stations
+done and mirrored early rather than interleaved with HH stations, which makes the
+"stations reported" progress curve and the backup-mirror pipeline (§5) look and behave
+better even though it barely changes the ~38h floor. Not implemented; flagging for a
+decision.
+
+**PI pushback (2026-10-01, same day), correctly caught an error in the above**: the
+comparison tested was current-order vs. **descending**-cost order (LPT, the
+makespan-minimizing answer) — not the PI's actual proposal, **ascending**-cost order
+(SPT: cheapest stations first, HH deferred to the tail), which targets a different,
+here more relevant objective: maximizing files packaged early rather than minimizing the
+single last job's finish time. Re-simulated correctly, tracking cumulative **files**
+completed over time (not just station-level makespan) under all three orderings:
+
+| | makespan | 50% files | 75% | 90% | 95% | 99% |
+|---|---:|---:|---:|---:|---:|---:|
+| current (ascending file count) | 38.4h | 15.5h | 27.4h | 33.5h | 35.5h | 38.4h |
+| **SPT** (PI proposal: ascending cost, HH last) | 39.0h | 14.9h | 28.1h | 34.4h | 36.3h | 39.0h |
+| LPT (descending cost) | 37.5h | 14.9h | 27.4h | 33.4h | 34.9h | 37.5h |
+
+**PI's reasoning is directionally correct and textbook-sound** (SPT is the
+provably-optimal algorithm for minimizing mean flow time / maximizing area under the
+files-completed-vs-time curve) — confirmed by the 50% milestone (14.9h vs. 15.5h).
+**But the measured effect size for the ACTUAL remaining job set is small**: every
+milestone across all three orderings falls within ~0.6-1.5h of each other, and SPT is
+not even uniformly best (LPT edges it out at 90%/95%). Root cause: SPT's advantage
+requires queue depth (many more jobs than workers) to express itself — with only **70
+jobs left across 40 workers** (~1.75 jobs/worker), almost every job gets dispatched to a
+free worker near t=0 regardless of order, leaving little room for sequencing to matter.
+**This principle would have produced a much larger, clearly visible effect if applied
+near the start of the campaign**, when hundreds of stations were queued many-deep per
+worker — that is exactly the regime where SPT's steep-ramp-then-long-thin-tail shape
+shows up. Applied now, at this late stage, the real benefit is on the order of an hour,
+smaller still once accounting for the fact that most of the 40 workers are already
+mid-station and can't be reassigned without losing checkpointed progress. **Worth
+recording for any future campaign's initial ordering choice** (sort by estimated cost
+ascending from the start, not raw file count) rather than as a fix for this one's tail
+end.
+
+**Confirmed decisively by re-running the simulation over the FULL campaign** (895 jobs —
+real measured `elapsed_s`/`n_ok` for the 826 already-completed stations, modeled for the
+rest — across 40 workers, ~22 jobs/worker, the deep-queue regime SPT actually needs):
+
+| | makespan | 50% files | 75% | 90% | 95% | 99% |
+|---|---:|---:|---:|---:|---:|---:|
+| current (ascending file count, what actually ran) | 144.8h (6.0d) | 29.1h | 36.9h | 97.6h | 122.6h | 136.7h |
+| SPT (ascending cost, from campaign start) | 147.8h (6.2d) | **13.0h** | **26.2h** | 98.1h | 123.5h | 137.5h |
+
+This is a clean, decisive confirmation: SPT gets **50% of all 453,298 files done in 13.0h
+vs. 29.1h** (>2x faster to the halfway point) and 75% in 26.2h vs. 36.9h, while the tail
+(90/95/99%) and final makespan are essentially unchanged (within ~1-3h out of ~145h,
+~2%). The earlier 70-job test understated this because it was too shallow a queue
+(~1.75 jobs/worker) for SPT's advantage to express itself — the full-campaign queue
+(~22 jobs/worker) is the right regime to test it in, and there it's unambiguous.
+
+**Conclusion for any future campaign on this pipeline (and worth checking whether it
+applies to BH3's orchestrator too, not verified there)**: sort the initial station queue
+by estimated total cost ascending (file count x per-band empirical cost from the table
+above), not raw file count, from the very start. Gets the bulk of the campaign's output
+available far sooner for a negligible (~2%) cost to total makespan. Not retroactively
+applicable to the current terravibranium run at this late stage (only 70 jobs left, see
+above), but should be the default for the next campaign setup — flagging for PI decision
+on whether to change `sam_package_driver2.py`'s sort key for next time.
+
+### 10.10 Memory/swap health check, 2026-10-01 — currently healthy, one real risk
+identified and NOT yet acted on
+
+PI asked for memory-health strategies given the §3.1 OOM history. Checked ground truth
+before proposing anything (not from memory of the old incident):
+
+- System overall: 251G total, 72G used, 175G available — healthy, comfortable headroom.
+- Swap: 4.0G total, **1.4G in use** (had been fully drained to 0 at the time §3.6 was
+  written, 2026-09-30 — crept back up since; not yet investigated further, likely benign
+  residual swapped-out pages rather than active pressure, but worth re-checking if it
+  keeps climbing).
+- `WAVENET_RESP_CACHE_MB=512` confirmed live in a running worker's actual environment —
+  the §3.2 bounded-cache fix is correctly deployed, not a regression risk here.
+- **A real, separate, still-unbounded memory source identified**: per-worker RSS reaching
+  6.7 GB (`OV.LAFE`) and several more at 3-5 GB, none of it from the (bounded, 512MB-cap)
+  response cache — this is raw trace data, merge/decimate buffers, and HDF5 write buffers
+  for large multi-component files, which scales with file duration/sample rate and has no
+  cap today.
+- **A concrete instance of the risk, observed live**: six of the seven largest-RSS workers
+  at check time were `BL.BEB*` — near-identical-profile HH stations from the same
+  network, dispatched concurrently. This is the current file-count-ascending ordering
+  clustering similar-footprint stations adjacent in the queue (same mechanism discussed
+  in §10.9's SPT analysis), which is exactly the pattern that caused the original 76-
+  station OOM: several large-footprint stations peaking in memory at the same time.
+
+**PI decision: no action taken now** — memory is currently healthy, this is a live risk
+to watch, not an active incident. **Strategies proposed, not implemented, for whoever
+picks this up if it recurs** (ranked):
+1. **Per-worker `RLIMIT_AS` memory ceiling** (e.g. 10-12GB) on each `sam_package_one.py`
+   subprocess, via `preexec_fn`/`resource.setrlimit` in the driver — converts an
+   uncontrolled system-wide OOM-kill risk into a clean, checkpoint-safe single-worker
+   kill-and-retry, the same safety argument already used for the existing station
+   timeout. This is the only option that actually bounds the risk rather than watching
+   for it.
+2. **Declustering in the scheduler** — spread large-footprint stations out in the queue
+   instead of letting similar stations (hence similar memory profiles) land adjacent and
+   get dispatched together.
+3. **A lightweight memory monitor** extending `sam_packaging_status.py`'s existing
+   snapshot-log pattern: track swap trend over calls, flag any single worker above a
+   threshold (e.g. 8GB RSS).
+4. **Modestly increase swap** (4GB is thin against individual workers already reaching
+   6-7GB) — pure insurance, not a fix, buys time for the kernel to degrade gracefully
+   instead of invoking the OOM killer; pair with #1, don't substitute for it.
+
+Not committed to the repo (none of this was implemented) — purely a documented
+assessment for next time this comes up.
