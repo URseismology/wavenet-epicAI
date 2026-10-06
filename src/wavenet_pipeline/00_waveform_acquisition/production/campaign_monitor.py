@@ -33,7 +33,15 @@ PROVISIONING and SHARD sections (PI, 2026-09-30) added after the first report la
 import json, os, re, subprocess, sys, time
 
 DEFAULT_ROOT = "/scratch/tolugboj_lab/wavenet_ncf_production_v2"
-FRAMEWORK = "/scratch/tolugboj_lab/wavenet_ncf_framework/production/master.py"
+# Resolve master.py through the stable CURRENT symlink, never a physical tree. The literal
+# path here used to be `.../wavenet_ncf_framework/production/master.py`, which the 2026-10-05
+# consolidation archived -- so the monitor would have reported on the campaign by shelling
+# out to a master.py that no longer existed. Same failure shape as the incident it is
+# monitoring for: a path baked once, pointing at a tree that moved underneath it.
+_CANONICAL = "/scratch/tolugboj_lab/wavenet_ncf/code/CURRENT/production/master.py"
+_LEGACY = "/scratch/tolugboj_lab/wavenet_ncf_framework/production/master.py"
+FRAMEWORK = os.environ.get("WAVENET_MASTER") or (
+    _CANONICAL if os.path.exists(_CANONICAL) else _LEGACY)
 STATE_DIR = os.path.expanduser("~/.wavenet_monitor")
 SCRATCH_PCT_ALERT = float(os.environ.get("MONITOR_SCRATCH_PCT_ALERT", "90.0"))
 HOME_PCT_ALERT = float(os.environ.get("MONITOR_HOME_PCT_ALERT", "95.0"))

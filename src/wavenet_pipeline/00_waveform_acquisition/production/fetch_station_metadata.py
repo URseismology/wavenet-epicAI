@@ -309,6 +309,9 @@ def main():
                          "the per-task cost here is conda activation (tens of seconds), not "
                          "the ~2s query, so one station per array task spends almost all of "
                          "its wall time on overhead")
+    ap.add_argument("--force", action="store_true",
+                    help="re-fetch even when a response already exists (REPAIR mode); "
+                         "the default skip is for RESUMING a partly-finished run")
     ap.add_argument("--report", action="store_true")
     args = ap.parse_args()
     if args.report:
@@ -323,8 +326,15 @@ def main():
         row = manifest.iloc[idx]
         # Idempotent: a station already fetched successfully is not re-queried, so this is
         # safe to re-run over a range that partly completed.
+        #
+        # --force defeats that, and exists because the guard made a REPAIR impossible. The
+        # 2026-10-05 re-fetch -- whose entire purpose was to replace narrow, first-provider
+        # responses with merged complete ones -- skipped 790 of 1,001 stations with "already
+        # had a response", i.e. it did nothing for exactly the stations that needed fixing.
+        # Resumability and repair want opposite behaviour from the same check, so the caller
+        # must say which one it means.
         p = os.path.join(md, f"{row['network']}.{row['station']}.json")
-        if os.path.exists(p):
+        if os.path.exists(p) and not args.force:
             try:
                 if json.load(open(p)).get("ok"):
                     n_skip += 1

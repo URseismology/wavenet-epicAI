@@ -127,7 +127,7 @@ recovered **51%** of previously-zero-byte stations, with 40/40 logging pinning.
 
 ## R-3 · Incomplete responses → channels packaged in raw counts
 
-**Identified** 2026-10-05 · **Status** FIXED in code (this commit), data repair OUTSTANDING
+**Identified** 2026-10-05 · **Status** FIXED in code; RESPONSES NOW IN PLACE; data repair OUTSTANDING (STEP 4 only)
 · **Severity** high — silently mixes displacement and raw counts
 
 **Symptom.** A shard contains some channels with `units='m'` and others with `units='counts'`.
@@ -175,8 +175,32 @@ print([ (json.load(open(f))['network']+'.'+json.load(open(f))['station'])
         if (json.load(open(f)).get('response_failures') or {}) ])"
 ```
 
-**Repair.** STEP 1 then STEP 4 — **NO re-download.** Raw SEED is retained; re-fetch the
-metadata and re-package.
+**STEP 1 IS DONE (2026-10-05).** A forced re-fetch of all 1,999 stations completed on legacy
+BlueHive's `debug` partition:
+
+| | |
+|---|---|
+| Re-fetched with the fixed fetcher | **1,612** (81%) |
+| Got a response | 1,612 |
+| **With COMPLETE channel coverage** | **1,609 — 100% of those with a response** |
+
+Responses live in `<root>/station_metadata/` as `<NET>.<STA>.xml` plus a `<NET>.<STA>.json`
+status record carrying `channels_wanted` / `channels_missing` / `coverage_complete`.
+
+The `--force` flag had to be added first: the fetcher's resumability guard skipped any station
+that already had a response, so the first re-fetch did nothing for exactly the 1,641 stations
+holding the narrow XMLs it was launched to replace (790 of 1,001 tasks logged "already had a
+response"). A second defect compounded it — `WAVENET_IDX_OFFSET` was applied in BOTH the slurm
+wrapper and the Python, so one whole chunk asked for stations 2002-2999, found none, and
+exited reporting "0 fetched, 0 already had a response". Same defect class as everything else
+here: one value computed in two places with nothing checking they agree.
+
+**Remaining repair.** STEP 4 ONLY — **NO re-download.** Raw SEED is retained and the responses
+are now correct, so re-packaging alone fixes these stations.
+
+**Live campaign:** `orchestrator.py:681` reads `station_metadata/` at the START of packaging,
+so any task reaching that point after the re-fetch picks the new responses up automatically.
+Stations packaged BEFORE it have the old response baked into the shard and still need STEP 4.
 
 ---
 
@@ -253,6 +277,40 @@ script mtimes, and not at all for a shard whose packaging spanned a code edit.
 **Fix (proposed).** The orchestrator should record its own resolved path and md5 into every
 result JSON and as an HDF5 attribute. This is a **backstop**, not the primary control — the
 directory structure should make the wrong-code mistake impossible first (see `SCRATCH_LAYOUT.md`).
+
+---
+
+## R-12 · 240 ROUTED stations return no response from any provider
+
+**Identified** 2026-10-05 · **Status** OPEN, not yet investigated · **Severity** medium
+
+After the forced re-fetch of all 1,999 stations, **387 have no obtainable response**:
+
+| Discovery status | Count | Reading |
+|---|---|---|
+| `NO_WANTED_BAND` | 145 | no channel in our bands — nothing to get, **not a defect** |
+| `NO_DATA_AT_SERVICE` | 2 | same |
+| **`ROUTED`** | **240** | **the real gap** — the federator says data is there, no provider returns a response |
+
+The 240 are the only ones worth pursuing. The shape is familiar from R-2: "routed but nothing
+comes back" turned out then to be our own routing, not the archive. Known contributors already
+observed in the error signatures, none yet quantified for this set:
+
+* `ValueError: The FDSN service shortcut 'nan' is unknown` — a NaN provider field is being
+  formatted into a client constructor (147 manifest rows have no provider and no URL).
+* `FDSNException: No FDSN services could be discovered at 'http...'` — an endpoint that is not
+  a valid FDSN root.
+* `ValueError: The current client does not have a station service` — an endpoint serving
+  waveforms but not metadata (obspy's `USP` entry is a known case).
+
+**Do not conclude these stations lack metadata until those three are separated out.** By
+network type the overall response rate was temporary 84% / permanent 75%, so there is no
+evidence operators withhold responses — the PI's hypothesis held everywhere it could be
+tested (1,609 of 1,612 complete).
+
+**Repair.** A bounded investigation on `debug`: take a sample of the 240, record which
+endpoint each was tried against and why it failed, and separate our routing errors from
+genuine absence. Only what survives that is a real decision about excluding stations.
 
 ---
 
