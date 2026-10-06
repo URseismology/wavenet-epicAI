@@ -31,7 +31,7 @@ import re
 import sys
 import time
 import json
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 
 import h5py
 import numpy as np
@@ -231,7 +231,24 @@ def canonical_sampling_rate(sr, rel_tol=1e-4):
 # recomputed every day. Confirmed bit-exact (max abs diff 0.0) against tr.remove_response()
 # on real production data from both this campaign (PS.TGY, II.RAYN) and the separate
 # SAmericaNoise packaging pipeline before being ported in.
-_RESPONSE_CACHE = {}
+_RESPONSE_CACHE = OrderedDict()
+_CACHE_BYTES = 0
+# Byte-capped LRU. Ported from terravibranium's live sam_package_one.py after the same
+# unbounded cache OOM-killed 76 stations there (2026-09-30) and 182 here (R-11): the key
+# includes nfft, which derives from each file's own sample count, so partial and gap-filled
+# days mint near-but-not-equal entries of 39-79 MB that were never evicted -- 349 distinct
+# nfft values for G.CRZF alone.
+#
+# Verified by isolated before/after on identical stations and data: G.PAF went from 7,163 MB
+# at 2,902 days to 1,406 MB at 2,894 days -- same work, 5.1x less memory -- and output was
+# bit-identical on 21 of 24 channels (the 3 that differ are R-15, a pre-existing
+# fragmented-day nondeterminism unrelated to this cache).
+#
+# Eviction is safe by construction: this memoizes a deterministic function of
+# (channel, response epoch, nfft, output, water_level), so a miss costs a recomputation and
+# nothing else. The hot full-day nfft stays resident under LRU; only the long tail of one-off
+# partial days is recomputed.
+_CACHE_MAX_BYTES = int(os.environ.get("WAVENET_RESP_CACHE_MB", "512")) * 2**20
 
 
 def cached_remove_response(tr, inv, output="DISP", water_level=60, pre_filt=None,
@@ -262,6 +279,7 @@ def cached_remove_response(tr, inv, output="DISP", water_level=60, pre_filt=None
                           time=tr.stats.starttime)
     chan = sta_inv[0][0][0]
     key = (tr.id, str(chan.start_date), str(chan.end_date), nfft, output, water_level)
+    global _CACHE_BYTES
     cached = _RESPONSE_CACHE.get(key)
     if cached is None:
         freq_response, freqs = response.get_evalresp_response(tr.stats.delta, nfft,
@@ -273,6 +291,14 @@ def cached_remove_response(tr, inv, output="DISP", water_level=60, pre_filt=None
             invert_spectrum(freq_response, water_level)
         cached = (freq_response, freqs)
         _RESPONSE_CACHE[key] = cached
+        _CACHE_BYTES += freq_response.nbytes + freqs.nbytes
+        # Evict least-recently-used until back under the cap. Always keep the entry just
+        # inserted (len > 1), so a single oversized response still works.
+        while _CACHE_BYTES > _CACHE_MAX_BYTES and len(_RESPONSE_CACHE) > 1:
+            _, (e_fr, e_fq) = _RESPONSE_CACHE.popitem(last=False)
+            _CACHE_BYTES -= e_fr.nbytes + e_fq.nbytes
+    else:
+        _RESPONSE_CACHE.move_to_end(key)
     freq_response, freqs = cached
 
     if pre_filt:
