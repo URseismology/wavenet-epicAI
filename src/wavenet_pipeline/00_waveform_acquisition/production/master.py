@@ -348,6 +348,7 @@ def cmd_init(args):
         path = os.path.join(args.root, name)
         with open(path, "w") as f:
             f.write(template.format(root=args.root, here=CODE_ROOT,
+                                    quota_stop_pct=os.environ.get('WAVENET_QUOTA_STOP_PCT', '97'),
                                      offsets_dir=TIMING_OFFSETS_DEFAULT,
                                      discovery_manifest=args.discovery_manifest or ""))
         print(f"[master] wrote {path}")
@@ -828,6 +829,21 @@ export WAVENET_PROD_ROOT={root}
 # so anything set in the submitting shell never reaches the job. Relying on
 # inheritance would mean the discovery pinning silently switches itself off.
 export WAVENET_DISCOVERY_MANIFEST={discovery_manifest}
+
+# Scratch guard threshold. The guard refuses to start a station rather than risk a
+# half-written shard, which is correct -- but its default is a PERCENTAGE calibrated when
+# this filesystem was 10x smaller. orchestrator.py's own comment still reads "10 TB soft /
+# 11 TB hard", where 5% was ~550 GB and refusing was prudent. The real quota is 102/104 TB,
+# so the same 5% is 4.9 TB, and the guard began refusing stations that had ample room.
+#
+# It cost 24 stations on 2026-10-05, and cost them INVISIBLY: a refused task writes no result
+# JSON, so the station leaves no record it was ever attempted (R-13). 97% stops with 3,133 GB
+# free -- about 23x the largest single station (MN.BNI, 135 GB) -- which is a real floor
+# rather than a ratio that drifts every time the filesystem grows.
+#
+# The proper fix is an ABSOLUTE free-space floor instead of a percentage; this is the
+# configuration-level mitigation (principle 15) until that is done.
+export WAVENET_QUOTA_STOP_PCT={quota_stop_pct}
 for attempt in 1 2 3 4; do
     python3 {here}/orchestrator.py $SLURM_ARRAY_TASK_ID && exit 0
     echo "[orchestrator.slurm] attempt $attempt failed (transient import race), retrying..." >&2
