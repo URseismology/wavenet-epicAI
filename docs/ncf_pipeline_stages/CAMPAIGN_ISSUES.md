@@ -282,7 +282,26 @@ directory structure should make the wrong-code mistake impossible first (see `SC
 
 ## R-14 · Daily windows are rate-limited at scale — R-1 BLOCKED
 
-**Identified** 2026-10-06 · **Status** OPEN, blocking the R-1 repair · **Severity** high
+**Identified** 2026-10-06 · **Status** DIAGNOSED 2026-10-06, compliant config verified ·
+**Severity** was high
+
+> **RESOLVED — and it was never the window.** EarthScope publishes a limit of **5 concurrent
+> connections** (<https://ds.iris.edu/ds/nodes/dmc/services/usage/>). obspy's
+> `MassDownloader` opens **3 per task** by default, so `--array=...%23` was **69 connections**,
+> fourteen times over. The window was fine throughout.
+>
+> | Configuration | Connections | Outcome |
+> |---|---|---|
+> | `%23` x 3 threads | 69 | 20x 503, 19x 429, delivered 0.70x |
+> | `%1` x 3 threads | 3 | 97% of span, 3 errors total |
+> | **`%5` x 1 thread** | **5** | **zero throttling**, ~26 days/min per station |
+>
+> R-1 is therefore VIABLE at ~30 hours for 452 stations, not blocked. Full limits, the
+> `threads_per_client` trap and how to recognise throttling in the data:
+> **`PROVIDER_LIMITS.md`**.
+>
+> Nearly misread as "truncated days are not recoverable", which would have written off ~1.3M
+> station-days on the strength of a self-inflicted configuration error.
 
 **The R-1 validation test FAILED its own pre-committed threshold.** 20 of 20 stations
 finished, 20 of 20 logged `[discovery] pinned`, so the test is valid. Median

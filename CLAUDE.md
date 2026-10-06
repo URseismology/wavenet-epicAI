@@ -397,6 +397,24 @@ short form, with the full reasoning and the incident behind each one in that doc
 14. **A check that cannot fail cleanly will produce false findings.** Validate the
     validator against a known-good case before trusting a failing result.
 
+## Data-provider limits (added 2026-10-06) — read before changing download concurrency
+
+EarthScope publishes **no more than 5 concurrent connections** and **10 connections per
+second**, enforced by the network equipment denying connections via TCP RESET
+(https://ds.iris.edu/ds/nodes/dmc/services/usage/).
+
+**The trap:** obspy's `MassDownloader` opens **`threads_per_client=3`** by default, so the
+provider sees `array concurrency x 3`. An array at `%23` is **69 connections**, fourteen times
+over the limit. On 2026-10-06 that produced 20x HTTP 503 and 19x 429 on a single station and a
+download that delivered 0.70x of what we already held -- very nearly misread as "truncated
+days are not recoverable", which would have written off ~1.3M station-days.
+
+Set `WAVENET_DOWNLOAD_THREADS=1` and cap the array at **5**. Full limits, the measured
+evidence, how to recognise throttling in the data, and a note on not splitting across
+BlueHive/BlueHive3 to evade the cap: `docs/ncf_pipeline_stages/PROVIDER_LIMITS.md`.
+
+---
+
 ## Rules — read before every task
 
 ### Never do these

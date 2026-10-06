@@ -84,6 +84,16 @@ and after launch, confirm it actually took effect **in the data**:
 
 ---
 
+## Provider limits — read before changing concurrency
+
+EarthScope allows **no more than 5 concurrent connections** and 10/sec, enforced by TCP RESET
+(<https://ds.iris.edu/ds/nodes/dmc/services/usage/>). obspy's `MassDownloader` opens **3 per
+task** by default, so the provider sees `array concurrency x 3` — an array at `%23` is 69
+connections, not 23. That cost us a campaign's worth of misdiagnosis on 2026-10-06.
+
+Set `WAVENET_DOWNLOAD_THREADS=1` and cap the array at 5. Full detail, including how to tell
+throttling from a real shortfall: `PROVIDER_LIMITS.md`.
+
 ## Testing policy (PI, 2026-10-05)
 
 Four rules. They exist because production code and data trees stay clean only if nothing
