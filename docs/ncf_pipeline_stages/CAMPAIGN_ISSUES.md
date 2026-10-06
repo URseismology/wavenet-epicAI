@@ -314,6 +314,38 @@ settle it. Until then R-1 stays blocked.
 
 ---
 
+## R-16 · Some stations re-package far slower than others
+
+**Identified** 2026-10-06 · **Status** OPEN, not investigated · **Severity** low — a slow
+station is not a failed station
+
+During the controlled STEP 4 batch, `DK.DBG` packaged ~0.5 days/min (12 of 3,700 days in 25
+minutes) while the R-11 probe packaged `G.PAF` at ~53 days/min. Roughly 100x apart.
+
+**Two candidate explanations, NEITHER verified:**
+
+1. **Per-day cost.** `DK.DBG` carries 15 channels against `G.PAF`'s 9, so each day is simply
+   more work.
+2. **Response-cache thrashing.** The 512 MB LRU cap documents its own tradeoff — "the hot
+   full-day nfft stays resident; only the long tail of one-off partial days is recomputed". A
+   15-channel station with many distinct `nfft` values could be evicting and recomputing
+   constantly. `WAVENET_RESP_CACHE_MB` is tunable if so.
+
+**These are distinguishable by measurement:** thrashing gives a steady slow rate independent
+of station size; per-day cost gives a rate proportional to channel count and sampling rate.
+
+**Deliberately NOT fixed now** (PI, 2026-10-06). Making a production change to chase a slow
+outlier mid-campaign is the behaviour principle 16 exists to prevent — there is an observed
+symptom but no verified diagnosis, and the correct response to that is to log and measure
+later, not to tune. Investigate with a bounded isolated test: two stations of differing
+channel count at several `WAVENET_RESP_CACHE_MB` values, measuring days/min.
+
+**It does not block STEP 4.** Correctness is unaffected: completed stations show zero
+raw-counts channels and preserved day counts, and `YT.WAIS` went from 54 to 125 days because
+days previously REFUSED for lacking a response now package.
+
+---
+
 ## R-15 · Fragmented days merge non-deterministically
 
 **Identified** 2026-10-06 · **Status** OPEN · **Severity** low — a few days per station
