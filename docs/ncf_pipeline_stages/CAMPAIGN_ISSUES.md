@@ -584,6 +584,96 @@ unknown. Until then they are counted as stations but never as a target.
 
 ---
 
+## R-17 · Result JSON reports a different day count than the shard holds
+
+**Identified** 2026-10-08 · **Status** OPEN · **Severity** minor · **Deferred to the
+completion campaign** (PI, 2026-10-08)
+
+`XE.ES31` reports 49 days in its result JSON and carries 47 in `_coverage`. The JSON is a
+summary written by the packaging loop; `_coverage` is the data. They are two counts of the
+same quantity computed in two places, which is the shape of defect this pipeline keeps
+producing (see `docs/PIPELINE_PRINCIPLES.md` §12).
+
+Not yet measured at scale — one station, found while verifying the R-1 test downloads. The
+disagreement is small and in the direction of the JSON over-reporting, so any ratio built on
+JSONs is slightly optimistic.
+
+**This is resolvable** (PI): the shard is authoritative and the JSON is derived, so the fix is
+to write the summary FROM `_coverage` after the shard is closed rather than from the loop's
+own running tally. Until then, every completeness number must come from the HDF5 — which is
+already the standing rule in "How these numbers must be produced" below.
+
+**Repair, during the completion campaign.**
+1. Measure the gap across all shards: JSON `days` vs `len(_coverage)` non-zero, per station.
+2. Make the JSON a read-back of the shard, not a parallel count.
+3. Re-emit JSONs for existing shards from their `_coverage` — no re-download needed.
+
+---
+
+## R-18 · Not every packaged day carries a full 3-component set
+
+**Identified** 2026-10-08 · **Status** OPEN · **Severity** minor · **Deferred to the
+completion campaign** (PI, 2026-10-08) · **May be irreducible**
+
+Measured across 1,049 stations / 1,485 three-component bands / 1,128,622 operating
+channel-days, with horizontal naming collapsed to slots (`1`→H1, `2`→H2, so BH1/BH2/BHZ counts
+as a complete set — see the measurement note below):
+
+| | days | share |
+|---|---:|---:|
+| 3 of 3 slots | 918,828 | 81.41% |
+| 2 of 3 slots | 92,438 | 8.19% |
+| 1 of 3 slots | 117,356 | 10.40% |
+
+**It is not a packaging defect.** The per-station distribution is bimodal — median 0.996,
+mean 0.785:
+
+| fraction of operating days complete | stations | share |
+|---|---:|---:|
+| 100% | 487 | 46.4% |
+| 95–100% | 116 | 11.1% |
+| 80–95% | 92 | 8.8% |
+| 50–80% | 142 | 13.5% |
+| <50% | 212 | 20.2% |
+
+A bug in the packaging loop would impose a roughly constant per-day failure rate on every
+station and would move the median. Instead 487 stations are untouched at 100% and a distinct
+~20% sub-population is chronically incomplete. That is a per-station property, upstream of
+packaging — i.e. what the provider actually held.
+
+**Two unexplained signals, not yet investigated:**
+* The absent slot is most often **Z (56.9%)**, not a horizontal (H1 30.5%, H2 12.6%). That is
+  seismologically backwards and does not fit "the provider is missing a horizontal". It fits a
+  channel dropped at packaging for a RESPONSE reason better than for a data reason — candidate
+  link to **R-12** (240 routed stations with no response) and **R-3**. Untested.
+* **LH is 93.0% complete while BH is 74.2%** across 4× fewer operating days, on the same
+  stations and the same download path. Again points at per-channel availability rather than
+  the packaging loop.
+
+Separately, 533 bands were excluded from the denominator entirely because they never had 3
+slots packaged at all (314 one-slot, 219 two-slot). Those are stations that never had a
+3-component set — a different class from a day losing one, and they must not be folded into
+the same number.
+
+**PI's framing (2026-10-08):** the day-count gap (R-17) is resolvable; this one "may or may
+not be, based on provider availability". Both are reviewed during issue resolution, not now.
+
+### Measurement note — how to get this number wrong
+
+The first attempt grouped channels by band prefix and counted raw channels, giving 86.71%. It
+was wrong in a way worth recording. Horizontals are named `N`/`E` on some instruments and
+`1`/`2` on others, and a station that changed convention between epochs has **five or six**
+channels in one band (BH1, BH2, BHE, BHN, BHZ). No day can carry all of them, so every one of
+that station's days scored as a deficit. Collapse to the three physical SLOTS first. The
+corrected figure is lower (81.41%) because the slot collapse also unions multi-epoch channels
+into one row and widens the operating-day denominator — the first number was not merely
+noisier, it was measuring a different thing.
+
+Measurement script: `comp_completeness.py` (scratch run, 2026-10-08). The rule from
+"How these numbers must be produced" applies: read `_coverage`, never the result JSONs.
+
+---
+
 ## Closed
 
 **I-2 · the window-truncation measurement itself** — see R-1, fixed `9844584`.
