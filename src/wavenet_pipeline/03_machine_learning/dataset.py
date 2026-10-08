@@ -6,6 +6,7 @@ SimDataset (hardcoded to "separation_127.0km") to walk every populated geom_key,
 future HDF5 with additional sep_km values is picked up with zero code changes.
 """
 
+import os
 from collections import namedtuple
 from pathlib import Path
 
@@ -91,28 +92,61 @@ class FTANDispersionDataset(Dataset):
         )
 
 
+def _decode(values) -> list[str]:
+    return [v.decode() if isinstance(v, bytes) else v for v in values]
+
+
 class CachedFTANDataset(Dataset):
     """Indexes into a precomputed cache HDF5 (from build_ml_cache.py) — pure array reads,
-    no SciPy/regridding cost per __getitem__. Intended for Stage C/D training use."""
+    no SciPy/regridding cost per __getitem__. Intended for Stage C/D training use.
+
+    Stage D fix (2026-09-30): the original version reopened the cache file on every
+    __getitem__ and read 4 vlen-string metadata columns per sample, which is why more
+    DataLoader workers barely helped in Stage C (35.8s -> 30.7s/epoch). Now:
+      - metadata columns are read once at __init__ (a few MB for 20k rows);
+      - X/Y are read through ONE persistent h5py handle per process, opened lazily on
+        first access. The handle is keyed by PID and dropped from pickled state, so each
+        DataLoader worker (fork or spawn) opens its own — h5py handles must never be
+        shared across processes.
+    """
 
     def __init__(self, cache_path: Path, indices: np.ndarray | None = None):
         self.cache_path = Path(cache_path)
         with h5py.File(self.cache_path, "r") as f:
             n = f["X"].shape[0]
+            self._sim_key = _decode(f["sim_key"][:])
+            self._geom_key = _decode(f["geom_key"][:])
+            self._family = _decode(f["family"][:])
+            self._sep_km = f["sep_km"][:].astype(np.float64)
         self.indices = np.arange(n) if indices is None else np.asarray(indices)
+        self._h5 = None
+        self._h5_pid = None
+
+    def _file(self) -> h5py.File:
+        pid = os.getpid()
+        if self._h5 is None or self._h5_pid != pid:
+            self._h5 = h5py.File(self.cache_path, "r")
+            self._h5_pid = pid
+        return self._h5
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state["_h5"] = None
+        state["_h5_pid"] = None
+        return state
 
     def __len__(self) -> int:
         return len(self.indices)
 
     def __getitem__(self, idx: int):
         i = int(self.indices[idx])
-        with h5py.File(self.cache_path, "r") as f:
-            x = f["X"][i]
-            y = f["Y"][i]
-            meta = {
-                "sim_key": f["sim_key"][i].decode() if isinstance(f["sim_key"][i], bytes) else f["sim_key"][i],
-                "geom_key": f["geom_key"][i].decode() if isinstance(f["geom_key"][i], bytes) else f["geom_key"][i],
-                "sep_km": float(f["sep_km"][i]),
-                "family": f["family"][i].decode() if isinstance(f["family"][i], bytes) else f["family"][i],
-            }
+        f = self._file()
+        x = f["X"][i]
+        y = f["Y"][i]
+        meta = {
+            "sim_key": self._sim_key[i],
+            "geom_key": self._geom_key[i],
+            "sep_km": float(self._sep_km[i]),
+            "family": self._family[i],
+        }
         return torch.from_numpy(x).unsqueeze(0), torch.from_numpy(y).unsqueeze(0), meta
