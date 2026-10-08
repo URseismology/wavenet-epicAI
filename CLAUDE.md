@@ -189,6 +189,35 @@ Note: The 11 GB CPS HDF5 dataset is NOT in any auto-sync path.
 It lives only in `/volume1/ADAMA-Shared/traindatawavenet/` on repovibranium
 and must be manually rsync'd after each run (see HANDOFF.md §5.5).
 
+### atos (added 2026-10-08 — NAS, PRIMARY archive target for packaged NCF data)
+SSH: `ssh atos` (alias in ~/.ssh/config on axon-1) | Address: 10.17.7.230 | User: `urseismoadmin`
+Hardware: Synology DS1525+ (hostname `dro-mittal`), Linux 5.10. `rsync`, `tar`, `python3`,
+`sha256sum` all present. Passwordless key access, write + delete verified 2026-10-08.
+
+**Use `/volume1` — 42 TB total, 516 GB used, ~42 TB free.** This is the emptiest storage the
+group has and the chosen destination for the consolidated packaged-data archive (~1.7 TB).
+
+> [!WARNING]
+> The four USB shares (`/volumeUSB{1,2,4,5}/usbshare`, 13 TB each) are at **97–100% full**.
+> They are not ours to fill. Everything for this project goes under `/volume1`.
+
+**Reachable from BlueHive3 compute nodes**, not just the login node — verified 2026-10-08 by
+TCP check from an allocated node (`bhd0099`). A direct BH3 → atos transfer needs no relay,
+unlike the raw-SEED move that went BH3 → terravibranium.
+
+**An archive already exists here**: `/volume1/NetBackup/wavenet_archive/packaged_h5_ncf/`
+(1,013 shards, 451 GB, 2026-09-30) plus `wavenet_ncf_v2test/` (474 MB). It is a snapshot of
+the then-current union of verified shards and is now **8 days stale** — it predates STEP 4's
+293 rebuilt stations (+225,144 days), v2's growth to 1,513 shards, R-1, and the entire
+terravibranium/SAmer set. Do not treat it as current.
+
+> [!IMPORTANT]
+> Its `README.md` states that per-file campaign provenance lives in a `MANIFEST.md` "in this
+> directory". **That file does not exist and never did** (verified by `find`, 2026-10-08). So
+> the archive currently records WHICH shards it holds but not WHICH CAMPAIGN produced each —
+> exactly the gap the consolidation work's master index is meant to close. Verify the
+> artifact, not the label (`docs/PIPELINE_PRINCIPLES.md` §7).
+
 ### cerebrum (added 2026-09-04 — role not yet defined)
 SSH: `ssh cerebrum` (alias in ~/.ssh/config on axon-1)
 Address: 10.17.6.17
