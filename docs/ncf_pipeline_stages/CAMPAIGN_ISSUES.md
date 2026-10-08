@@ -674,6 +674,63 @@ Measurement script: `comp_completeness.py` (scratch run, 2026-10-08). The rule f
 
 ---
 
+## R-19 · Channels packaged in COUNTS although the response was already in the shard
+
+**Identified** 2026-10-08 · **Status** OPEN · **Severity** medium · **Cheap to repair, and
+the repair needs no provider**
+
+Measured across all packaged shards:
+
+| | stations | channel-days | clean (`units == m`) | not clean |
+|---|---:|---:|---:|---:|
+| v1 | 1,090 | 2,427,774 | 97.23% | 67,179 |
+| v2 | 1,514 | 3,180,469 | 95.51% | 142,688 |
+
+**v1 is CLEANER than v2.** That contradicts the working assumption that v1 is the buggy
+campaign and v2 the fixed one. It is not a code-version effect: `patch_level` is 3 on every
+shard in both. "counts" tracks RESPONSE AVAILABILITY, and v2 simply reaches more hard
+stations, inheriting more of R-12's routed-but-no-response population.
+
+### The actual defect
+
+Sampling 40 affected stations per campaign and parsing each shard's own
+`_stationxml_raw`:
+
+| | repairable offline | channel absent from XML | in XML, no response stages |
+|---|---:|---:|---:|
+| v1 | 110 ch / **54,723 days** | 6 ch / 5,711 d | 1 ch / 612 d |
+| v2 | 54 ch / **78,626 days** | 59 ch / 33,176 d | 4 ch / 818 d |
+
+**~77% of non-metre channel-days have a usable response embedded in the very file that was
+written in counts.** The packager had what it needed and did not apply it.
+
+This is NOT R-12. R-12 is "no provider holds a response for this channel". This is "we held
+the response and packaged raw counts anyway" — a different mechanism with a much cheaper fix,
+and it was hidden inside R-12's population because both surface as `units != m`.
+
+### Why this matters beyond the unit label
+
+These days are **recoverable offline** — no provider contact, no re-download, no rate limit.
+Any cleanup that DELETES non-metre days as "buggy" would destroy ~133k recoverable
+channel-days across the two campaigns to reclaim roughly 60 GB against 42 TB of free archive
+space. Repair, do not delete (`docs/PIPELINE_PRINCIPLES.md` §5).
+
+### Repair
+
+1. Find the call site where a response is fetched/attached but not applied — grep the
+   packaging path first, per §11, before theorising about provider behaviour.
+2. Offline repair pass: for each non-metre channel, read the shard's embedded inventory,
+   deconvolve, rewrite with `units = m`. Needs a written hypothesis and an isolated
+   verification against a known-good station before it touches anything (§15/§16).
+3. The residual — channels genuinely absent from the embedded XML — is R-12's population and
+   is the only part that needs a re-fetch.
+
+**Likely connected to R-18.** A channel whose response is missing or unapplied is a candidate
+mechanism for the Z-dominant per-day component gaps. Work R-12, R-18 and R-19 together;
+confirming or killing that link resolves them as a set.
+
+---
+
 ## Closed
 
 **I-2 · the window-truncation measurement itself** — see R-1, fixed `9844584`.

@@ -54,38 +54,41 @@ WHAT WAS TRIED (facts established before designing)
 
 DESIGN
 
-  ── Ordering principle ────────────────────────────────────────────────────────────
-  **Archive the originals BEFORE consolidating, not after.**
+  ── Ordering principle (REVISED 2026-10-08 after PI direction + measurement) ──────
 
-  Consolidation is new code performing a merge across every byte we hold, and merges
-  are the single defect class that has most often destroyed data in this pipeline. If
-  the consolidated product is what gets archived, a merge bug has no recoverable ground
-  truth — and the merge is the step most likely to carry the bug.
+  **The archive carries only clean, usable data** (PI). It is a curated product, not a
+  dump. Earlier drafts of this document said "archive the originals first", which
+  conflated two different requirements:
 
-  Storage makes this free: 1.7 TB of originals is 4% of atos's free space. Archiving
-  first makes consolidation REVERSIBLE, which is the only durable way to satisfy "do it
-  in a way that does not introduce bugs" (PI, 2026-10-08). Principles §5 (never package
-  data you cannot correct) and §6 (keep raw until the product is verified).
+    RETAIN   keep a recoverable copy of the inputs until the merged product verifies.
+             Satisfied on scratch/RAID6. Costs nothing, ships nothing.
+    ARCHIVE  write a curated artifact to atos for other people and agents to use.
+             Must be clean.
+
+  Only RETAIN is needed for reversibility. So: **originals are retained in place, never
+  deleted until P7 passes; only the clean consolidated product is archived.** Scratch has
+  553 TB free against our 1.7 TB, so retention is not under pressure.
 
   ── Phase ordering, with the issue work interleaved ───────────────────────────────
 
-    P0  Archive originals, unmodified, to atos.          <- CAN START NOW for v1 + SAmer
     P1  Issue fixes: isolated test per issue.            <- see CAMPAIGN_ISSUES.md
     P2  ONE integration test of the combined fix set.
     P3  ONE deploy + completeness campaign.
     P4  Consistency check on the 101 overlap stations.
+    P4b OFFLINE RESPONSE REPAIR (R-19) -- no provider contact, no re-download.
     P5  Consolidation (test -> verify -> deploy).
     P6  Master index.
-    P7  Verify consolidated against the archived originals.
-    P8  Archive the consolidated product; rebuild JSONs from it.
-    P9  Hand to the delivered-network analysis agent (Stage 5 re-run).
+    P7  Verify consolidated against the RETAINED originals.
+    P8  Archive the clean product to atos; rebuild JSONs from it.
+    P9  Retire the 2026-09-30 atos archive, with a note recording why.
+    P10 Hand to the delivered-network analysis agent (Stage 5 re-run).
 
-  P0 splits by quiescence: **v1 and SAmer are static and can go now; v2 is being
-  written by STEP 4 and R-1 right now**, so archiving it today captures a torn state.
-  v2 goes after R-1 lands.
+  The old P0 (archive originals immediately) is **deleted**. Consolidation stays after
+  the completeness campaign: doing it before means doing it twice, and only the second
+  pass would count.
 
-  Consolidation is deliberately AFTER the completeness campaign (P3). Consolidating
-  first would mean doing it twice, and the second pass would be the one that counts.
+  P9 retires the old archive **after P7 verification passes, not at upload time**.
+  Uploaded is not verified, and the old archive is the only other copy on atos.
 
   ── The merge rule ────────────────────────────────────────────────────────────────
 
@@ -95,29 +98,47 @@ DESIGN
 
   Precedence, per channel-day present in more than one source:
 
-    1. **v2 over v1.** v2 carries the response fix (R-3), the channel audit, and
-       `patch_level` 3. v1 predates them.
+    1. **Quality first, campaign second.** Prefer the copy that passes the admission
+       predicate. Only if both copies are equally clean does campaign order decide.
+       The earlier draft said flatly "v2 over v1" on the assumption that v1 was the
+       pre-fix campaign. **The measurement says otherwise: v1 is 97.23% clean and v2
+       is 95.51%, with `patch_level` 3 on every shard in both.** A blanket v2>v1 rule
+       would systematically prefer the dirtier copy.
     2. **FPS (v1/v2) over SAmer** for the 101 overlapping stations — PI, 2026-10-08 —
        **after** the P4 consistency check, not before it.
     3. A source contributes a day only if NOTHING else holds it.
 
   ── The part that is easy to get wrong ────────────────────────────────────────────
 
-  **v1 days are not automatically safe to merge.** v1 predates the response fix, so an
-  unknown number of its channel-days are in COUNTS rather than metres. The v2 census
-  already shows 169 channels still in counts and 16 in derived displacement; v1 is
-  expected to be worse. A naive union would import those days into the consolidated
-  product and quietly poison a dataset whose whole purpose is cross-correlation.
+  "Buggy" is **not a property of a campaign**. It is a property of individual
+  channel-days, and it totals 209,867 of 5,608,243 — **3.74%** across both campaigns.
+  Treating v1 as the buggy campaign and discarding it would throw away 2.36M clean
+  channel-days to avoid 67k dirty ones.
 
-  So the merge is **qualification-gated, not union-by-default**. A day is admitted only
-  if it passes an explicit predicate — canonical units, sampling rate, `response_ok`,
-  `patch_level` — evaluated per channel-day.
+  **Most of the dirty days are repairable with no provider contact** (R-19). Sampling 40
+  affected stations per campaign and parsing each shard's own embedded
+  `_stationxml_raw`: ~77% of non-metre channel-days have a usable response sitting
+  inside the very file that was written in counts. They are fixable offline.
 
-  **A day that fails is NOT dropped.** It is recorded in the master index as present in
-  source X, excluded, with the reason. Silently omitting it would reproduce exactly the
-  failure §1 exists to prevent: silence is not success. The index must be able to answer
-  "what do we hold that we chose not to use, and why" — that is the input to a later
-  repair, and the only honest basis for a completeness number.
+  So the cleanup is **repair-then-admit, not delete**:
+
+    repairable        -> P4b fixes them offline; they enter the product as clean days.
+    unrepairable      -> response genuinely absent from the embedded XML. This is
+                         R-12's population; excluded from the product, recorded with
+                         the reason, re-fetched later.
+
+  Deleting non-metre days outright would destroy ~133k recoverable channel-days to
+  reclaim roughly 60 GB against 42 TB of free archive space. That trade is strictly
+  bad (§5 — never discard data you can correct).
+
+  The merge remains **qualification-gated, not union-by-default**: a day is admitted
+  only if it passes an explicit predicate (units, sampling rate, response, patch level),
+  evaluated per channel-day AFTER the repair pass.
+
+  **A day that fails is NOT silently dropped.** It is recorded in the master index as
+  present in source X, excluded, with the reason — §1, silence is not success. The index
+  must answer "what do we hold that we chose not to use, and why": that is the input to
+  a later repair and the only honest basis for a completeness number.
 
   ── Artifact 1: the consolidated shard (the product) ──────────────────────────────
 
@@ -185,26 +206,37 @@ HARDWARE TIER LOG
 DECISION
 
   Accepted as canonical going forward:
-  * Archive originals first; consolidate second; verify against the archive third.
+  * **The archive carries only clean, usable data** (PI). Buggy originals are not
+    archived.
+  * **Retain is not archive.** Originals stay in place until P7 verifies; nothing is
+    deleted before that. Scratch has 553 TB free, so retention costs nothing.
+  * **Repair before exclusion.** ~77% of non-metre channel-days are fixable offline from
+    responses already embedded in the shards (R-19). Repair them; do not delete them.
   * One consolidated shard per station, fully self-describing (PI).
   * Master index is redundant and rebuildable, never authoritative (PI).
-  * Merge at channel-day granularity, qualification-gated, with exclusions recorded
-    rather than dropped.
-  * Precedence v2 > v1; FPS > SAmer on the 101 overlaps, after a consistency check.
-  * Destination atos `/volume1` (PI).
+  * Merge at channel-day granularity, qualification-gated, exclusions recorded with
+    reasons rather than dropped.
+  * Precedence is **quality-first**, campaign order only as a tie-break — v1 measured
+    cleaner than v2, so a blanket v2>v1 rule would prefer the dirtier copy.
+    FPS > SAmer on the 101 overlaps, after the P4 consistency check.
+  * Destination atos `/volume1` (PI). The 2026-09-30 archive is retired **after P7
+    passes**, not at upload time, with a note recording why (PI).
   * Consolidation happens AFTER the single issue-fix deploy and completeness campaign.
 
 OPEN QUESTIONS FOR PI
 
-  1. The 2026-09-30 atos archive (1,013 shards, 451 GB) is superseded but not wrong.
-     Keep as a dated snapshot, or retire once the new archive verifies? Retiring frees
-     451 GB we do not currently need — recommend keeping it until P7 passes.
-  2. Qualification predicate: should a day in COUNTS be excluded outright, or admitted
-     with a units flag so a later pass can correct it in place? Excluding is safer;
-     admitting-with-flag preserves more and defers the decision to the analysis agent.
-  3. Does the consolidated product carry the 788 non-manifest SAmer stations in the
-     same directory as the manifest network, or in a parallel one? Stage 5 reports them
-     as two populations either way; this is about on-disk layout for the analysis agent.
+  1. **Does "clean" mean units only, or also sampling rate and QC?** Both campaigns carry
+     channels at 1.00806 Hz rather than 1.0 (60 in v1, 71 in v2) — that is R-7, a
+     different defect from units, and the admission predicate needs to say explicitly
+     whether those days are admitted, repaired, or excluded. Same question for
+     QC-flagged days.
+  2. **Scope of the R-19 offline repair**: run it on everything before consolidation
+     (cleanest product on the first pass, more work up front), or admit repairable days
+     flagged and repair in a later pass (faster to a usable archive)? Recommend the
+     former — the repair needs no provider, so it will never get cheaper than now.
+  3. Does the consolidated product carry the 788 non-manifest SAmer stations in the same
+     directory as the manifest network, or in a parallel one? Stage 5 reports them as
+     two populations either way; this is about on-disk layout for the analysis agent.
 
 APPROVAL LOG
   [ ] Reviewed by PI (tolulope.olugboji@rochester.edu) — date, verdict
