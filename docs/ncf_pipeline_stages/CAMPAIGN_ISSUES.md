@@ -715,15 +715,40 @@ Any cleanup that DELETES non-metre days as "buggy" would destroy ~133k recoverab
 channel-days across the two campaigns to reclaim roughly 60 GB against 42 TB of free archive
 space. Repair, do not delete (`docs/PIPELINE_PRINCIPLES.md` §5).
 
-### Repair
+### Repair — END-TO-END, by PI decision 2026-10-08
 
-1. Find the call site where a response is fetched/attached but not applied — grep the
-   packaging path first, per §11, before theorising about provider behaviour.
-2. Offline repair pass: for each non-metre channel, read the shard's embedded inventory,
-   deconvolve, rewrite with `units = m`. Needs a written hypothesis and an isolated
-   verification against a known-good station before it touches anything (§15/§16).
-3. The residual — channels genuinely absent from the embedded XML — is R-12's population and
-   is the only part that needs a re-fetch.
+Offline deconvolution of the already-packaged counts data was considered and **rejected**:
+that data has already been decimated and filtered, so deconvolving afterwards is not
+operation-order-identical. It would probably be fine in the NCF band, and "probably fine" is
+not a property to put underneath an archive others treat as correct.
+
+**End-to-end does not mean "download everything again."** The decision is about the
+processing chain, and re-packaging from raw SEED already in hand runs the identical correct
+chain. Measured scope:
+
+| campaign | affected sta | bad days | raw SEED location |
+|---|---:|---:|---|
+| V2 | 70 | 152,924 | 60 sta / 144,667 d still on scratch; 9 sta absent |
+| V1 | 51 | 67,179 | 29 sta / 38,596 d on terravibranium; 22 sta absent |
+| union | **93** (28 in both) | | **~89% of days have raw in hand** |
+
+1. Find the call site where a response is present but not applied — grep the packaging path
+   first, per §11, before theorising about provider behaviour.
+2. **Tier 1, 60 v2 stations:** repackage from `scratch_work/` via STEP 4's existing, tested
+   `WAVENET_SKIP_DOWNLOAD=1` path. No new code, no network.
+3. **Tier 2, 29 v1 stations:** pull 359,813 files back from
+   `/RAID6/lab_archive/wavenet_ncf_raw_seed/v1` by tar-stream (the archive move in reverse),
+   then tier 1.
+4. **Tier 3, ~two dozen stations:** raw in neither place — genuine re-download, inside the
+   compliant 5-connection cap.
+5. **Compute the residual first.** A channel-day dirty in v1 but clean in v2 needs no repair;
+   consolidation selects the clean copy. Only days dirty in EVERY campaign holding them are
+   real targets, so the true set is smaller than 93.
+6. Validation gate: the 45 station-channels packaged as counts in one campaign and correct
+   metres in the other (see `stage_6_consolidation_and_archive.md`). Known-good answer, not a
+   plausibility argument (§14).
+7. The channels genuinely absent from the embedded XML are R-12's population and need a
+   response re-fetch regardless.
 
 **Likely connected to R-18.** A channel whose response is missing or unapplied is a candidate
 mechanism for the Z-dominant per-day component gaps. Work R-12, R-18 and R-19 together;

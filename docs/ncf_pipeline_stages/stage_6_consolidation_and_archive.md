@@ -147,40 +147,70 @@ DESIGN
                          R-12's population; excluded from the product, recorded with
                          the reason, re-fetched later.
 
-  ── P4b: the repair needs NO raw SEED, and NO provider ────────────────────────────
+  ── P4b: END-TO-END repair (PI decision, 2026-10-08) ──────────────────────────────
 
-  Worth stating plainly, because it was a reasonable worry (PI, 2026-10-08: whether the
-  repair is blocked by the raw-SEED migration to terravibranium). **It is not.** The
-  repair reads only what is already inside the packaged shard:
+  **Decision: repair R-19 end-to-end — re-download and re-package — not by offline
+  deconvolution of the already-packaged counts data.**
 
-    the waveform      stored in counts, in the shard
-    the response      `_stationxml_raw`, present in 100% of shards in BOTH campaigns
+  The reasoning is the operation-order caveat. The packaged counts data has ALREADY been
+  decimated to 1 Hz and filtered. Deconvolving afterwards is not order-identical to
+  deconvolving before: the operations are linear and commute in principle, but
+  decimation's anti-alias stage and the water-level stabilisation are where that breaks
+  down. For the NCF band (10-40 s) it sits far inside Nyquist and below the 0.4 Hz
+  lowpass, so it probably would have been fine — but "probably fine" is not a property
+  you want underneath an archive that other people will treat as correct.
 
-  So P4b runs on BlueHive3 against `packaged_h5/` alone. The raw-SEED archive on
-  terravibranium is irrelevant to it, and nothing needs re-downloading.
+  **What "end-to-end" costs, measured — and it is mostly NOT a download.** The decision
+  is about the PROCESSING CHAIN, not about the bytes being stale. Re-packaging from raw
+  SEED we already hold runs the identical correct chain (deconvolve -> decimate ->
+  filter), so it satisfies the decision in full without touching a provider.
 
-  **The real caveat is different and must be tested, not argued.** The packaged counts
-  data has ALREADY been decimated to 1 Hz and filtered. Deconvolving afterwards is not
-  operation-order-identical to deconvolving before: the operations are linear and
-  commute in principle, but decimation's anti-alias stage and the water-level
-  stabilisation are where that can break down. For the NCF target band (10-40 s =
-  0.025-0.1 Hz) this sits far inside Nyquist and well below the 0.4 Hz lowpass, so it
-  SHOULD be fine — and "should be" is not a verification.
+    campaign   affected sta   bad days    where the raw SEED is
+    V2                   70    152,924    60 sta / 144,667 d  STILL ON SCRATCH
+                                           9 sta /   8,257 d  absent
+    V1                   51     67,179    29 sta /  38,596 d  terravibranium archive
+                                          22 sta /  28,583 d  absent
+    union                93                (28 stations affected in BOTH)
 
-  **Ground truth exists: 45 channels.** Measured 2026-10-08 across the 1,006 stations
-  present in both campaigns, there are 45 station-channels packaged as COUNTS in one
-  campaign and as properly-deconvolved METRES in the other, with overlapping days:
+  **~89% of affected channel-days have their raw SEED already in hand.** Three tiers,
+  cheapest first:
+
+    1. REPACKAGE-SCRATCH   60 v2 stations. Raw is in `scratch_work/`. This is STEP 4's
+                           existing, already-tested `WAVENET_SKIP_DOWNLOAD=1` path --
+                           no new code and no network for the largest tier.
+    2. REPACKAGE-TERRA     29 v1 stations, 359,813 files in
+                           `/RAID6/lab_archive/wavenet_ncf_raw_seed/v1`. Pull back by
+                           tar-stream (the archive move in reverse), then tier 1.
+    3. RE-DOWNLOAD         stations whose raw is in NEITHER place. The v1-absent (22)
+                           and v2-absent (9) sets overlap heavily, so this is roughly
+                           two dozen stations -- small enough to run inside the
+                           compliant 5-connection cap without disturbing R-1.
+
+  **The true repair set is smaller than 93**, and the merge shrinks it for free: a
+  channel-day that is dirty in v1 but clean in v2 needs no repair at all, because
+  consolidation already selects the clean copy. Only channel-days dirty in EVERY
+  campaign that holds them are real repair targets. Compute that residual BEFORE
+  queueing any download — 28 stations are affected in both campaigns and are the only
+  ones where cross-campaign selection cannot help.
+
+  ── Validation: ground truth exists, 45 channels ──────────────────────────────────
+
+  Across the 1,006 stations present in both campaigns there are 45 station-channels
+  packaged as COUNTS in one campaign and as properly-deconvolved METRES in the other,
+  with overlapping days:
 
     KZ.MAKZ  BHE   v1 counts 1,229 d  |  v2 m 3,364 d
     KZ.MAKZ  BHN   v1 counts   670 d  |  v2 m 2,627 d
     X5.CTSN  BHE   v1 counts   179 d  |  v2 m   769 d
-    S1.AUCAR BHZ   v1 m        307 d  |  v2 counts 1,963 d   (disagreement runs both ways)
+    S1.AUCAR BHZ   v1 m        307 d  |  v2 counts 1,963 d   (it runs both ways)
 
-  Validation gate for P4b: repair the counts copy, compare against the metres copy on
-  the shared days, in the target band. This is a known-good answer to check against
-  rather than a plausibility argument (§14). The comparator must VOID on an empty
-  comparison — a bit-exactness checker on this project once reported BIT-IDENTICAL
-  having compared zero channel-days.
+  These remain the validation gate even though the repair is now end-to-end: re-package
+  the counts copy and compare against the metres copy on the shared days. It is a
+  known-good answer to check against rather than a plausibility argument (§14), and it
+  also independently confirms that the repackage path reproduces the correct chain.
+
+  The comparator must VOID on an empty comparison — a bit-exactness checker on this
+  project once reported BIT-IDENTICAL having compared zero channel-days.
 
   Deleting non-metre days outright would destroy ~133k recoverable channel-days to
   reclaim roughly 60 GB against 42 TB of free archive space. That trade is strictly
