@@ -104,9 +104,29 @@ DESIGN
        pre-fix campaign. **The measurement says otherwise: v1 is 97.23% clean and v2
        is 95.51%, with `patch_level` 3 on every shard in both.** A blanket v2>v1 rule
        would systematically prefer the dirtier copy.
-    2. **FPS (v1/v2) over SAmer** for the 101 overlapping stations — PI, 2026-10-08 —
-       **after** the P4 consistency check, not before it.
+    2. **SAmer contributes its 788 non-manifest stations ONLY** (PI, 2026-10-08: same
+       directory, "no overlaps with original manifest"). The 101 stations SAmer shares
+       with the FPS manifest are dropped from the SAmer side entirely — FPS is
+       authoritative for them. There is therefore NO day-level merge between SAmer and
+       the FPS campaigns, which removes a whole class of merge risk. The P4 consistency
+       check survives only as a cheap diagnostic on those 101, no longer as a gate.
     3. A source contributes a day only if NOTHING else holds it.
+
+  ── Admission predicate (PI, 2026-10-08) ──────────────────────────────────────────
+
+  **Clean means UNITS only.** A channel-day is admitted iff `units == "m"`, after the
+  P4b repair pass.
+
+  Explicitly NOT grounds for exclusion:
+  * **Sampling-rate jitter** (R-7) — 1.00806 Hz vs 1.0, 60 channels in v1 and 71 in v2.
+    PI: "little jitters in sampling rate are okay since they can be corrected easily in
+    post processing." Admitted; the true rate is recorded per channel in the shard so
+    post-processing can correct it.
+  * **QC flags** (R-6) — the per-day sidecar records `dead`, `railed`, `saturated`,
+    `n_segments`, `rms`, `ptp`, `robust_sigma` per channel-day. These are ADVISORY
+    metadata, not a verdict: the day is packaged either way. They travel INTO the
+    consolidated shard so the analysis agent can apply its own standard, and they never
+    gate admission here.
 
   ── The part that is easy to get wrong ────────────────────────────────────────────
 
@@ -126,6 +146,41 @@ DESIGN
     unrepairable      -> response genuinely absent from the embedded XML. This is
                          R-12's population; excluded from the product, recorded with
                          the reason, re-fetched later.
+
+  ── P4b: the repair needs NO raw SEED, and NO provider ────────────────────────────
+
+  Worth stating plainly, because it was a reasonable worry (PI, 2026-10-08: whether the
+  repair is blocked by the raw-SEED migration to terravibranium). **It is not.** The
+  repair reads only what is already inside the packaged shard:
+
+    the waveform      stored in counts, in the shard
+    the response      `_stationxml_raw`, present in 100% of shards in BOTH campaigns
+
+  So P4b runs on BlueHive3 against `packaged_h5/` alone. The raw-SEED archive on
+  terravibranium is irrelevant to it, and nothing needs re-downloading.
+
+  **The real caveat is different and must be tested, not argued.** The packaged counts
+  data has ALREADY been decimated to 1 Hz and filtered. Deconvolving afterwards is not
+  operation-order-identical to deconvolving before: the operations are linear and
+  commute in principle, but decimation's anti-alias stage and the water-level
+  stabilisation are where that can break down. For the NCF target band (10-40 s =
+  0.025-0.1 Hz) this sits far inside Nyquist and well below the 0.4 Hz lowpass, so it
+  SHOULD be fine — and "should be" is not a verification.
+
+  **Ground truth exists: 45 channels.** Measured 2026-10-08 across the 1,006 stations
+  present in both campaigns, there are 45 station-channels packaged as COUNTS in one
+  campaign and as properly-deconvolved METRES in the other, with overlapping days:
+
+    KZ.MAKZ  BHE   v1 counts 1,229 d  |  v2 m 3,364 d
+    KZ.MAKZ  BHN   v1 counts   670 d  |  v2 m 2,627 d
+    X5.CTSN  BHE   v1 counts   179 d  |  v2 m   769 d
+    S1.AUCAR BHZ   v1 m        307 d  |  v2 counts 1,963 d   (disagreement runs both ways)
+
+  Validation gate for P4b: repair the counts copy, compare against the metres copy on
+  the shared days, in the target band. This is a known-good answer to check against
+  rather than a plausibility argument (§14). The comparator must VOID on an empty
+  comparison — a bit-exactness checker on this project once reported BIT-IDENTICAL
+  having compared zero channel-days.
 
   Deleting non-metre days outright would destroy ~133k recoverable channel-days to
   reclaim roughly 60 GB against 42 TB of free archive space. That trade is strictly
@@ -223,20 +278,27 @@ DECISION
     passes**, not at upload time, with a note recording why (PI).
   * Consolidation happens AFTER the single issue-fix deploy and completeness campaign.
 
+  ANSWERED 2026-10-08 (PI)
+
+  1. "Clean" means **units only**. Sampling-rate jitter is accepted and corrected in
+     post-processing. QC flags are advisory metadata and travel with the data.
+  2. The 788 non-manifest SAmer stations go in the **same directory**, with **no
+     overlaps** against the original manifest — the 101 shared stations come from FPS.
+  3. The R-19 repair is **not** blocked by the raw-SEED migration: it needs no raw SEED
+     and no provider, only the shard's own embedded response.
+
 OPEN QUESTIONS FOR PI
 
-  1. **Does "clean" mean units only, or also sampling rate and QC?** Both campaigns carry
-     channels at 1.00806 Hz rather than 1.0 (60 in v1, 71 in v2) — that is R-7, a
-     different defect from units, and the admission predicate needs to say explicitly
-     whether those days are admitted, repaired, or excluded. Same question for
-     QC-flagged days.
-  2. **Scope of the R-19 offline repair**: run it on everything before consolidation
+  1. **Scope of the R-19 offline repair**: run it across everything before consolidation
      (cleanest product on the first pass, more work up front), or admit repairable days
      flagged and repair in a later pass (faster to a usable archive)? Recommend the
      former — the repair needs no provider, so it will never get cheaper than now.
-  3. Does the consolidated product carry the 788 non-manifest SAmer stations in the same
-     directory as the manifest network, or in a parallel one? Stage 5 reports them as
-     two populations either way; this is about on-disk layout for the analysis agent.
+  2. **If P4b's 45-channel validation FAILS** — i.e. deconvolving post-decimation does
+     not reproduce the correctly-processed copy within tolerance in the target band —
+     the ~133k repairable days become re-download work instead, and that DOES depend on
+     raw SEED and provider rate limits. Worth deciding in advance whether that outcome
+     means "re-download them" or "exclude them and record it", because it changes the
+     completeness campaign's scope.
 
 APPROVAL LOG
   [ ] Reviewed by PI (tolulope.olugboji@rochester.edu) — date, verdict
