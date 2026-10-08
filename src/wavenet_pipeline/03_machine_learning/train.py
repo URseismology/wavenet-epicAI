@@ -71,16 +71,20 @@ def _summarize(inter, union, pred_pos, tgt_pos, vel_sum, n):
     }
 
 
-def run_epoch(model, loader, criterion, device, optimizer=None, max_batches=None):
+def run_epoch(model, loader, criterion, device, optimizer=None, max_batches=None,
+              grad_clip=None):
     """One pass over `loader`. Trains if `optimizer` is given, else evaluates under
     no_grad. Returns dataset-level loss/IoU/Dice/velocity_rmse; in eval mode also a
-    `by_family` breakdown (same definitions, restricted to each family's samples)."""
+    `by_family` breakdown (same definitions, restricted to each family's samples).
+    With `grad_clip`, gradients are clipped to that global L2 norm and the epoch's
+    mean pre-clip norm and fraction of clipped steps are reported."""
     train = optimizer is not None
     model.train(train)
     loss_sum = vel_sum = 0.0
     n = 0
     inter = union = pred_pos = tgt_pos = 0.0
     fam = {}  # family -> [inter, union, pred_pos, tgt_pos, vel_sum, n]
+    gnorm_sum, n_clipped, n_steps = 0.0, 0, 0
 
     with torch.set_grad_enabled(train):
         for b, (x, y, keys) in enumerate(loader):
@@ -95,6 +99,11 @@ def run_epoch(model, loader, criterion, device, optimizer=None, max_batches=None
             if train:
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
+                if grad_clip is not None:
+                    gn = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip).item()
+                    gnorm_sum += gn
+                    n_clipped += gn > grad_clip
+                    n_steps += 1
                 optimizer.step()
 
             bs = x.shape[0]
@@ -125,6 +134,9 @@ def run_epoch(model, loader, criterion, device, optimizer=None, max_batches=None
            **_summarize(inter, union, pred_pos, tgt_pos, vel_sum, n)}
     if fam:
         out["by_family"] = {f: _summarize(*fam[f]) for f in sorted(fam)}
+    if n_steps:
+        out["grad_norm_mean"] = gnorm_sum / n_steps
+        out["clip_frac"] = n_clipped / n_steps
     return out
 
 
@@ -158,6 +170,12 @@ def main():
     p.add_argument("--early-stop-patience", type=int, default=20,
                    help="epochs without val-IoU improvement before stopping")
     p.add_argument("--min-lr", type=float, default=1e-6)
+    p.add_argument("--grad-clip", type=float, default=None,
+                   help="clip gradients to this global L2 norm (default: no clipping)")
+    p.add_argument("--smooth-window", type=int, default=1,
+                   help="track the trailing mean of val IoU over this many epochs; it drives "
+                        "best.pt selection, the plateau scheduler and early stopping "
+                        "(1 = raw val IoU)")
     p.add_argument("--max-train-batches", type=int, default=None,
                    help="debug only: cap train batches per epoch")
     p.add_argument("--max-val-batches", type=int, default=None,
@@ -188,7 +206,9 @@ def main():
         optimizer, mode="max", factor=0.5, patience=args.plateau_patience,
         min_lr=args.min_lr)
 
-    start_epoch, best_val_iou, epochs_since_best = 0, -math.inf, 0
+    # best_val_iou holds the *tracked* score: raw val IoU, or its trailing mean over
+    # --smooth-window epochs. iou_hist feeds that mean.
+    start_epoch, best_val_iou, epochs_since_best, iou_hist = 0, -math.inf, 0, []
     last_ckpt = out / "last.pt"
     if args.resume and last_ckpt.exists():
         ck = torch.load(last_ckpt, map_location=device)
@@ -203,7 +223,9 @@ def main():
         if log_path.exists():
             recs = [json.loads(l) for l in log_path.read_text().splitlines() if l.strip()]
             recs = [r for r in recs if r["epoch"] < start_epoch]
-            best_ep = max((r["epoch"] for r in recs if r["val"]["iou"] >= best_val_iou),
+            iou_hist = [r["val"]["iou"] for r in recs]
+            best_ep = max((r["epoch"] for r in recs
+                           if r.get("val_iou_tracked", r["val"]["iou"]) >= best_val_iou),
                           default=start_epoch - 1)
             epochs_since_best = start_epoch - 1 - best_ep
         print(f"resumed from {last_ckpt} at epoch {start_epoch} "
@@ -230,17 +252,19 @@ def main():
         for epoch in range(start_epoch, args.epochs):
             t0 = time.time()
             tr = run_epoch(model, loaders["train"], criterion, device, optimizer,
-                           args.max_train_batches)
+                           args.max_train_batches, grad_clip=args.grad_clip)
             t1 = time.time()
             va = run_epoch(model, loaders["val"], criterion, device, None,
                            args.max_val_batches)
             t2 = time.time()
             lr_now = optimizer.param_groups[0]["lr"]
-            scheduler.step(va["iou"])
+            iou_hist.append(va["iou"])
+            tracked = float(np.mean(iou_hist[-args.smooth_window:]))
+            scheduler.step(tracked)
 
-            improved = va["iou"] > best_val_iou
+            improved = tracked > best_val_iou
             if improved:
-                best_val_iou, epochs_since_best = va["iou"], 0
+                best_val_iou, epochs_since_best = tracked, 0
                 save_checkpoint(out / "best.pt", model, optimizer, scheduler, epoch,
                                 best_val_iou, args)
             else:
@@ -249,14 +273,17 @@ def main():
 
             rec = {"epoch": epoch, "lr": lr_now, "train": tr, "val": va,
                    "train_s": round(t1 - t0, 1), "val_s": round(t2 - t1, 1),
-                   "best_val_iou": best_val_iou, "improved": improved,
-                   "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
+                   "val_iou_tracked": tracked, "best_val_iou": best_val_iou,
+                   "improved": improved, "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
             jlog.write(json.dumps(rec) + "\n"); jlog.flush()
             line = (f"epoch {epoch:3d} lr {lr_now:.2e} | train loss {tr['loss']:.4f} "
                     f"IoU {tr['iou']:.4f} Dice {tr['dice']:.4f} | val loss {va['loss']:.4f} "
                     f"IoU {va['iou']:.4f} Dice {va['dice']:.4f} vRMSE {va['velocity_rmse']:.3f} "
-                    f"pred/tgt {va['pred_pos_frac_over_target']:.2f} | "
-                    f"{t1 - t0:.0f}s+{t2 - t1:.0f}s{' *best' if improved else ''}")
+                    f"pred/tgt {va['pred_pos_frac_over_target']:.2f}"
+                    + (f" IoU-ma{args.smooth_window} {tracked:.4f}" if args.smooth_window > 1 else "")
+                    + (f" | gnorm {tr['grad_norm_mean']:.2f} clip {tr['clip_frac']:.0%}"
+                       if "clip_frac" in tr else "")
+                    + f" | {t1 - t0:.0f}s+{t2 - t1:.0f}s{' *best' if improved else ''}")
             if "by_family" in va:
                 line += " | " + " ".join(
                     f"{f} IoU {m['iou']:.4f} vRMSE {m['velocity_rmse']:.3f}"
@@ -265,11 +292,12 @@ def main():
             print(line, flush=True)
 
             if epochs_since_best >= args.early_stop_patience:
-                print(f"early stop: no val IoU improvement for {epochs_since_best} epochs",
-                      flush=True)
+                print(f"early stop: no tracked val IoU improvement for {epochs_since_best} "
+                      f"epochs", flush=True)
                 break
 
-    print(f"done. best val IoU {best_val_iou:.4f} -> {out / 'best.pt'}", flush=True)
+    print(f"done. best tracked val IoU (window {args.smooth_window}) {best_val_iou:.4f} "
+          f"-> {out / 'best.pt'}", flush=True)
 
 
 if __name__ == "__main__":
