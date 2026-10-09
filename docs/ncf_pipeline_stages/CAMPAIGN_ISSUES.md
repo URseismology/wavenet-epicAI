@@ -726,24 +726,38 @@ not a property to put underneath an archive others treat as correct.
 processing chain, and re-packaging from raw SEED already in hand runs the identical correct
 chain. Measured scope:
 
-| campaign | affected sta | bad days | raw SEED location |
-|---|---:|---:|---|
-| V2 | 70 | 152,924 | 60 sta / 144,667 d still on scratch; 9 sta absent |
-| V1 | 51 | 67,179 | 29 sta / 38,596 d on terravibranium; 22 sta absent |
-| union | **93** (28 in both) | | **~89% of days have raw in hand** |
+Scope, corrected 2026-10-09 (an earlier version checked each campaign's OWN `scratch_work`
+and so wrongly reported 29 v1 stations needing a pull-back from terravibranium; v2 had
+downloaded most of the same stations):
+
+| | count |
+|---|---:|
+| affected stations, either campaign | 93 (v1 51, v2 70, 28 in both) |
+| genuinely needing repair | **82** |
+| dirty channel-days needing repair | 240,050 |
+| **raw already on v2 scratch** | **84 of 93 stations** |
+| needing a true re-download | **8** |
+
+**Cross-campaign selection does not help.** It rescues 4,080 days of 244,130 (1.7%) — the
+same channel is dirty in both campaigns because the same response went unapplied for the same
+reason. Do not plan around that reduction.
+
+**The running jobs are reproducing this defect right now:** 65 of the 93 are in STEP 4's
+parked set and 38 are in R-1's wave lists, all being rebuilt with the unfixed code. That is
+*not* a reason to patch mid-campaign (§15) — STEP 4 is recovering 225,144 days and is nearly
+done, and **R-1's downloads are not wasted** because it keeps raw SEED, which turns each
+station it touches into a cheap local repackage afterwards.
 
 1. Find the call site where a response is present but not applied — grep the packaging path
-   first, per §11, before theorising about provider behaviour.
-2. **Tier 1, 60 v2 stations:** repackage from `scratch_work/` via STEP 4's existing, tested
-   `WAVENET_SKIP_DOWNLOAD=1` path. No new code, no network.
-3. **Tier 2, 29 v1 stations:** pull 359,813 files back from
-   `/RAID6/lab_archive/wavenet_ncf_raw_seed/v1` by tar-stream (the archive move in reverse),
-   then tier 1.
-4. **Tier 3, ~two dozen stations:** raw in neither place — genuine re-download, inside the
-   compliant 5-connection cap.
-5. **Compute the residual first.** A channel-day dirty in v1 but clean in v2 needs no repair;
-   consolidation selects the clean copy. Only days dirty in EVERY campaign holding them are
-   real targets, so the true set is smaller than 93.
+   first, per §11, before theorising about provider behaviour. **This is free and should
+   happen now**, in parallel with the running jobs.
+2. Let STEP 4 and R-1 finish. Do not race them.
+3. **Repackage 84 stations** from raw already in v2 `scratch_work/`, via STEP 4's tested
+   `WAVENET_SKIP_DOWNLOAD=1` path — no new code, no network.
+4. **Re-download 8 stations** R-1 will not touch: 7B.SB03, AF.IFE, BL.CANB, XA.SA29,
+   XI.RIYD, YT.LPLY, Z7.LA01, ZB.MLKN.
+5. Write repaired shards to a **separate tree**, never over v1/v2, so the originals stay
+   retained and a bad repair is undone by deleting one directory.
 6. Validation gate: the 45 station-channels packaged as counts in one campaign and correct
    metres in the other (see `stage_6_consolidation_and_archive.md`). Known-good answer, not a
    plausibility argument (§14).

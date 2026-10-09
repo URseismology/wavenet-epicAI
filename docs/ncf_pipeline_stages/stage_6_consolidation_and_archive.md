@@ -71,11 +71,17 @@ DESIGN
 
   ── Phase ordering, with the issue work interleaved ───────────────────────────────
 
+    P0  Diagnose R-19's call site. Free, no compute, no contention -- START HERE.
+    P0b Let STEP 4 (18 in flight) and R-1 (~8 d) run to completion. Do not race them;
+        R-1's kept raw SEED makes the later repair cheaper.
     P1  Issue fixes: isolated test per issue.            <- see CAMPAIGN_ISSUES.md
-    P2  ONE integration test of the combined fix set.
+        Runs in PARALLEL with P0b -- it is code work, zero compute contention.
+    P2  ONE integration test of the combined fix set, against the 45 ground-truth
+        channels and a known-good station.
     P3  ONE deploy + completeness campaign.
-    P4  Consistency check on the 101 overlap stations.
-    P4b OFFLINE RESPONSE REPAIR (R-19) -- no provider contact, no re-download.
+    P4  Consistency check on the 101 overlap stations (diagnostic only).
+    P4b R-19 END-TO-END REPAIR: 84 stations repackaged from raw already on scratch,
+        8 re-downloaded. Writes to a SEPARATE tree, never over v1/v2.
     P5  Consolidation (test -> verify -> deploy).
     P6  Master index.
     P7  Verify consolidated against the RETAINED originals.
@@ -165,33 +171,57 @@ DESIGN
   SEED we already hold runs the identical correct chain (deconvolve -> decimate ->
   filter), so it satisfies the decision in full without touching a provider.
 
-    campaign   affected sta   bad days    where the raw SEED is
-    V2                   70    152,924    60 sta / 144,667 d  STILL ON SCRATCH
-                                           9 sta /   8,257 d  absent
-    V1                   51     67,179    29 sta /  38,596 d  terravibranium archive
-                                          22 sta /  28,583 d  absent
-    union                93                (28 stations affected in BOTH)
+    affected stations, either campaign              93   (v1 51, v2 70, 28 in both)
+    genuinely needing repair                        82
+    dirty channel-days needing repair          240,050
+    rescued by cross-campaign selection          4,080
 
-  **~89% of affected channel-days have their raw SEED already in hand.** Three tiers,
-  cheapest first:
+  **CORRECTED 2026-10-09.** An earlier revision of this section reported three tiers
+  with 29 v1 stations to be pulled back from terravibranium. That was wrong: the scope
+  script checked each campaign's OWN `scratch_work`, and v1's mseed had been moved to
+  terravibranium, so v1-affected stations looked raw-less. Checking the UNION instead —
+  v2 downloaded most of the same stations — collapses the tiering:
 
-    1. REPACKAGE-SCRATCH   60 v2 stations. Raw is in `scratch_work/`. This is STEP 4's
-                           existing, already-tested `WAVENET_SKIP_DOWNLOAD=1` path --
-                           no new code and no network for the largest tier.
-    2. REPACKAGE-TERRA     29 v1 stations, 359,813 files in
-                           `/RAID6/lab_archive/wavenet_ncf_raw_seed/v1`. Pull back by
-                           tar-stream (the archive move in reverse), then tier 1.
-    3. RE-DOWNLOAD         stations whose raw is in NEITHER place. The v1-absent (22)
-                           and v2-absent (9) sets overlap heavily, so this is roughly
-                           two dozen stations -- small enough to run inside the
-                           compliant 5-connection cap without disturbing R-1.
+    1. REPACKAGE-SCRATCH   **84 of 93 stations.** Raw is already in v2's `scratch_work/`.
+                           STEP 4's existing, tested `WAVENET_SKIP_DOWNLOAD=1` path --
+                           no new code, no network, and this is nearly the whole job.
+    2. REPACKAGE-TERRA     effectively EMPTY. Kept only as a fallback if a station in
+                           tier 1 turns out to have incomplete raw.
+    3. RE-DOWNLOAD         **8 stations**, and R-1 will not touch any of them:
+                           7B.SB03, AF.IFE, BL.CANB, XA.SA29, XI.RIYD, YT.LPLY,
+                           Z7.LA01, ZB.MLKN.
 
-  **The true repair set is smaller than 93**, and the merge shrinks it for free: a
-  channel-day that is dirty in v1 but clean in v2 needs no repair at all, because
-  consolidation already selects the clean copy. Only channel-days dirty in EVERY
-  campaign that holds them are real repair targets. Compute that residual BEFORE
-  queueing any download — 28 stations are affected in both campaigns and are the only
-  ones where cross-campaign selection cannot help.
+  **Cross-campaign selection does NOT shrink the repair set.** An earlier revision hoped
+  it would — a day dirty in v1 but clean in v2 needs no repair. Measured, it rescues
+  4,080 days of 244,130 (1.7%), and 82 of 93 stations still need repair. The reason is
+  structural: the same channel is dirty in BOTH campaigns, because the same response was
+  unapplied for the same reason. Do not plan around this reduction.
+
+  ── Sequencing: the running jobs are reproducing R-19 right now ───────────────────
+
+    R-19 stations also in STEP 4's parked set : 65
+    R-19 stations also in R-1's wave lists    : 38   (36 still need repair)
+
+  STEP 4 is repackaging 65 of the 93 with the UNFIXED code as this is written, and R-1
+  will re-download and re-package 36 more over the following week. So **no repackaging
+  for R-19 should start before the fix exists** — it would be a third pass over the same
+  stations, still producing counts.
+
+  **This is not an argument to patch mid-campaign** (PI, 2026-10-05; §15). Two reasons to
+  let both jobs run to completion instead:
+    * STEP 4 is recovering 225,144 days and is nearly done (18 in flight). R-19 is a
+      pre-existing defect it neither caused nor worsens.
+    * **R-1's downloads are not wasted even though its packaging is wrong.** It keeps raw
+      SEED (`raw_seed_kept_at` in every result), so every station it touches becomes a
+      cheap local repackage afterwards. Letting it finish makes the repair cheaper, not
+      more expensive.
+
+  ── Where the repair writes ───────────────────────────────────────────────────────
+
+  **To a separate tree, never in place over v1/v2** (PI question, 2026-10-09: "only shard
+  updates?"). Overwriting the source shards would destroy the retained original at the
+  moment the repair is least proven. Consolidation then selects from {v1, v2, repair},
+  and a bad repair is discarded by deleting one directory.
 
   ── Validation: ground truth exists, 45 channels ──────────────────────────────────
 
