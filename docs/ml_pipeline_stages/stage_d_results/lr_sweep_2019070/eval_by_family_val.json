@@ -1,0 +1,80 @@
+{
+  "/scratch/tolugboj_lab/Prj_Wavenet/epic_production/FTAN_ML_RUNS/lr_sweep_2019070/lr_1e-4/best.pt": {
+    "epoch": 14,
+    "lr": 0.0001,
+    "loss": 0.12275325073301792,
+    "iou": 0.6318596375946423,
+    "dice": 0.7744043948853372,
+    "velocity_rmse": 0.025859868528321384,
+    "pred_pos_frac_over_target": 1.195877061863809,
+    "n_samples": 4000,
+    "by_family": {
+      "M02": {
+        "iou": 0.6034051690328653,
+        "dice": 0.7526546386236543,
+        "velocity_rmse": 0.031986603707075116,
+        "pred_pos_frac_over_target": 1.1517697368421054,
+        "n_samples": 2000
+      },
+      "M10": {
+        "iou": 0.6601616517816219,
+        "dice": 0.795298037481063,
+        "velocity_rmse": 0.019695679374039172,
+        "pred_pos_frac_over_target": 1.239985315480326,
+        "n_samples": 2000
+      }
+    }
+  },
+  "/scratch/tolugboj_lab/Prj_Wavenet/epic_production/FTAN_ML_RUNS/lr_sweep_2019070/lr_1e-3/best.pt": {
+    "epoch": 14,
+    "lr": 0.001,
+    "loss": 0.1497900043427944,
+    "iou": 0.5806712158323254,
+    "dice": 0.7347147338626832,
+    "velocity_rmse": 0.029921288035809995,
+    "pred_pos_frac_over_target": 1.0986740649901579,
+    "n_samples": 4000,
+    "by_family": {
+      "M02": {
+        "iou": 0.5315808183178351,
+        "dice": 0.6941596707925353,
+        "velocity_rmse": 0.03483641603589058,
+        "pred_pos_frac_over_target": 1.0351907894736843,
+        "n_samples": 2000
+      },
+      "M10": {
+        "iou": 0.6298445345061189,
+        "dice": 0.7728890960719471,
+        "velocity_rmse": 0.024973216582089664,
+        "pred_pos_frac_over_target": 1.1621586770247794,
+        "n_samples": 2000
+      }
+    }
+  },
+  "/scratch/tolugboj_lab/Prj_Wavenet/epic_production/FTAN_ML_RUNS/lr_sweep_2019070/lr_3e-3/best.pt": {
+    "epoch": 14,
+    "lr": 0.003,
+    "loss": 0.13002007627487183,
+    "iou": 0.6046185877431619,
+    "dice": 0.7535978859543639,
+    "velocity_rmse": 0.023952857844531536,
+    "pred_pos_frac_over_target": 1.2157799029463467,
+    "n_samples": 4000,
+    "by_family": {
+      "M02": {
+        "iou": 0.571729640505796,
+        "dice": 0.7275165216351186,
+        "velocity_rmse": 0.026282811783254145,
+        "pred_pos_frac_over_target": 1.2000657894736841,
+        "n_samples": 2000
+      },
+      "M10": {
+        "iou": 0.6384209173765943,
+        "dice": 0.7793124594610531,
+        "velocity_rmse": 0.021614454980939626,
+        "pred_pos_frac_over_target": 1.2314943472494158,
+        "n_samples": 2000
+      }
+    }
+  }
+}

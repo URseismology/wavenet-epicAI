@@ -1,7 +1,7 @@
 # WaveNet-EpicAI: Agent Handoff Document
 
 > **Intended Audience:** A new AI agent (Claude Code) with humans in the loop, picking up this project fresh.
-> **Last Updated:** September 10, 2026
+> **Last Updated:** October 11, 2026 (§9 added: ML pipeline Stage D passing on Bluehive3)
 > **Status of Primary Simulation:** ✅ COMPLETE — 10,000 models each at `sep_km=127.0 km` and `sep_km=100.0 km`.
 > **Next Priority:** Run more training sets on `terravibranium` (nightly) at additional sep_km values. Then expand to multi-separation scan on Bluehive.
 
@@ -79,8 +79,8 @@
 | Additional terravibranium overnight runs (other `sep_km` values beyond 127.0 and 100.0 km) | ⏳ Not started |
 | `submit_wvsim_bluehive.sh` created and tested | ⏳ Not started |
 | Bluehive 100-separation array job run | ⏳ Not started |
-| `build_ml_dataset.py` adapted for new CPS HDF5 schema | ⏳ Not started |
-| PyTorch U-Net training on new CPS dataset | ⏳ Not started |
+| `build_ml_dataset.py` adapted for new CPS HDF5 schema | ✅ Superseded by `03_machine_learning/build_ml_cache.py` (see §9) |
+| PyTorch U-Net training on new CPS dataset | ✅ Stage D passing on Bluehive3, 2026-10-11 (see §9) |
 
 ---
 
@@ -178,8 +178,8 @@ The local repo and remote server have **different script names**. They are funct
 ### 3.2 Bluehive Multi-Separation Scan (Planned, Never Implemented)
 A complete plan was drafted for running `wvsim_main.py` on Bluehive as a Slurm Array scanning 100 station separations (50.0 → 297.5 km in 2.5 km steps). The script `src/simulation_runner/submit_wvsim_bluehive.sh` **does not exist yet**. See Section 6.
 
-### 3.3 HDF5 → PyTorch ML Training (Not Started)
-Phases 3–4 of `docs/Collaborative_Roadmap.md` (HDF5 verification, Dataloader, U-Net training) have not been started on the new CPS-based dataset.
+### 3.3 HDF5 → PyTorch ML Training (Now Running — see §9)
+Superseded: the staged pipeline in `src/wavenet_pipeline/03_machine_learning/` replaces Phases 3–4 of `docs/Collaborative_Roadmap.md`. Stages A–D have run on the full CPS dataset; Stage D (training) passed on Bluehive3 on 2026-10-11. Status and results: §9.
 
 ---
 
@@ -601,10 +601,8 @@ benchmarking is planned for terravibranium (+ Bluehive if needed), not yet run.
 New machine: **mothership** (10.17.7.237) holds the live AWS/EarthScope credentials for
 this workstream — see `CLAUDE.md`'s Infrastructure section.
 
-(Not numbered as this project's reserved "§9" — that slot is for the ML dispersion
-pipeline in §7 once it reaches a full-stage-passing milestone, per that pipeline's own
-`PROGRESS.md` convention, and hasn't been filled in yet. Renumber both properly
-whichever lands first.)
+(Not numbered as "§9" — that slot is the ML dispersion pipeline rollup, filled in
+2026-10-11. Renumbering §8.5 is still open.)
 
 ---
 
@@ -632,3 +630,45 @@ ssh tolugboj@terravibranium.earth.rochester.edu \
 # Git push (if key not in ssh-agent)
 GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519" git push
 ```
+
+---
+
+## 9. ML Dispersion Pipeline (FTAN U-Net) — Stage Rollup
+
+Project-level summary of `src/wavenet_pipeline/03_machine_learning/`, updated only at
+full-stage-passing milestones. Per-tier status: `docs/ml_pipeline_stages/PROGRESS.md`.
+Full experiment logs: the per-stage docs in `docs/ml_pipeline_stages/`.
+
+| Stage | Status | Where it passed | Doc |
+|---|---|---|---|
+| A. Data Definition | ✅ Local (2026-09-04); the full 20,000-sample cache is what Stage D trains on | axon-1 | `stage_a_data_definition.md` |
+| B. Model Definition | ✅ Local (2026-09-04) | axon-1 | `stage_b_model_definition.md` |
+| C. Input Batching | Code in use (`stage_c_input_batching.py`), no stage doc yet | — | not written |
+| **D. Training Process** | ✅ **Passing on Bluehive3, 2026-10-11** | bluehive3 `coe`, 1x H100 | `stage_d_training_process.md` |
+| E. Prediction/Evaluation | ⏳ Not started | — | — |
+
+**Stage D result (job 2107428):** LR 3e-3, AdamW, batch 16, grad clip 1.0, checkpoint
+chosen on the 5-epoch trailing mean of val IoU, 3 seeds. Family split: train M01,
+M03–M08 (14,000), val M02 + M10 (4,000), test M09 (2,000).
+
+| | Val IoU | M02 IoU | M10 IoU | Test (M09) IoU | Test Dice | Test vRMSE (km/s) |
+|---|---|---|---|---|---|---|
+| mean ± sd, 3 seeds | 0.641 ± 0.021 | 0.560 ± 0.026 | 0.729 ± 0.017 | **0.783 ± 0.014** | 0.878 ± 0.009 | 0.0167 ± 0.0015 |
+
+Key facts for whoever picks this up:
+- The LR sweeps (jobs 2019070, 2091906; one seed per LR) did **not** separate the
+  learning rates beyond seed noise; 3e-3 was chosen because it was the only LR that
+  settled, not because it was shown to score higher.
+- Test has been scored once per seed. Tune on val only from here on.
+- vRMSE is a training monitor: the soft centroid of the predicted probabilities vs the
+  centroid of the target mask (the theoretical fundamental-mode curve, quantised to
+  0.01 km/s), over all 76 period rows (1–19.75 s), averaged per batch. Exact definition
+  in the Stage D doc.
+- Open questions for the PI (Stage D doc): test is a single family; train/val gap
+  (train IoU ~0.87 vs val ~0.64); predicted masks are 6–13% wider than the target
+  (also on train, so likely the loss's pos_weight).
+- Bluehive3 access: `bluehive3.circ.rochester.edu`, account `nkoziol_lab` on `coe`
+  (password + Duo, use a ControlMaster). Runs and checkpoints:
+  `/scratch/tolugboj_lab/Prj_Wavenet/epic_production/FTAN_ML_RUNS/`. Small copies of
+  logs and eval JSONs: `docs/ml_pipeline_stages/stage_d_results/`. Poster figures:
+  `docs/ml_pipeline_stages/figures/stage_d_*.png` (made by `plot_stage_d.py`).

@@ -1,0 +1,21 @@
+{
+  "/scratch/tolugboj_lab/Prj_Wavenet/epic_production/FTAN_ML_RUNS/final_lr3e-3_2107428/seed_44/best.pt": {
+    "epoch": 77,
+    "lr": 0.003,
+    "loss": 0.06449882692098617,
+    "iou": 0.7891650818493681,
+    "dice": 0.8821601649341922,
+    "velocity_rmse": 0.0179352536983788,
+    "pred_pos_frac_over_target": 1.069725,
+    "n_samples": 2000,
+    "by_family": {
+      "M09": {
+        "iou": 0.7891650818493681,
+        "dice": 0.8821601649341922,
+        "velocity_rmse": 0.0179352536983788,
+        "pred_pos_frac_over_target": 1.069725,
+        "n_samples": 2000
+      }
+    }
+  }
+}

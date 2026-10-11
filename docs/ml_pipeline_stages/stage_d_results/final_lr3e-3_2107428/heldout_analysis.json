@@ -1,0 +1,134 @@
+{
+  "/scratch/tolugboj_lab/Prj_Wavenet/epic_production/FTAN_ML_RUNS/final_lr3e-3_2107428/seed_42/best.pt": {
+    "val/all": {
+      "n": 4000,
+      "iou_sample_mean": 0.6427904955362901,
+      "iou_sample_p10": 0.40195018947124483,
+      "iou_sample_p90": 0.8364384353160857,
+      "pred_over_tgt": 1.1336468015452794,
+      "vrmse_pooled": 0.024850895069278473,
+      "vrmse_logged_def": 0.02256625811755657
+    },
+    "val/M02": {
+      "n": 2000,
+      "iou_sample_mean": 0.5619870895668865,
+      "iou_sample_p10": 0.354352131485939,
+      "iou_sample_p90": 0.7443168163299562,
+      "pred_over_tgt": 1.136703947368421,
+      "vrmse_pooled": 0.03047813975556773
+    },
+    "val/M10": {
+      "n": 2000,
+      "iou_sample_mean": 0.7235939015056938,
+      "iou_sample_p10": 0.5440313339233398,
+      "iou_sample_p90": 0.8605469465255737,
+      "pred_over_tgt": 1.130589591359818,
+      "vrmse_pooled": 0.017499056218226738
+    },
+    "test/all": {
+      "n": 2000,
+      "iou_sample_mean": 0.7750472007208736,
+      "iou_sample_p10": 0.624241179227829,
+      "iou_sample_p90": 0.8843470275402069,
+      "pred_over_tgt": 1.089367105263158,
+      "vrmse_pooled": 0.025149883551836408,
+      "vrmse_logged_def": 0.017198540799319744
+    },
+    "test/M09": {
+      "n": 2000,
+      "iou_sample_mean": 0.7750472007208736,
+      "iou_sample_p10": 0.624241179227829,
+      "iou_sample_p90": 0.8843470275402069,
+      "pred_over_tgt": 1.089367105263158,
+      "vrmse_pooled": 0.025149883551836408
+    }
+  },
+  "/scratch/tolugboj_lab/Prj_Wavenet/epic_production/FTAN_ML_RUNS/final_lr3e-3_2107428/seed_43/best.pt": {
+    "val/all": {
+      "n": 4000,
+      "iou_sample_mean": 0.6820488067362458,
+      "iou_sample_p10": 0.4420079171657562,
+      "iou_sample_p90": 0.878511369228363,
+      "pred_over_tgt": 1.0904384519837051,
+      "vrmse_pooled": 0.022582073826202274,
+      "vrmse_logged_def": 0.02024232932180166
+    },
+    "val/M02": {
+      "n": 2000,
+      "iou_sample_mean": 0.6038679405711591,
+      "iou_sample_p10": 0.41054691970348356,
+      "iou_sample_p90": 0.7909091114997864,
+      "pred_over_tgt": 1.0779697368421053,
+      "vrmse_pooled": 0.02821971487423168
+    },
+    "val/M10": {
+      "n": 2000,
+      "iou_sample_mean": 0.7602296729013324,
+      "iou_sample_p10": 0.5642748177051544,
+      "iou_sample_p90": 0.8973933160305023,
+      "pred_over_tgt": 1.1029074296300976,
+      "vrmse_pooled": 0.014951515274418412
+    },
+    "test/all": {
+      "n": 2000,
+      "iou_sample_mean": 0.801211236173287,
+      "iou_sample_p10": 0.637499988079071,
+      "iou_sample_p90": 0.9099974989891052,
+      "pred_over_tgt": 1.0638644736842104,
+      "vrmse_pooled": 0.022979172442969428,
+      "vrmse_logged_def": 0.015116584826260805
+    },
+    "test/M09": {
+      "n": 2000,
+      "iou_sample_mean": 0.801211236173287,
+      "iou_sample_p10": 0.637499988079071,
+      "iou_sample_p90": 0.9099974989891052,
+      "pred_over_tgt": 1.0638644736842104,
+      "vrmse_pooled": 0.022979172442969428
+    }
+  },
+  "/scratch/tolugboj_lab/Prj_Wavenet/epic_production/FTAN_ML_RUNS/final_lr3e-3_2107428/seed_44/best.pt": {
+    "val/all": {
+      "n": 4000,
+      "iou_sample_mean": 0.6511382444016636,
+      "iou_sample_p10": 0.40069396495819093,
+      "iou_sample_p90": 0.8635293841362,
+      "pred_over_tgt": 1.0996194696786281,
+      "vrmse_pooled": 0.02577512344618187,
+      "vrmse_logged_def": 0.02323452996276319
+    },
+    "val/M02": {
+      "n": 2000,
+      "iou_sample_mean": 0.5568880626671017,
+      "iou_sample_p10": 0.3680555522441864,
+      "iou_sample_p90": 0.7595815479755403,
+      "pred_over_tgt": 1.0870578947368421,
+      "vrmse_pooled": 0.032728278361099476
+    },
+    "val/M10": {
+      "n": 2000,
+      "iou_sample_mean": 0.7453884261362255,
+      "iou_sample_p10": 0.5232387304306031,
+      "iou_sample_p90": 0.8838862776756287,
+      "pred_over_tgt": 1.112181309080191,
+      "vrmse_pooled": 0.016049105048264112
+    },
+    "test/all": {
+      "n": 2000,
+      "iou_sample_mean": 0.796938777162577,
+      "iou_sample_p10": 0.6496636867523193,
+      "iou_sample_p90": 0.905339777469635,
+      "pred_over_tgt": 1.069725,
+      "vrmse_pooled": 0.027729557405236527,
+      "vrmse_logged_def": 0.0179352536983788
+    },
+    "test/M09": {
+      "n": 2000,
+      "iou_sample_mean": 0.796938777162577,
+      "iou_sample_p10": 0.6496636867523193,
+      "iou_sample_p90": 0.905339777469635,
+      "pred_over_tgt": 1.069725,
+      "vrmse_pooled": 0.027729557405236527
+    }
+  }
+}
