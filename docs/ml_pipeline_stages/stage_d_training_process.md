@@ -210,3 +210,116 @@ OPEN QUESTIONS FOR PI
 APPROVAL LOG
   [ ] Reviewed by PI (tolulope.olugboji@rochester.edu) — date, verdict
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE D FOLLOW-UP — POS_WEIGHT AND PER-ROW-PEAK DECODER (job 2109273, VAL ONLY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+HYPOTHESIS
+  (a) The 6-13% mask width bias (open question 3 above) comes from WeightedBCELoss's
+  pos_weight 15; lowering it narrows the predicted band. (b) The soft-centroid vRMSE is
+  inflated by probability mass away from the curve; reading each row at its peak lowers
+  the velocity error. Both judged on val only. Test was not scored in this experiment.
+
+SETUP
+  Branch stage-d-ablations, code commit e676a7c (git_commit in each config.json; the
+  Bluehive3 rsync copy was sha256-checked against e676a7c before submission).
+  Array job 2109273 (slurm/posweight_ablation_bluehive3.sbatch), coe, 1 H100 per task:
+    A  pos_weight 15: final_lr3e-3_2107428 seed_{42,43,44}/best.pt re-scored on val
+       with the new decoder, no retraining (that directory was only read)
+    B  pos_weight 5, seeds 42/43/44, trained from scratch
+    C  pos_weight 1, seeds 42/43/44, trained from scratch
+  B and C use the final run's recipe unchanged (LR 3e-3, up to 100 epochs, plateau
+  patience 5, early-stop patience 25, grad clip 1.0, best.pt on the 5-epoch trailing
+  mean of val IoU). Only train.py --pos-weight differs. Checkpoint selection is still
+  on val IoU; neither vRMSE variant was used to select anything.
+
+  Per-row-peak decoder (metrics.peak_row_velocity): per period row, the argmax velocity
+  bin of the sigmoid output, refined by the probability-weighted mean bin over +-3 bins
+  around it (clipped at the grid edges). The reference is the same target-mask centroid
+  over the same 76 rows as velocity_rmse, and metrics.velocity_error is unchanged.
+  Each decoder is reported two ways: per-batch (mean of per-batch RMSEs, weighted by
+  batch size, which is what train.py logs) and pooled (RMSE over every row of every val
+  sample, as heldout_analysis.py computes it).
+
+  Check: A's re-scored soft vRMSE reproduces the final run's logged values exactly
+  (0.0226 / 0.0202 / 0.0232 per-batch; pooled 0.0249 / 0.0226 / 0.0258, the same as
+  heldout_analysis.json), so the new code did not move the existing metric.
+
+RESULTS (val, selected checkpoint, mean +- sd over seeds 42/43/44)
+
+  All val (M02 + M10, n = 4000):
+  | Config        | IoU             | Dice            | pred/tgt        | vRMSE soft batch / pooled           | vRMSE peak batch / pooled           |
+  |---------------|-----------------|-----------------|-----------------|-------------------------------------|-------------------------------------|
+  | A  pw 15      | 0.641 +- 0.021  | 0.781 +- 0.016  | 1.108 +- 0.023  | 0.0220 +- 0.0016 / 0.0244 +- 0.0016 | 0.0224 +- 0.0021 / 0.0249 +- 0.0025 |
+  | B  pw 5       | 0.643 +- 0.012  | 0.782 +- 0.009  | 1.047 +- 0.013  | 0.0223 +- 0.0011 / 0.0245 +- 0.0015 | 0.0227 +- 0.0013 / 0.0250 +- 0.0017 |
+  | C  pw 1       | 0.614 +- 0.024  | 0.761 +- 0.018  | 0.983 +- 0.002  | 0.0296 +- 0.0043 / 0.0344 +- 0.0087 | 0.0314 +- 0.0067 / 0.0383 +- 0.0139 |
+
+  M02 (n = 2000):
+  | Config        | IoU             | Dice            | pred/tgt        | vRMSE soft batch / pooled           | vRMSE peak batch / pooled           |
+  |---------------|-----------------|-----------------|-----------------|-------------------------------------|-------------------------------------|
+  | A  pw 15      | 0.560 +- 0.026  | 0.718 +- 0.021  | 1.101 +- 0.032  | 0.0290 +- 0.0025 / 0.0305 +- 0.0023 | 0.0298 +- 0.0037 / 0.0313 +- 0.0036 |
+  | B  pw 5       | 0.571 +- 0.019  | 0.727 +- 0.016  | 1.038 +- 0.014  | 0.0293 +- 0.0027 / 0.0304 +- 0.0028 | 0.0302 +- 0.0028 / 0.0313 +- 0.0029 |
+  | C  pw 1       | 0.549 +- 0.043  | 0.708 +- 0.037  | 0.981 +- 0.008  | 0.0315 +- 0.0045 / 0.0329 +- 0.0044 | 0.0332 +- 0.0045 / 0.0350 +- 0.0049 |
+
+  M10 (n = 2000):
+  | Config        | IoU             | Dice            | pred/tgt        | vRMSE soft batch / pooled           | vRMSE peak batch / pooled           |
+  |---------------|-----------------|-----------------|-----------------|-------------------------------------|-------------------------------------|
+  | A  pw 15      | 0.729 +- 0.017  | 0.843 +- 0.011  | 1.115 +- 0.014  | 0.0150 +- 0.0011 / 0.0162 +- 0.0013 | 0.0150 +- 0.0007 / 0.0162 +- 0.0008 |
+  | B  pw 5       | 0.720 +- 0.007  | 0.837 +- 0.005  | 1.057 +- 0.013  | 0.0153 +- 0.0006 / 0.0167 +- 0.0010 | 0.0151 +- 0.0006 / 0.0165 +- 0.0010 |
+  | C  pw 1       | 0.687 +- 0.002  | 0.814 +- 0.001  | 0.985 +- 0.008  | 0.0277 +- 0.0076 / 0.0349 +- 0.0155 | 0.0295 +- 0.0108 / 0.0400 +- 0.0228 |
+
+  Per seed (all val): IoU A 0.625/0.665/0.632, B 0.635/0.656/0.637, C 0.627/0.630/0.587;
+  pred/tgt A 1.13/1.09/1.10, B 1.03/1.05/1.06, C 0.98/0.98/0.98; soft vRMSE per-batch
+  A 0.0226/0.0202/0.0232, B 0.0219/0.0215/0.0236, C 0.0335/0.0250/0.0303.
+  Training: B ran the full 100 epochs on every seed (selected epochs 99/99/95); C seeds
+  42/43 ran 100 (selected 95/97) and seed 44 early-stopped at 91 (selected 65). Both
+  were essentially flat at the cap: the tracked val IoU rose by at most 0.007 over the
+  last 20 epochs, well under seed noise. Two C seeds predicted an empty mask for their
+  first 1-2 epochs before recovering. No errors or non-finite losses.
+
+  What exceeds seed noise (sd ~0.02 val IoU; per-seed ranges compared directly):
+  - Per-row-peak decoder: NO improvement. On every configuration it is equal to or
+    slightly worse than the soft centroid (A: 0.0224 vs 0.0220 per-batch, 0.0249 vs
+    0.0244 pooled; per seed +0.0001 / 0.0000 / +0.0011), all within seed noise. The
+    velocity error is not coming from mass spread away from the curve. It comes from
+    where the band sits, which a different read-out of the same probabilities cannot fix.
+  - pos_weight 5: narrows the mask beyond noise (pred/tgt 1.108 -> 1.047; the seed ranges
+    1.09-1.13 and 1.03-1.06 do not overlap; the width bias is roughly halved, in both
+    families). IoU (+0.002), Dice (+0.002) and both vRMSE variants (+0.0003 / +0.0001)
+    do not change beyond noise, overall or per family (M02 IoU +0.011, M10 IoU -0.010,
+    each inside its seed sd). It is narrower at no measured cost, but not better on IoU or vRMSE.
+  - pos_weight 1: removes the width bias (0.98, now ~2% too narrow) but COSTS accuracy.
+    Velocity error rises beyond noise: per-batch 0.0220 -> 0.0296; every C seed
+    (0.0250-0.0335) is worse than every A seed (0.0202-0.0232). The rise is concentrated
+    in M10 (0.0150 -> 0.0277), where pooled is much higher than per-batch (0.0349), so it
+    comes from a minority of samples with large row errors, worst in seed 42. M10 IoU
+    falls beyond noise (0.729 -> 0.687; all C seeds 0.685-0.688, below every A seed,
+    0.712-0.745). Overall IoU falls 0.026, about one seed sd, with overlapping per-seed
+    ranges, so overall IoU alone is borderline. This is a trade-off: a narrower mask for
+    a worse curve.
+
+STATUS / DECISION
+  No configuration wins on val IoU or val vRMSE. The per-row-peak decoder does not
+  reduce velocity error and is not adopted for reporting. pos_weight 5 is the one change
+  that moves something (mask width) beyond noise without a measurable cost elsewhere.
+  Whether that is worth adopting (and, if so, whether to re-score test) is a decision
+  for the PI. Test (M09) was NOT scored for B or C, and the reference result for
+  the canonical configuration (pos_weight 15) is unchanged.
+
+  Run outputs: Bluehive3 /scratch/tolugboj_lab/Prj_Wavenet/epic_production/FTAN_ML_RUNS/
+  ablate_pw_2109273/pw{15,5,1}/seed_{42,43,44}/ (pw15 holds val_eval.json only);
+  SLURM logs FTAN_ML_RUNS/logs/ablate_pw_2109273_{0..8}.out. Copies of the configs,
+  train logs and val_eval.json files (no checkpoints) are in
+  docs/ml_pipeline_stages/stage_d_results/ablate_pw_2109273/.
+
+OPEN QUESTIONS FOR PI
+  4. Adopt pos_weight 5? It halves the width bias (pred/tgt 1.11 -> 1.05) with IoU and
+     vRMSE unchanged within noise. Adopting it changes the canonical loss, and reporting
+     a test number for it means scoring M09 a second time, with a different
+     configuration chosen after seeing val.
+  5. Width bias was not what limited IoU or vRMSE. Narrowing the band to the target width
+     (pos_weight 1) did not raise IoU and made the curve worse. The remaining val error is
+     mostly the band being in the wrong place (M02 especially, see the hard example
+     drifting below theory past ~12 s), which points back to open question 2 (transfer
+     across families) rather than to the loss weighting.

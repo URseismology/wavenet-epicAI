@@ -1,0 +1,38 @@
+{
+  "/scratch/tolugboj_lab/Prj_Wavenet/epic_production/FTAN_ML_RUNS/ablate_pw_2109273/pw5/seed_42/best.pt": {
+    "epoch": 99,
+    "lr": 0.003,
+    "pos_weight": 5.0,
+    "loss": 0.10353109945356846,
+    "iou": 0.6346769683801096,
+    "dice": 0.7765166826924166,
+    "velocity_rmse": 0.02190363380871713,
+    "pred_pos_frac_over_target": 1.0327970557584816,
+    "n_samples": 4000,
+    "velocity_rmse_pooled": 0.02382682117315164,
+    "velocity_rmse_peak": 0.02219767699763179,
+    "velocity_rmse_peak_pooled": 0.024381531209775754,
+    "by_family": {
+      "M02": {
+        "iou": 0.563752838342652,
+        "dice": 0.7210255029051101,
+        "velocity_rmse": 0.02773030459880829,
+        "pred_pos_frac_over_target": 1.022525,
+        "n_samples": 2000,
+        "velocity_rmse_pooled": 0.028640959159977778,
+        "velocity_rmse_peak": 0.028531923681497574,
+        "velocity_rmse_peak_pooled": 0.029607301839304333
+      },
+      "M10": {
+        "iou": 0.7115243225606618,
+        "dice": 0.8314510208024731,
+        "velocity_rmse": 0.01604125137254596,
+        "pred_pos_frac_over_target": 1.0430693277753216,
+        "n_samples": 2000,
+        "velocity_rmse_pooled": 0.01775190899118119,
+        "velocity_rmse_peak": 0.015827405378222466,
+        "velocity_rmse_peak_pooled": 0.017672741900549585
+      }
+    }
+  }
+}
