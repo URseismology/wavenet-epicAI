@@ -72,7 +72,8 @@ class SharpeningLoss(nn.Module):
 
 class CombinedLoss(nn.Module):
     def __init__(self, focal_weight: float = 0.3, dice_weight: float = 0.3,
-                 bce_weight: float = 0.2, sharpen_weight: float = 0.2):
+                 bce_weight: float = 0.2, sharpen_weight: float = 0.2,
+                 pos_weight: float = 15.0):
         super().__init__()
         self.focal_w = focal_weight
         self.dice_w = dice_weight
@@ -81,7 +82,7 @@ class CombinedLoss(nn.Module):
 
         self.focal = FocalLoss(alpha=0.25, gamma=2.0)
         self.dice = DiceLoss()
-        self.bce = WeightedBCELoss(pos_weight=15.0)
+        self.bce = WeightedBCELoss(pos_weight=pos_weight)
         self.sharpen = SharpeningLoss()
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:

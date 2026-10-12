@@ -19,6 +19,10 @@ Validation metrics are dataset-level, not a mean of per-batch values: IoU/Dice
 accumulate intersection/union pixel counts over the whole val split at threshold 0.5
 (same definition as metrics.iou_score/dice_coefficient, just not batch-averaged).
 velocity_rmse is metrics.velocity_error averaged over batches, weighted by batch size.
+In eval mode run_epoch also reports velocity_rmse_pooled (sqrt of the mean squared row
+error over every curve row of every sample, same soft-centroid decoder) and the same two
+aggregations for the per-row-peak decoder (velocity_rmse_peak, velocity_rmse_peak_pooled;
+metrics.peak_row_velocity). These are reported only; nothing in training reads them.
 
 LR: Stage B's 1-sample overfit did NOT converge at the originally-planned lr=1e-4
 (needed 3e-3 / ~800 iters), so --lr has no silent default inherited from the plan —
@@ -41,13 +45,18 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from .ftan_grid import PERIOD_BINS
 from .losses import CombinedLoss
-from .metrics import velocity_error
+from .metrics import velocity_error, velocity_error_peak, velocity_sq_err
 from .model import UNetSeg
 from .stage_c_input_batching import get_dataloaders
 
 
 def _git_commit():
+    # The Bluehive3 code copy is an rsync, not a clone; the submit step passes the commit
+    # it synced in WAVENET_GIT_COMMIT.
+    if os.environ.get("WAVENET_GIT_COMMIT"):
+        return os.environ["WAVENET_GIT_COMMIT"]
     try:
         return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
                                        cwd=Path(__file__).parent, text=True,
@@ -61,13 +70,20 @@ def _family(key):
     return key.split("_", 1)[0]
 
 
-def _summarize(inter, union, pred_pos, tgt_pos, vel_sum, n):
+def _summarize(inter, union, pred_pos, tgt_pos, vel_sum, n, vel_pk_sum=None,
+               sq_soft=None, sq_peak=None):
+    extra = {} if vel_pk_sum is None else {
+        "velocity_rmse_pooled": math.sqrt(sq_soft / (n * PERIOD_BINS)),
+        "velocity_rmse_peak": vel_pk_sum / n,
+        "velocity_rmse_peak_pooled": math.sqrt(sq_peak / (n * PERIOD_BINS)),
+    }
     return {
         "iou": inter / union if union else 1.0,
         "dice": 2 * inter / (pred_pos + tgt_pos) if (pred_pos + tgt_pos) else 1.0,
         "velocity_rmse": vel_sum / n,
         "pred_pos_frac_over_target": pred_pos / tgt_pos if tgt_pos else float("nan"),
         "n_samples": n,
+        **extra,
     }
 
 
@@ -83,7 +99,8 @@ def run_epoch(model, loader, criterion, device, optimizer=None, max_batches=None
     loss_sum = vel_sum = 0.0
     n = 0
     inter = union = pred_pos = tgt_pos = 0.0
-    fam = {}  # family -> [inter, union, pred_pos, tgt_pos, vel_sum, n]
+    fam = {}  # family -> [inter, union, pred_pos, tgt_pos, vel_sum, n, vel_pk_sum, sq_soft, sq_peak]
+    vel_pk_sum = sq_soft = sq_peak = 0.0  # eval only: peak decoder + pooled sums
     gnorm_sum, n_clipped, n_steps = 0.0, 0, 0
 
     with torch.set_grad_enabled(train):
@@ -118,20 +135,31 @@ def run_epoch(model, loader, criterion, device, optimizer=None, max_batches=None
             tgt_pos += tb.sum().item()
 
             if not train:
+                lg = logits.detach()
+                se_soft = velocity_sq_err(lg, y, "soft")
+                se_peak = velocity_sq_err(lg, y, "peak")
+                vel_pk_sum += velocity_error_peak(lg, y) * bs
+                sq_soft += se_soft.sum().item()
+                sq_peak += se_peak.sum().item()
                 fams = [_family(k) for k in keys]
                 for f in set(fams):
                     m = torch.tensor([g == f for g in fams], device=device)
                     pf, tf = pb[m], tb[m]
-                    acc = fam.setdefault(f, [0.0] * 5 + [0])
+                    nm = int(m.sum())
+                    acc = fam.setdefault(f, [0.0] * 5 + [0] + [0.0] * 3)
                     acc[0] += (pf & tf).sum().item()
                     acc[1] += (pf | tf).sum().item()
                     acc[2] += pf.sum().item()
                     acc[3] += tf.sum().item()
-                    acc[4] += velocity_error(logits.detach()[m], y[m]) * int(m.sum())
-                    acc[5] += int(m.sum())
+                    acc[4] += velocity_error(lg[m], y[m]) * nm
+                    acc[5] += nm
+                    acc[6] += velocity_error_peak(lg[m], y[m]) * nm
+                    acc[7] += se_soft[m].sum().item()
+                    acc[8] += se_peak[m].sum().item()
 
     out = {"loss": loss_sum / n,
-           **_summarize(inter, union, pred_pos, tgt_pos, vel_sum, n)}
+           **_summarize(inter, union, pred_pos, tgt_pos, vel_sum, n,
+                        *((vel_pk_sum, sq_soft, sq_peak) if not train else ()))}
     if fam:
         out["by_family"] = {f: _summarize(*fam[f]) for f in sorted(fam)}
     if n_steps:
@@ -170,6 +198,9 @@ def main():
     p.add_argument("--early-stop-patience", type=int, default=20,
                    help="epochs without val-IoU improvement before stopping")
     p.add_argument("--min-lr", type=float, default=1e-6)
+    p.add_argument("--pos-weight", type=float, default=15.0,
+                   help="positive-pixel weight of CombinedLoss's WeightedBCELoss term "
+                        "(15 = the inherited value used by every run up to final_lr3e-3_2107428)")
     p.add_argument("--grad-clip", type=float, default=None,
                    help="clip gradients to this global L2 norm (default: no clipping)")
     p.add_argument("--smooth-window", type=int, default=1,
@@ -199,7 +230,7 @@ def main():
                               batch_size=args.batch_size, num_workers=args.num_workers,
                               seed=args.seed, pin_memory=(device.type == "cuda"))
     model = UNetSeg(in_channels=1, out_channels=1).to(device)
-    criterion = CombinedLoss()
+    criterion = CombinedLoss(pos_weight=args.pos_weight)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr,
                                   weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(

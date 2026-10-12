@@ -39,13 +39,15 @@ def main():
     loader = get_dataloaders(args.cache_path, args.splits_path,
                              batch_size=args.batch_size, num_workers=args.num_workers,
                              pin_memory=(device.type == "cuda"))[args.split]
-    criterion = CombinedLoss()
     results = {}
 
     for ck_path in args.checkpoints:
         ck = torch.load(ck_path, map_location=device)
         model = UNetSeg(in_channels=1, out_channels=1).to(device)
         model.load_state_dict(ck["model_state"])
+        # loss only; checkpoints from before --pos-weight existed trained with 15
+        pos_weight = ck["args"].get("pos_weight", 15.0)
+        criterion = CombinedLoss(pos_weight=pos_weight)
         r = run_epoch(model, loader, criterion, device)
 
         logged = None
@@ -56,7 +58,7 @@ def main():
                 if rec["epoch"] == ck["epoch"]:
                     logged = rec["val"]
 
-        print(f"\n{ck_path}  (epoch {ck['epoch']}, lr {ck['args']['lr']:g})")
+        print(f"\n{ck_path}  (epoch {ck['epoch']}, lr {ck['args']['lr']:g}, pos_weight {pos_weight:g})")
         print(f"  {'all':5s} IoU {r['iou']:.4f} Dice {r['dice']:.4f} "
               f"vRMSE {r['velocity_rmse']:.4f} pred/tgt {r['pred_pos_frac_over_target']:.2f} "
               f"n={r['n_samples']}")
@@ -67,7 +69,12 @@ def main():
             print(f"  {f:5s} IoU {m['iou']:.4f} Dice {m['dice']:.4f} "
                   f"vRMSE {m['velocity_rmse']:.4f} pred/tgt {m['pred_pos_frac_over_target']:.2f} "
                   f"n={m['n_samples']}")
-        results[ck_path] = {"epoch": ck["epoch"], "lr": ck["args"]["lr"], **r}
+        for f, m in [("all", r), *r["by_family"].items()]:
+            print(f"  {f:5s} vRMSE soft per-batch {m['velocity_rmse']:.4f} pooled "
+                  f"{m['velocity_rmse_pooled']:.4f} | peak per-batch {m['velocity_rmse_peak']:.4f} "
+                  f"pooled {m['velocity_rmse_peak_pooled']:.4f}")
+        results[ck_path] = {"epoch": ck["epoch"], "lr": ck["args"]["lr"],
+                            "pos_weight": pos_weight, **r}
 
     if args.json:
         Path(args.json).write_text(json.dumps(results, indent=2))

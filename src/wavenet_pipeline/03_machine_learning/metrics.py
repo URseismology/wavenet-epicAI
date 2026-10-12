@@ -67,3 +67,66 @@ def velocity_error(pred: torch.Tensor, target: torch.Tensor) -> float:
     target_vel = (target_norm * bins).sum(dim=-1) * (VEL_MAX - VEL_MIN) / VEL_BINS + VEL_MIN
 
     return torch.sqrt(F.mse_loss(pred_vel, target_vel)).item()
+
+
+# --- Per-row-peak decoder (Stage D ablations) ------------------------------------------
+# velocity_error above takes the soft centroid of the whole row, so probability mass far
+# from the curve (a too-wide band, side lobes) pulls the estimate. The decoder below reads
+# each period row at its most probable velocity bin instead, refined by a probability-
+# weighted mean over +/- PEAK_HALF_WINDOW bins around that peak. The target side is the
+# same target-mask centroid as velocity_error, over the same PERIOD_BINS curve rows, so
+# the two decoders are compared against an identical reference.
+
+PEAK_HALF_WINDOW = 3
+
+
+def _bins_to_velocity(b: torch.Tensor) -> torch.Tensor:
+    # same bin -> km/s mapping as velocity_error
+    return b * (VEL_MAX - VEL_MIN) / VEL_BINS + VEL_MIN
+
+
+def _target_row_velocity(target: torch.Tensor) -> torch.Tensor:
+    """(B, 1, PERIOD_BINS) target-mask centroid velocity, exactly as in velocity_error."""
+    t = target[:, :, :PERIOD_BINS, :]
+    bins = torch.arange(VEL_BINS, dtype=torch.float32, device=t.device)
+    return _bins_to_velocity((t / (t.sum(dim=-1, keepdim=True) + 1e-8) * bins).sum(dim=-1))
+
+
+def soft_row_velocity(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """(B, 1, PERIOD_BINS) soft-centroid velocity of each row, exactly as in velocity_error."""
+    pred = _align(pred, target)
+    p = torch.sigmoid(pred)[:, :, :PERIOD_BINS, :]
+    bins = torch.arange(VEL_BINS, dtype=torch.float32, device=p.device)
+    return _bins_to_velocity((p / (p.sum(dim=-1, keepdim=True) + 1e-8) * bins).sum(dim=-1))
+
+
+def peak_row_velocity(pred: torch.Tensor, target: torch.Tensor,
+                      half_window: int = PEAK_HALF_WINDOW) -> torch.Tensor:
+    """(B, 1, PERIOD_BINS) per-row-peak velocity: argmax bin of the sigmoid probability,
+    refined by the probability-weighted mean bin over [peak - half_window, peak +
+    half_window] (clipped to the grid, no padding)."""
+    pred = _align(pred, target)
+    p = torch.sigmoid(pred)[:, :, :PERIOD_BINS, :]
+    peak = p.argmax(dim=-1, keepdim=True)                                      # (B,1,R,1)
+    offs = torch.arange(-half_window, half_window + 1, device=p.device)       # (W,)
+    idx = peak + offs                                                          # (B,1,R,W)
+    valid = (idx >= 0) & (idx < VEL_BINS)
+    idx_c = idx.clamp(0, VEL_BINS - 1)
+    w = torch.gather(p, -1, idx_c) * valid
+    b = (w * idx_c).sum(dim=-1) / w.sum(dim=-1).clamp_min(1e-12)
+    return _bins_to_velocity(b)
+
+
+def velocity_sq_err(pred: torch.Tensor, target: torch.Tensor, decoder: str = "soft") -> torch.Tensor:
+    """(B,) per-sample sum over the PERIOD_BINS curve rows of the squared row-velocity
+    error (km/s)^2, for pooling: pooled RMSE = sqrt(sum / (n_samples * PERIOD_BINS))."""
+    fn = {"soft": soft_row_velocity, "peak": peak_row_velocity}[decoder]
+    return ((fn(pred, target) - _target_row_velocity(target)) ** 2).flatten(1).sum(dim=1)
+
+
+def velocity_error_peak(pred: torch.Tensor, target: torch.Tensor,
+                        half_window: int = PEAK_HALF_WINDOW) -> float:
+    """Per-row-peak velocity RMSE (km/s) on curve rows, same reduction as velocity_error
+    (RMSE over all rows of the batch)."""
+    err = peak_row_velocity(pred, target, half_window) - _target_row_velocity(target)
+    return torch.sqrt((err ** 2).mean()).item()
