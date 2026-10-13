@@ -65,6 +65,7 @@ DOWNLOAD_END = (UTCDateTime(os.environ["WAVENET_END"]) if "WAVENET_END" in os.en
 #   WAVENET_CHANNEL_PRIORITIES       comma list, default "LH?,MH?,BH?,SH?,HH?,EH?"
 #   WAVENET_LOCATION_PRIORITIES      comma list, default "*" (accept every location code)
 #   WAVENET_SKIP_DOWNLOAD=1          reprocess raw files already in scratch_work/ (no network)
+#   WAVENET_SKIP_PACKAGE=1           download only; stop once raw SEED is on disk
 #   WAVENET_DAY_START / _DAY_END     'YYYYMMDD' inclusive; process only these days (parallel date-range chunks)
 #   WAVENET_TAPER_PCT                per-end taper fraction applied to every processed day, default 0.05
 #
@@ -95,7 +96,25 @@ LOCATION_PRIORITIES = os.environ.get("WAVENET_LOCATION_PRIORITIES", "*").split("
 # table at the download loop. Configurable only so the tradeoff can be re-measured, never
 # to be raised without re-running that measurement.
 WINDOW_DAYS = int(os.environ.get("WAVENET_DOWNLOAD_WINDOW_DAYS", "1"))
+# Concurrent connections THIS task opens to a provider. obspy's default is 3, and that
+# multiplier was invisible to us: an array at %23 was not 23 connections but 69.
+#
+# EarthScope publishes the limit -- "no more than 5 concurrent connections to any combination
+# of web services" and "no more than 10 connections per second", enforced by TCP RESET
+# (ds.iris.edu/ds/nodes/dmc/services/usage/). The R-1 validation ran 69 and drew 20x HTTP 503
+# plus 19x 429, delivering 0.70x of what we already held; the same code at 3 connections
+# delivered 97% of a station's span with 3 errors in total.
+#
+# Default stays 3 so existing behaviour is unchanged. Set to 1 and cap the array at 5 to make
+# provider-facing concurrency equal the task count -- one honest knob instead of a product.
+WAVENET_DOWNLOAD_THREADS = int(os.environ.get("WAVENET_DOWNLOAD_THREADS", "3"))
 SKIP_DOWNLOAD = os.environ.get("WAVENET_SKIP_DOWNLOAD", "0") == "1"
+# Acquisition and packaging are separable: the download loop writes raw SEED to
+# scratch_work/ and the packaging block below consumes it. SKIP_PACKAGE stops once the
+# raw is on disk so the two can run as separate SLURM arrays with different shapes --
+# downloads are provider-capped and idle ~95% of a task's wall time, packaging is
+# CPU-bound and wants far more concurrency. Mirror of SKIP_DOWNLOAD, one code path.
+SKIP_PACKAGE = os.environ.get("WAVENET_SKIP_PACKAGE", "0") == "1"
 DAY_START = os.environ.get("WAVENET_DAY_START")
 DAY_END = os.environ.get("WAVENET_DAY_END")
 TAPER_PCT = float(os.environ.get("WAVENET_TAPER_PCT", "0.05"))
@@ -308,6 +327,57 @@ def cached_remove_response(tr, inv, output="DISP", water_level=60, pre_filt=None
     data = np.fft.irfft(data)[0:npts]
     tr.data = data
     return tr
+
+
+def select_lowest_rate_band(st):
+    """Keep only the cheapest USABLE seismometer band in this stream.
+
+    PORTED VERBATIM from terravibranium's sam_package_one.py, which packaged 889 stations
+    with it (measured 15x cheaper where LH replaces BH, 43x where it replaces HH).
+
+    PI rule (2026-09-30): LH, else BH, else HH -- "always choose the channels with lowest
+    sample rate". The product is 1 Hz and response-removal cost scales with sampling rate.
+    Falling through to BH, then HH, is INTENDED, not a degradation: measured 2026-10-13,
+    53.2% of this network selects LH, 31.4% BH, and 13.4% has nothing below 100 Hz.
+
+    Two guards make "lowest rate" safe. Without them the archive's non-seismic channels win:
+    VM0-VM6 (mass position, 0.1 Hz) offers seven components and would outrank LH.
+      * 2nd SEED char must be 'H' (high-gain seismometer) -- excludes VM/LOG/ACE/Q*, plus
+        accelerometers (?N?) and low-gain seismometers (?L?).
+      * rate >= 1 Hz -- excludes VH?/UH?, real seismometers but below the 0.4 Hz lowpass.
+
+    Chosen per day, since band coverage changes over a station's lifetime. Returns the
+    stream unchanged if nothing qualifies, so an unusual station is never silently dropped.
+
+    KNOWN, ACCEPTED (PI 2026-10-13): run over raw that ALREADY contains several bands, the
+    retained channel differs from a single-band download by <= 4.3e-7 relative on ~0.02% of
+    samples -- below float32 storage precision (eps 1.19e-7). The function itself is
+    bit-exact given identical input; the residual appears only when other bands are present
+    in the day stream at merge time, and that obspy-internal mechanism is NOT verified.
+    """
+    cand = [tr for tr in st
+            if len(tr.stats.channel) >= 2
+            and tr.stats.channel[1].upper() == "H"
+            and tr.stats.sampling_rate >= 1.0]
+    if not cand:
+        return st
+
+    by_band = {}
+    for tr in cand:
+        by_band.setdefault(tr.stats.channel[:2], []).append(tr)
+    if len(by_band) <= 1:
+        return st.__class__(traces=cand)
+
+    def rate(b):
+        return max(t.stats.sampling_rate for t in by_band[b])
+
+    def ncomp(b):
+        return len({t.stats.channel[2:] for t in by_band[b]})
+
+    full = [b for b in by_band if ncomp(b) >= 3]
+    pool = full if full else list(by_band)
+    best = min(pool, key=lambda b: (rate(b), b))
+    return st.__class__(traces=by_band[best])
 
 
 def _raw_qc(x, n_segments):
@@ -543,7 +613,14 @@ try:
         restrictions = Restrictions(
             starttime=year_start, endtime=year_end,
             chunklength_in_sec=86400, network=network, station=station,
-            channel=CHANNELS,
+            # R-20: `channel` is deliberately NOT passed. obspy DISABLES
+            # channel_priorities whenever `channel` is given (restrictions.py: "the
+            # same is true for the channel argument and priority list"), so passing it
+            # meant every band was downloaded and the PI 2026-09-30 rule -- lowest
+            # sample rate first, LH before BH before HH -- never took effect. Omitting
+            # it lets CHANNEL_PRIORITIES select the cheapest band actually present,
+            # falling through to BH then HH when nothing cheaper exists.
+            # Verified 2026-10-13: bit-identical output, 174x less preprocessing.
             reject_channels_with_gaps=False, minimum_length=0.0,
             channel_priorities=CHANNEL_PRIORITIES,
             location_priorities=LOCATION_PRIORITIES,
@@ -566,7 +643,8 @@ try:
         for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
             try:
                 mdl.download(domain, restrictions, mseed_storage=mseed_dir,
-                              stationxml_storage=xml_dir)
+                              stationxml_storage=xml_dir,
+                              threads_per_client=WAVENET_DOWNLOAD_THREADS)
                 last_err = None
                 break
             except Exception as ye:
@@ -653,7 +731,7 @@ channels_seen = set()
 channels_response_ok = set()
 day_errors = {}
 day_notes = {}          # [PATCH 1b/2] benign statuses (e.g. SKIPPED = already stored), kept apart from real errors
-if result["download_ok"]:
+if result["download_ok"] and not SKIP_PACKAGE:
     h5_path = os.path.join(H5_DIR, f"{network}.{station}.h5")
     day_state_path = h5_path + ".daystate.json"
     done_days = set()
@@ -755,6 +833,9 @@ if result["download_ok"]:
                 for tr_ in day_stream:                 # [PATCH 3] record segments per channel BEFORE merge (gaps / restarts)
                     seg_count[tr_.id] = seg_count.get(tr_.id, 0) + 1
                 day_stream.merge(fill_value=0)  # scoped to ONE day now -- cheap, not the 7.3GB version
+                # R-20: keep only the cheapest usable band. Everything below is
+                # unchanged, so retained traces are processed exactly as before.
+                day_stream = select_lowest_rate_band(day_stream)
 
                 day_traces = []
                 day_qc = {}
@@ -963,6 +1044,36 @@ result["raw_seed_kept_at"] = work_dir
 # more than one person now, could read a half-written file and crash on invalid JSON.
 # rename() is atomic on the same filesystem, so a reader always sees either the old
 # content or the complete new content, never a partial write.
+# MERGE, do not clobber, when this run did not do the acquisition.
+#
+# With SKIP_PACKAGE/SKIP_DOWNLOAD a station is produced by TWO runs and the second
+# writes last. Measured 2026-10-13: phase 2 replaced phase 1's download_elapsed_s of
+# 33.07 s with its own no-op 0.069 s. A run that did not download must not assert
+# download facts.
+#
+# The field list is explicit on purpose. A blanket merge would also carry STALE
+# PACKAGING fields forward from an earlier run -- the accumulation that made shards
+# disagree with their result JSONs (R-17/R-19).
+ACQUISITION_FIELDS = (
+    "download_ok", "download_bytes", "download_elapsed_s", "n_download_retries",
+    "downloader_builds", "download_year_range", "n_channels",
+    "discovery_contradiction", "raw_seed_kept_at",
+)
+if SKIP_DOWNLOAD and os.path.exists(result_path):
+    try:
+        with open(result_path) as f:
+            _prior = json.load(f)
+    except (ValueError, OSError):
+        _prior = {}
+    _restored = []
+    for _k in ACQUISITION_FIELDS:
+        if _k in _prior:
+            if result.get(_k) != _prior[_k]:
+                _restored.append(_k)
+            result[_k] = _prior[_k]
+    if _restored:
+        result["acquisition_fields_from_prior_run"] = _restored
+
 tmp_path = result_path + ".tmp"
 with open(tmp_path, "w") as f:
     json.dump(result, f)
