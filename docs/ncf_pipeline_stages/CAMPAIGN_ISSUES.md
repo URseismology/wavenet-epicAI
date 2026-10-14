@@ -815,11 +815,35 @@ and these are the 13.4% of the network with no band below 100 Hz (R-20).
 pre-fix R-1 download. The R-20 port correctly packages only BH, but every day still reads
 and merges both bands, so old multi-band raw stays expensive after the fix.
 
-### The resource waste, and how foresight would have avoided it
+### The resource waste, measured — and it is far larger than the array throttle
 
-~179 stations had finished downloading and were waiting to be packaged while **40 of 50
-packaging slots sat idle for most of a day**. Nothing was at risk; the capacity was simply
-unused.
+~179 stations had finished downloading and were waiting to be packaged while 40 of 50
+packaging slots sat idle for most of a day. But the array throttle was never the real
+ceiling. Idle CPUs at the same moment (`sinfo -o '%P|%l|%D|%t|%C'`, 2026-10-14):
+
+| partition | walltime | idle CPUs BH3 | idle CPUs legacy BH |
+|---|---|---:|---:|
+| `preempt` | 2 d | **1,805** | **807** |
+| `standard` | 5 d | 396 | **1,330** |
+| `interactive` | 12 h | 87 | 380 |
+| `debug` | 1 h | 56 | 264 |
+| **`urseismo` (OURS)** | 15 d | **99** | **73** |
+| | | **~2,443** | **~2,854** |
+
+**~5,300 idle CPUs across the two clusters while this campaign ran ~35 tasks.** Including
+**172 CPUs on the five urseismo nodes we own outright**, which were 80%+ idle. CLAUDE.md says
+of legacy BlueHive, in as many words, *"Do not leave it idle"* — it had 1,330 idle CPUs on
+`standard` alone.
+
+**`preempt` is the natural home for this workload and was never considered.** 2,612 idle CPUs
+across both clusters, a 2-day cap that comfortably covers even the 13–21 h HH stations — and
+decisively, **the orchestrator checkpoints per day**: `save_day_state()` writes the daystate
+atomically after every day, so a preempted task resumes where it stopped and loses at most
+one day of work. This pipeline is preemption-tolerant by construction, which is exactly the
+property that makes free preemptible capacity usable, and we never exploited it.
+
+The launcher hard-codes a single `--partition`, so even the obvious remedy was not reachable
+without editing it.
 
 **The ordering was chosen for the wrong variable.** `r1_launch.py` sorts SMALLEST TARGET
 FIRST so progress is visible early — sensible when cost tracked day count. After R-20 it does
@@ -838,6 +862,14 @@ smallest-target-first actively front-loads the queue with the most expensive wor
    not by days. Cheap stations finish early for visible progress AND stop blocking.
 3. **Do not rely on `aftercorr` to parallelise.** Treat it as "roughly in order", because
    that is what it does. Where overlap matters, chunk the arrays and chain chunk-to-chunk.
+4. **Spread across partitions, and default the bulk to `preempt`.** The launcher takes one
+   `--partition`; it should submit the same index file to several. Packaging needs no
+   network and is per-day checkpointed, so `preempt` costs nothing but a possible restart
+   of one day. Reserve `urseismo` (15 d, ours) for the few stations that genuinely exceed
+   preempt's 2-day cap, and use legacy BH's `standard` rather than leaving it idle.
+5. **Size the ask against measured idle capacity, not against a throttle picked up front.**
+   `%50` looked generous; ~5,300 CPUs were free. The throttle was chosen without ever
+   looking at what was available.
 
 **Explicitly rejected (PI, 2026-10-14):** submitting a second, dependency-free packaging
 array over the already-downloaded stations. It would recover the idle slots but introduces a
