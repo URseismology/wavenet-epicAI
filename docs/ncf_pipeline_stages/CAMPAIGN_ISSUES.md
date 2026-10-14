@@ -770,6 +770,87 @@ confirming or killing that link resolves them as a set.
 
 ---
 
+## R-21 · `aftercorr` releases array tasks IN INDEX ORDER, so one slow task idles the rest
+
+**Identified** 2026-10-14 · **Status** OPEN, logged not fixed (PI: do not add a second
+writer path) · **Severity** low for correctness, high for throughput
+
+### What was observed
+
+The decoupled R-1 (`r1_decoupled_launch.py`) chains packaging to downloading with
+`--dependency=aftercorr:<phase1>`, so task *i* of phase 2 starts when task *i* of phase 1
+succeeds. Measured 23 h into the campaign:
+
+| | |
+|---|---|
+| phase 1 (download) | **377 COMPLETED**, exit 0, no failures |
+| phase 2 (package) | tasks **0–197 only**, contiguous, no gaps |
+| phase 2 running | **10** slots of the **50** allowed |
+| phase 2 pending | **549, every one `(Dependency)`** — zero waiting on resources |
+| spot check | phase 1 task 198/250/300/360 COMPLETED, phase 2 same indices `(Dependency)` |
+
+So ~357 tasks whose dependency was provably satisfied hours earlier never ran. SLURM
+advanced the pending array record `[198-736%50]` in index order rather than releasing each
+task the moment its own counterpart finished. Documented `aftercorr` semantics are per-task;
+observed behaviour is sequential. **Not a correctness bug — nothing was lost or
+double-written — purely a throughput one.**
+
+### Why the head of the queue was slow
+
+The blocked tasks sat behind ten 100 Hz stations:
+
+```
+task 49   6H.FUNH  target=242  daystate=158  raw=['BH','HH']  running 21:40
+task 66   YR.ED15  target=274  daystate=143  raw=['HH']       running 21:17
+task 108  8W.CBHM  target=332  daystate= 48  raw=['HH']       running 18:22
+task 187  YI.GROG  target=403  daystate= 81  raw=['HH']       running 13:26
+```
+
+All progressing (daystates touched within 20 min), none hung. But `8W.CBHM` managed **48
+days in 18.4 h = 1,378 s/day**. The planning estimate for HH was ~50 s/day — **~25x
+optimistic**. Response removal over 8.64M samples per channel-day is simply that expensive,
+and these are the 13.4% of the network with no band below 100 Hz (R-20).
+
+`6H.FUNH` also shows the second cost: its raw holds BOTH BH and HH, left over from the
+pre-fix R-1 download. The R-20 port correctly packages only BH, but every day still reads
+and merges both bands, so old multi-band raw stays expensive after the fix.
+
+### The resource waste, and how foresight would have avoided it
+
+~179 stations had finished downloading and were waiting to be packaged while **40 of 50
+packaging slots sat idle for most of a day**. Nothing was at risk; the capacity was simply
+unused.
+
+**The ordering was chosen for the wrong variable.** `r1_launch.py` sorts SMALLEST TARGET
+FIRST so progress is visible early — sensible when cost tracked day count. After R-20 it does
+not: packaging cost is driven by BAND, not by days. LH is ~0.55 s/day and HH ~1,378 s/day, a
+factor of 2,500. A 242-day HH station costs vastly more than a 4,000-day LH one, so
+smallest-target-first actively front-loads the queue with the most expensive work.
+
+**What to do next time, in preference order:**
+
+1. **Segregate by band into separate arrays.** The selected band is KNOWN BEFORE LAUNCH —
+   `station_metadata/<NET>.<STA>.json` records `channels`, and R-20's rule picks
+   deterministically from it. Submit LH, BH and HH as three arrays with their own throttles
+   and their own chains. An expensive HH station then blocks only other HH stations, and the
+   LH array (53% of the network) drains at full width.
+2. **Order within an array by ESTIMATED COST**, `days x per-day cost of the selected band`,
+   not by days. Cheap stations finish early for visible progress AND stop blocking.
+3. **Do not rely on `aftercorr` to parallelise.** Treat it as "roughly in order", because
+   that is what it does. Where overlap matters, chunk the arrays and chain chunk-to-chunk.
+
+**Explicitly rejected (PI, 2026-10-14):** submitting a second, dependency-free packaging
+array over the already-downloaded stations. It would recover the idle slots but introduces a
+second writer path over the same shards, and two writers on one station is the hazard the
+whole dependency design exists to prevent. Not worth a race condition to reclaim throughput
+on a campaign that will finish anyway.
+
+**Interaction with the new BH3 `debug` partition** (56 CPUs, 1 h cap, added 2026-10-14): it
+cannot absorb this work. The idle capacity here is needed by HH stations that run 13–21 h
+each, far beyond a 1 h cap. `debug` remains a testing resource, not a packaging one.
+
+---
+
 ## Closed
 
 **I-2 · the window-truncation measurement itself** — see R-1, fixed `9844584`.
