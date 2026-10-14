@@ -772,8 +772,13 @@ confirming or killing that link resolves them as a set.
 
 ## R-21 · `aftercorr` releases array tasks IN INDEX ORDER, so one slow task idles the rest
 
-**Identified** 2026-10-14 · **Status** OPEN, logged not fixed (PI: do not add a second
-writer path) · **Severity** low for correctness, high for throughput
+**Identified** 2026-10-14 · **Status** **RESOLVED 2026-10-14 — impact eliminated, behaviour
+unchanged** · **Severity** was low for correctness, high for throughput
+
+> [!IMPORTANT]
+> **Resolved, not fixed.** SLURM's `aftercorr` still releases in index order; that is its
+> behaviour and we do not control it. What was removed is its *impact*, by restructuring the
+> submission — **no code was edited anywhere**. See "How this was closed" at the end.
 
 ### What was observed
 
@@ -878,8 +883,73 @@ whole dependency design exists to prevent. Not worth a race condition to reclaim
 on a campaign that will finish anyway.
 
 **Interaction with the new BH3 `debug` partition** (56 CPUs, 1 h cap, added 2026-10-14): it
-cannot absorb this work. The idle capacity here is needed by HH stations that run 13–21 h
-each, far beyond a 1 h cap. `debug` remains a testing resource, not a packaging one.
+cannot absorb this work. The idle capacity here is needed by stations that run many hours
+each, beyond a 1 h cap. `debug` remains a testing resource, not a packaging one.
+
+### Correction to the cost model used above
+
+The first analysis priced HH at **1,378 s/day**, taken from a single station (`8W.CBHM`).
+Measured across **961 completed packagings**, that is a tail outlier and the median is
+**18.89 s/day — a 73x overestimate**. Full distribution:
+
+| band | n | median s/day | mean | max |
+|---|---:|---:|---:|---:|
+| LH | 192 | 0.44 | 1.16 | 16.97 |
+| BH | 661 | 7.23 | 36.44 | **1,398.47** |
+| HH | 83 | **18.89** | 107.63 | 2,474.71 |
+| EH | 12 | 12.54 | 77.09 | 601.69 |
+
+Acting on the bad figure would have been expensive: it projected one station at 3,512 h
+(146 days), which no partition can hold, and would have driven a pointless redesign around
+splitting stations by date range. **BH's max is 1,398 s/day**, so the expensive tail is not a
+band property at all — within-band variance dwarfs between-band. Band predicts the MEDIAN
+well and says nothing about the tail. Cause of the tail is unknown; a plausible candidate is
+the evalresp cache keying on `nfft` (derived per-file from `npts`), which a gappy station
+would miss on every day, but that is **not verified**.
+
+### How this was closed
+
+Four arrays, all submitted with `sbatch` parameters against the **existing**
+`r1dec_pk.slurm` — it already sets `WAVENET_SKIP_DOWNLOAD=1` and resolves its station from
+`sed -n "$((SLURM_ARRAY_TASK_ID+1))p" r1dec_idx.txt`, so `--array=<explicit id list>`
+selects any subset. **No code edits.**
+
+| job | array | tasks | partition | dependency | why |
+|---|---|---:|---|---|---|
+| 2120032 | `r1dec_dl` | 352 left | standard | none, `%5` | phase 1; the 5-connection cap lives here |
+| 2140549 | `pk_X_cheap` | 227 | `preempt` | **none** | downloads already COMPLETED — the dependency protects nothing |
+| 2140550 | `pk_X_exp` | 43 | `urseismo` | **none** | same, but HH/EH need the 15 d cap |
+| 2140551 | `pk_Y_cheap` | 308 | `preempt` | `aftercorr:2120032` | not yet downloaded — chain retained |
+| 2140552 | `pk_Y_exp` | 45 | `urseismo` | `aftercorr:2120032` | same, long walltime |
+
+Three properties make it safe and complete:
+
+* **One writer per station, always.** The chained phase 2 (`2120033`) was cancelled BEFORE
+  any of these was submitted, and the planner asserts no task id appears in two arrays. The
+  10 tasks killed mid-flight resume from their daystates, losing at most the day in hand —
+  the checkpointing built for crash recovery, finally spent on purpose.
+* **Nothing is orphaned.** Cancelling the chain would have left every future download
+  unpackaged, waiting on a sweep somebody had to remember. The `Y_*` arrays keep the
+  dependency for exactly those stations, so the campaign stays self-completing (§4).
+* **Band is predicted BEFORE launch** for the `Y_*` arrays, from
+  `station_metadata/<NET>.<STA>.json`, which is lesson 1 of this issue applied to itself.
+
+**Measured effect, 5 minutes after submission:**
+
+| | before | after |
+|---|---:|---:|
+| packaging tasks running | 10 | **165** |
+| delivered | 1,578 days/h | **~10,400 days/h** |
+| nodes in use | 1–2 | 8 |
+
+Caveat recorded honestly: of the first 113 completed tasks only 11 produced data, because
+`X_cheap` includes ~70 no-data stations (the contradiction set) that exit instantly with
+nothing to package. The 11 real ones delivered 2,600 days in 15 minutes.
+
+**Residual, deliberately not chased:** a `Y_cheap` task whose true cost exceeds preempt's
+2-day cap will TIMEOUT and stop, since nothing re-queues it. The daystate survives, so the
+planned completeness campaign picks it up. Accepting a known, bounded, recoverable gap
+rather than adding machinery to a campaign already in flight.
 
 ---
 
