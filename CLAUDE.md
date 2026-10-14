@@ -157,8 +157,17 @@ the same conda env runs unchanged.
 
 Partitions (walltime caps): `urseismo` 15d (our 5 dedicated nodes, `bhd[0044,0046-0047,
 0053-0054]` — physically DIFFERENT machines from old BH's urseismo nodes), `standard` 5d,
-`preempt` 2d, `interactive` 12h. **No `debug` partition here** (that's why old BH stays in
-rotation). `--qos` must match `-p` by name (`-p standard --qos standard`).
+`preempt` 2d, `interactive` 12h, and **`debug` 1h — added 2026-10-14** (sysadmin): ONE node,
+**56 CPUs, 493 GB**, confirmed idle. Earlier copies of this file said BH3 had no `debug`
+partition and gave that as the reason legacy BH stayed in rotation — that reason is gone,
+though the capacity argument below still stands.
+`--qos` must match `-p` by name (`-p standard --qos standard`).
+
+> [!TIP]
+> `debug` is the right home for the isolated single-change tests the testing policy
+> requires: 56 cores on one node runs a many-station A/B comparison in parallel, and the
+> 1 h cap is above what those take (the whole four-regime integration test for R-20 ran in
+> ~14 min). Not for production — the cap makes it useless for anything real.
 
 > [!IMPORTANT]
 > BH3's login-node banner **forbids running AI coding assistants on it**. Get an allocation
@@ -172,9 +181,10 @@ SSH: `ssh bluehive` (alias on axon-1) | `bluehive.circ.rochester.edu` (2FA — C
 Partition: `urseismo`, Account: `tolugboj_lab`
 
 **Deliberately kept in rotation, not retired** (PI, 2026-09-29): it is still real, available
-compute, and it currently has MORE short-job capacity than BH3 — 91 `standard`, 21
-`interactive`, and 12 `debug` nodes, versus BH3's 20 / 1 / none. Use it for tests,
-debugging, and short jobs; use BH3 for long production runs. Do not leave it idle.
+compute, and it still has MORE short-job capacity than BH3 — 91 `standard`, 21
+`interactive`, and 12 `debug` nodes, versus BH3's 20 / 1 / **1** (BH3 gained a single
+56-CPU `debug` node on 2026-10-14; it had none before). Use it for tests, debugging, and
+short jobs; use BH3 for long production runs. Do not leave it idle.
 
 > [!NOTE]
 > On axon-2 (the global-tomography machine) `bluehive` is deliberately ALIASED to
