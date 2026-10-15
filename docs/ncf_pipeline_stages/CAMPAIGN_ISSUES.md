@@ -1021,7 +1021,79 @@ StationXML.
 
 ---
 
+## R-23 · Merging inventories across providers duplicates channels; obspy "returns first"
+
+**Identified** 2026-10-15 · **Status** OPEN, latent · **Severity** medium — no harm proven
+yet, but the failure mode is silent
+
+R-3's fix merges StationXML from every provider in the chain until coverage is complete.
+It never DE-DUPLICATES, so a channel held by several centres appears several times.
+
+`BL.IPNA`, fetched from four providers (`rsbr.iag.usp.br`, `seisrequest.iag.usp.br`,
+`service.earthscope.org`, `IRIS`), carries **48 channel entries for 21 distinct channels**.
+obspy then warns on every lookup:
+
+```
+UserWarning: Found more than one matching response. Returning first.
+UserWarning: Found more than one matching channel metadata. Returning first.
+```
+
+**3 of 12 duplicate groups carry DIFFERENT stage counts** — the same channel, same location,
+same epoch, described with 3 stages by one provider and 2 by another. Here all copies agree
+on overall sensitivity so nothing was mis-deconvolved, but "returning first" means the
+provider that happened to be merged first silently decides the response. Where centres
+genuinely disagree, that is a correctness bug with no symptom.
+
+**Repair.** De-duplicate on `(network, station, location, channel, start_date, end_date)`
+after merging, and when copies conflict prefer the most complete response rather than the
+first seen. Until then the warning is the only signal, and it is not recorded anywhere.
+
+---
+
+## R-24 · A station can package perfectly and still be physically impossible
+
+**Identified** 2026-10-15 · **Status** GUARD DEPLOYED (Brazil driver), orchestrator
+unchanged · **Severity** high — it defeats every structural check we had
+
+`BL.IPNA` packaged with `units='m'`, 1 Hz, correct epoch, full schema attrs, single band,
+92 days, `response_ok` true — and reads **0.08 m of ground displacement**, where ambient
+noise at 10-40 s is around 1e-6 m.
+
+**Cause, and it is NOT ours.** Its StationXML declares the digitiser stage as
+`gain=1 V -> COUNTS`, where a real 24-bit digitiser is ~4e5 counts/V:
+
+```
+stage 0  PolesZeros    gain=165.5  M/S -> V     (L4C geophone)
+stage 1  PolesZeros    gain=32     V   -> V     (amplifier)
+stage 2  Coefficients  gain=1      V   -> COUNTS   <- wrong by ~5 orders
+                            overall = 5,296 M/S
+```
+
+Against 2.777e9 M/S at the same station's other locations. Deconvolution divides by 5,296
+instead of ~2e9, so amplitudes come out ~400,000x too large. **No location choice, re-fetch
+or re-download corrects this** — the metadata is wrong at source.
+
+**Why it matters beyond one station.** Every check this pipeline had asks whether the
+PROCESS succeeded. None asked whether the ANSWER was physical. A calibration defect passes
+all of them, and would have entered the archive as ordinary data.
+
+**Guard.** The Brazil driver's verify step now computes the median daily RMS over 7 days
+spread across the record and refuses the station if it falls outside **1e-10 .. 1e-3 m**.
+Deliberately wide: a blunder detector, not a quality metric. Tripping it **RETAINS the raw**
+rather than failing the station, because the waveforms are fine and only the calibration is
+not — a later re-package with corrected metadata can still recover it.
+
+Verified against the driver's own extracted verify block: `BL.IPNA` -> `AMPLITUDE:0.0736`,
+`BL.BB22B`/`BL.CAPB`/`BL.BEB9A` -> `OK`, and the R-22-fixed copy of `BL.IPNA` still
+`AMPLITUDE:0.0722`, confirming the guard is independent of the location fix.
+
+**Outstanding:** the guard lives in the Brazil driver only. The BH3 orchestrator has no
+equivalent, so the global corpus has never been checked for physically impossible stations.
+
+---
+
 ## Closed
+
 
 
 **I-2 · the window-truncation measurement itself** — see R-1, fixed `9844584`.
