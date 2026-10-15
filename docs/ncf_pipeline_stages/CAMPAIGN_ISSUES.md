@@ -953,7 +953,76 @@ rather than adding machinery to a campaign already in flight.
 
 ---
 
+## R-22 · Multiple location codes COLLIDE in the shard, silently discarding instruments
+
+**Identified** 2026-10-15 · **Status** OPEN · **Severity** HIGH for the affected stations —
+the product is wrong, not merely redundant
+
+### What happens
+
+`write_channel_day(grp, channel, ...)` keys the HDF5 dataset by **channel code alone**. A
+station with the same channel at several location codes therefore writes every instrument
+into the SAME dataset at the SAME absolute day index. Last writer wins, per day, silently.
+The `_coverage` bitmap marks the day present either way, so nothing downstream can tell.
+
+`BL.IPNA` is the worked example. Four location codes were downloaded — 954 raw files:
+
+| loc | rate | sensitivity |
+|---|---:|---:|
+| 01 | 100 Hz | **5,296 M/S** |
+| 02 | 200 Hz | 2.777e9 M/S |
+| 10 | 10 Hz | 2.777e9 M/S |
+| 50 | 50 Hz | 2.777e9 M/S |
+
+A **524,000x** sensitivity spread. The packaged shard holds a single `SHZ`/`SHN`/`SHE`, and
+its 87 days have a uniform RMS of 0.053-0.153 m — no bimodal signature, so one location won
+consistently rather than days alternating. Against a physical ambient-noise level near
+1e-6 m, the shard reads ~80,000x too large, which identifies the winner as the
+badly-calibrated loc `01`. **The other three instruments' data was silently overwritten.**
+
+### Why this exists: we introduced it deliberately
+
+`PIPELINE_PRINCIPLES` §3 records that `location_priorities = ["", "00", "10"]` was
+discarding real instruments at codes 01/02/30/31/32, so it was widened to `"*"`. That fixed
+a real data-loss bug. The DOWNLOAD redundancy was an accepted trade; the SHARD-LEVEL
+collision appears never to have been noticed. So the answer to "how did we fix this before"
+is that we did not — we caused it while fixing something worse.
+
+### Scope, measured
+
+**10 of 146** Brazil stations have more than one location code on their selected band:
+`BL.IPNA` (4), `BL.BSFB` (3), and `BL.PMNA`, `BL.BSCB`, `BL.IGAB`, `BL.PCBA`, `NB.SBBR`,
+`BL.CS6B`, `BL.PACB`, `BL.GNSB` (2 each). The other 136 are single-location and unaffected.
+The same question should be asked of the FPS global corpus, where it has not been measured.
+
+### Options, none free
+
+1. **Key the dataset by `LOC.CHA`** when location is non-empty. Removes the collision,
+   keeps every instrument, costs a schema change that every consumer must follow.
+2. **Extend `select_lowest_rate_band` to pick ONE location** as it already picks one band —
+   by component count, then days, then code. Removes collision AND download redundancy,
+   discards an instrument, but as a deliberate recorded choice rather than a silent
+   overwrite. Smallest change, consistent with the function's existing design.
+3. **Per-station `WAVENET_LOCATION_PRIORITIES`.** Not supported — the variable is global,
+   and a fixed global list is exactly what caused §3's data loss.
+
+Option 2 is the recommendation. Whatever is chosen, the 10 stations above need repackaging,
+and `BL.IPNA`'s current shard must not be used.
+
+### Related
+
+`BL.IPNA`'s sensor is an **L4C — a 1 Hz short-period geophone**, so even correctly
+deconvolved it cannot contribute to 10-40 s ambient noise: its response rolls off as f^2
+below 1 Hz and our chain highpasses at 1/3600 Hz. Band code is also an unreliable proxy for
+rate here — its `SH` channels run at 10, 50, 100 and 200 Hz, where SEED reserves `S` for
+10-80 Hz. **Sensor class and true sample rate belong in the shard metadata** (PI,
+2026-10-15), so a consumer can exclude short-period instruments without re-reading
+StationXML.
+
+---
+
 ## Closed
+
 
 **I-2 · the window-truncation measurement itself** — see R-1, fixed `9844584`.
 **I-5 · `CHANNELS` duplicated across `orchestrator.py` and `fetch_station_metadata.py`** — still
