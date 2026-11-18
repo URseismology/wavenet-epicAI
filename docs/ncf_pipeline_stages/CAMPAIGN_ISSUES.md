@@ -1092,6 +1092,60 @@ equivalent, so the global corpus has never been checked for physically impossibl
 
 ---
 
+## R-25 · A task that no-ops on the quota guard records COMPLETED, and the re-queue sweep believes it
+
+**Identified** 2026-11-18 · **Status** FIXED and deployed · **Severity** high — the campaign
+reported itself finished with 302 stations unpackaged
+
+`requeue_sweep.py` selected work by each task's last `sacct` state, re-queueing anything in
+TIMEOUT/FAILED/NODE_FAIL/PREEMPTED/CANCELLED. On **2026-11-17 ~09:24**, 73 re-queued tasks
+started while scratch sat above `WAVENET_QUOTA_STOP_PCT`. Each orchestrator did exactly what
+it was designed to do — stopped itself in ~30 s — and **exited 0**. SLURM recorded
+`COMPLETED` for all 73.
+
+From that moment the sweep was blind. It ran hourly through the night, correctly under the
+96% threshold from 10:41 onward, and reported **"nothing to re-queue"** every time. Counting
+shards on disk instead:
+
+| index file | tasks | packaged | unfinished |
+|---|---:|---:|---:|
+| `r1dec_idx.txt` | 737 | 469 | 268 |
+| `step4_retry_idx.txt` | 52 | 19 | 33 |
+| `step4_refetch_idx.txt` | 12 | 11 | 1 |
+| | | | **302** |
+
+**Why it is worse than an ordinary bug.** This is the tool written to enforce §4 ("a fix is
+not deployed until something forces it to run") failing in exactly that way. A clean exit
+having done nothing is indistinguishable from success in the scheduler's record, so the
+scheduler's record cannot be the authority on whether work happened. The guard that prevents
+the no-op and the selector that detects it were reasoned about separately; the no-op's
+*footprint in sacct* was never considered.
+
+**Fix.** Selection now reads the product: a task is unfinished **iff its station has no shard
+on disk**. `sacct` is still queried, but only to report how many of the re-queued tasks it
+believed had COMPLETED — the size of the false-success population. Validated by an
+independent census written from the opposite direction: both found exactly 302.
+
+**Second defect found while fixing the first.** All three launches the sweep manages run
+`WAVENET_SKIP_DOWNLOAD=1` — they package from raw on scratch and never contact the provider.
+Only **176 of the 302** still had raw; the drain had not touched them (the inspector purges
+only verified stations), they had simply never downloaded. Queueing the other 126 as
+packaging tasks would have produced 126 guaranteed failures, re-submitted hourly forever. The
+sweep now checks for raw and reports those separately instead.
+
+**Resolution, 2026-11-18:** 176 packaging tasks launched on legacy BH (`31558286-8`,
+confirmed doing real discovery/pinning, not guard no-ops); the 126 needing raw launched as
+the download half on BH3 `urseismo` (`2477761`, `%5` per `PROVIDER_LIMITS.md`, 15-day cap —
+`standard`/`preempt` would kill multi-day transfers). No dependency chain between them: the
+raw-aware sweep queues each station for packaging as soon as its raw appears, which survives
+a download task dying.
+
+**Generalisation for the principles doc:** *the scheduler's exit status describes the
+process, never the product.* Any check that asks "did the job finish?" instead of "does the
+artifact exist?" will eventually be satisfied by a job that finished without doing anything.
+
+---
+
 ## Closed
 
 

@@ -328,3 +328,31 @@ licence to patch; the failure was real and everything after it was not.
 This is the rule DURING AN ACTIVE CAMPAIGN. Between campaigns, ordinary development applies:
 changes go through the normal isolated-test cycle and do not need a production failure to
 justify them.
+
+---
+
+## 17. The scheduler's exit status describes the PROCESS, never the PRODUCT.
+
+A job that exits 0 having done nothing is indistinguishable, in `sacct`, from a job that did
+the work. So any check asking *"did the task finish?"* rather than *"does the artifact
+exist?"* will eventually be satisfied by a task that finished without producing anything.
+
+**The incident (R-25).** The orchestrator's quota guard is correct: above
+`WAVENET_QUOTA_STOP_PCT` it stops in ~30 s rather than writing into a full filesystem. It
+exits cleanly, because stopping deliberately is not an error. On 2026-11-17 that ran for 73
+re-queued tasks, and SLURM recorded `COMPLETED` for every one.
+
+`requeue_sweep.py` — the tool written to enforce principle 4 — selected work by last `sacct`
+state. Those 73 were now `COMPLETED`, so it saw no orphans and reported **"nothing to
+re-queue"** hourly through the night while **302 stations sat unpackaged**. The guard and
+the selector were each correct in isolation; nobody asked what footprint the guard's own
+success left in the scheduler's record.
+
+**The rule.** Completion is a property of the output, not of the exit code. Decide from the
+artifact — the shard, its bytes, its contents. Read the scheduler to *explain* what happened,
+never to *decide* what remains.
+
+**The tell.** Any clean state whose cause includes a deliberate early exit. Guards, skips,
+dry-runs, `--limit`, idempotent "already done" short-circuits: each produces exit 0 with no
+product, and each will be misread as success by anything counting exit codes. If a code path
+can succeed at doing nothing, nothing downstream may infer success from it.

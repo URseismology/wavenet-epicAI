@@ -435,6 +435,14 @@ short form, with the full reasoning and the incident behind each one in that doc
     guessing a year.
 14. **A check that cannot fail cleanly will produce false findings.** Validate the
     validator against a known-good case before trusting a failing result.
+15. **Measure and log before you patch.** A speculative fix destroys the baseline.
+16. **Production changes only on a verified diagnosis** — all five conditions (observed
+    failure, written hypothesis, evidence, isolated verification, limited scope). A failure
+    authorizes an investigation, not a change.
+17. **The scheduler's exit status describes the process, never the product.** A job that
+    exits 0 having done nothing is indistinguishable from success in `sacct`. Decide what
+    remains from the artifact on disk; read the scheduler only to explain what happened.
+    Cost: 302 stations sat unpackaged while the sweep reported "nothing to re-queue" (R-25).
 
 ## Data-provider limits (added 2026-10-06) — read before changing download concurrency
 

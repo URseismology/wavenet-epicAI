@@ -17,6 +17,20 @@ WAVENET_QUOTA_STOP_PCT (97%) and exits COMPLETED in ~30 s having done nothing. O
 run. Submitting into a full filesystem manufactures false evidence of progress, so this
 checks the same quota file the orchestrator reads and declines.
 
+DECIDES FROM THE PRODUCT ON DISK, NOT FROM sacct. This originally selected tasks whose LAST
+sacct state was TIMEOUT/FAILED/etc. That is unsound, and it failed in exactly the way this
+file warns about. At 09:24 on 2026-11-17, 73 re-queued tasks ran while scratch was over the
+quota guard: each orchestrator stopped itself in ~30 s and exited 0, so SLURM recorded
+COMPLETED for every one. The stations were never packaged. From then on the sweep saw no
+dead tasks and reported "nothing to re-queue" hourly while 302 stations sat unfinished --
+a silent false all-clear, found only by counting shards on disk.
+
+A job that exits cleanly having done nothing is indistinguishable from success in the
+scheduler's record, so the scheduler's record cannot be the authority (PIPELINE_PRINCIPLES
+§1 silence is not success, §7 verify the artifact not the label). A task is now unfinished
+if and only if ITS STATION IS NOT PACKAGED. sacct is still read, but only to report what
+happened -- never to decide.
+
 SKIPS WHAT IS ALREADY DONE OR ALREADY QUEUED, so running it hourly is harmless.
 
     requeue_sweep.py --root ROOT --dry-run
@@ -78,15 +92,21 @@ def main():
               "success. Waiting for the inspector to free space.".format(pct, args.max_pct))
         return 0
 
-    # which stations are already finished -- never re-queue these
+    # Which stations are finished, judged by the SHARD ON DISK. package_ok alone is not
+    # enough: a result can claim success while the shard is absent, and that station still
+    # needs the work doing.
     done = set()
     for p in glob.glob(os.path.join(R, "results", "*.json")):
         try:
             d = json.load(open(p))
         except Exception:
             continue
-        if d.get("package_ok"):
-            done.add("{}.{}".format(d.get("network"), d.get("station")))
+        if not d.get("package_ok"):
+            continue
+        key = "{}.{}".format(d.get("network"), d.get("station"))
+        shard = d.get("packaged_h5_path") or os.path.join(R, "packaged_h5", key + ".h5")
+        if os.path.exists(shard):
+            done.add(key)
 
     man = pd.read_csv(os.path.join(R, "manifest", "fps_stations.csv"))
     man["key"] = man["network"].astype(str) + "." + man["station"].astype(str)
@@ -103,41 +123,72 @@ def main():
             if t.isdigit():
                 live.add((f[0], int(t)))
 
-    sacct = subprocess.run(
-        ["sacct", "-X", "-n", "-P", "-S", args.since, "-o", "JobID,JobName,State"],
-        capture_output=True, text=True).stdout
-
-    # last state wins per (jobname, task): a task re-run successfully is not an orphan
-    latest = {}
-    for line in sacct.splitlines():
-        f = line.split("|")
-        if len(f) != 3 or "_" not in f[0]:
-            continue
-        t = f[0].split("_")[1]
-        if not t.isdigit():
-            continue
-        latest[(f[1], int(t))] = f[2].split()[0]
-
+    # Walk each launch's index file and ask the DISK whether that task's station is done.
+    # Every task is considered, whatever sacct says happened to it -- a task that "COMPLETED"
+    # without producing a shard is unfinished work, and that is the case this exists to catch.
     plan = {}
-    for (name, task), state in sorted(latest.items()):
-        if state not in DEAD:
-            continue
-        cfg = next((v for k, v in JOBS.items() if name.startswith(k)), None)
-        if cfg is None:
-            continue
-        if (name, task) in live:
-            continue
+    needs_raw = []
+    for cfg in {v for v in JOBS.values()}:
         script, idxfile, part, wall = cfg
         ip = os.path.join(R, idxfile)
         if not os.path.exists(ip):
             continue
+        prefixes = [k for k, v in JOBS.items() if v == cfg]
+        live_tasks = {t for (name, t) in live if any(name.startswith(p) for p in prefixes)}
         idxs = [int(x) for x in open(ip).read().split()]
-        if task >= len(idxs):
-            continue
-        key = key_of[idxs[task]]
-        if key in done:
-            continue
-        plan.setdefault((script, idxfile, part, wall), []).append((task, key))
+        for task, mi in enumerate(idxs):
+            if task in live_tasks or mi >= len(key_of):
+                continue
+            key = key_of[mi]
+            if key in done:
+                continue
+            # Every launch this sweep manages runs WAVENET_SKIP_DOWNLOAD=1: it packages
+            # from raw already on scratch and never contacts the provider. A station whose
+            # raw is gone cannot be packaged, only re-downloaded, so queueing it here buys
+            # a guaranteed failure. Measured 2026-11-18: 126 of 302 unfinished stations had
+            # no raw left. They need the download half (r1dec_dl, WAVENET_SKIP_PACKAGE=1),
+            # which is capped at 5 concurrent by EarthScope's limits -- a different job with
+            # a different throttle, so it is reported rather than silently submitted here.
+            raw = os.path.join(R, "scratch_work", key.replace(".", "_", 1), "mseed")
+            if not os.path.isdir(raw) or not os.listdir(raw):
+                needs_raw.append((idxfile, task, key))
+                continue
+            plan.setdefault(cfg, []).append((task, key))
+
+    if needs_raw:
+        print("[sweep] {} station(s) have NO RAW on scratch -- these need the download half, "
+              "not packaging; not queued here:".format(len(needs_raw)))
+        for f, t, k in needs_raw[:6]:
+            print("          {:<22} task {:<5} {}".format(f, t, k))
+        if len(needs_raw) > 6:
+            print("          ... and {} more".format(len(needs_raw) - 6))
+
+    # Diagnostic only, never a decision: how many of the tasks we are about to re-queue does
+    # sacct believe already COMPLETED? That count is the size of the false-success population
+    # the old selection logic was blind to.
+    try:
+        sacct = subprocess.run(
+            ["sacct", "-X", "-n", "-P", "-S", args.since, "-o", "JobID,JobName,State"],
+            capture_output=True, text=True).stdout
+        latest = {}
+        for line in sacct.splitlines():
+            f = line.split("|")
+            if len(f) == 3 and "_" in f[0] and f[0].split("_")[1].isdigit():
+                latest[(f[1], int(f[0].split("_")[1]))] = f[2].split()[0]
+        completed_by_cfg = {}
+        for (n, tt), st in latest.items():
+            if st != "COMPLETED":
+                continue
+            for p, v in JOBS.items():
+                if n.startswith(p):
+                    completed_by_cfg.setdefault(v, set()).add(tt)
+        ghosts = sum(1 for cfg, items in plan.items() for t, _ in items
+                     if t in completed_by_cfg.get(cfg, ()))
+        if ghosts:
+            print("[sweep] note: {} of these recorded COMPLETED in sacct but produced no "
+                  "shard -- exited 0 having done nothing".format(ghosts))
+    except Exception:
+        pass
 
     if not plan:
         print("[sweep] nothing to re-queue")
